@@ -52,13 +52,13 @@ func (this *SessionList) AddSession(s *Session) {
 	// 能想到的错误返回值是同一用户，同一mac多次登录，但这可能不算错误
 	blockId := getBlockID(s.Uid)
 	this.mu[blockId].Lock()
-	hlist, ok := this.kv[blockId][s.Uid]
+	h, ok := this.kv[blockId][s.Uid]
 	if ok {
-		hlist.PushFront(s)
+		h.PushFront(s)
 	} else {
-		hlist = hlist.Init()
-		this.kv[blockId][s.Uid] = hlist
-		hlist.PushFront(s)
+		h = hlist.Init()
+		this.kv[blockId][s.Uid] = h
+		h.PushFront(s)
 	}
 	this.mu[blockId].Unlock()
 }
