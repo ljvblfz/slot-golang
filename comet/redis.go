@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/garyburd/redigo/redis"
-	"log"
+	"github.com/golang/glog"
 	"time"
 )
 
@@ -43,7 +43,7 @@ func newPool(server, password string) *redis.Pool {
 		TestOnBorrow: func(c redis.Conn, t time.Time) error {
 			_, err := c.Do("PING")
 			if err != nil {
-				log.Println(err)
+				glog.Error(err)
 			}
 			return err
 		},
@@ -55,7 +55,7 @@ func initRedix(addr string) {
 	redisAddr = addr
 	for i := 0; i < _Max; i++ {
 		Redix[i] = newPool(redisAddr, "")
-		log.Printf("RedisPool[%d] Init OK\n", i)
+		glog.Infof("RedisPool[%d] Init OK\n", i)
 	}
 }
 

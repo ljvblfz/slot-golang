@@ -1,29 +1,26 @@
 package main
 
 import (
+	"github.com/golang/glog"
 	"os"
 	"os/signal"
 	"syscall"
 )
 
-var osCh = make(chan os.Signal, 1)
+type closeFunc func()
 
-func InitSignal() /*chan os.Signal*/ {
-	signal.Notify(osCh, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT, syscall.SIGSTOP)
-}
+func handleSignal(closeF closeFunc) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, SIG_STOP, SIG_STATUS, syscall.SIGTERM)
 
-func HandleSignal() {
-	for {
-		s := <-osCh
-		Log.Infof("get a signal %v\n", s)
-		switch s {
-		case syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGSTOP, syscall.SIGINT:
-			return
-		case syscall.SIGHUP:
-			// TODO reload configuration
-			return
-		default:
-			return
+	for sig := range c {
+		switch sig {
+		case SIG_STOP:
+			closeF()
+		case SIG_STATUS:
+			glog.Infoln("catch sigstatus, ignore")
+		case syscall.SIGTERM:
+			glog.Info("catch sigterm, ignore")
 		}
 	}
 }
