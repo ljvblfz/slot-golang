@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bitbucket.org/stevencui/rpc-cluster/log"
-	stdlog "log"
 	"os"
 )
 
