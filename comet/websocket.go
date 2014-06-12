@@ -4,6 +4,7 @@ import (
 	"code.google.com/p/go.net/websocket"
 	"errors"
 	"github.com/golang/glog"
+	"html/template"
 	"net"
 	"net/http"
 	"strconv"
@@ -11,22 +12,22 @@ import (
 	"time"
 )
 
-// var homeTempl = template.Must(template.ParseFiles("home.html"))
+var homeTempl = template.Must(template.ParseFiles("home.html"))
 
-// func homeHandle(w http.ResponseWriter, r *http.Request) {
-// 	homeTempl.Execute(w, r.Host)
-// }
+func homeHandle(w http.ResponseWriter, r *http.Request) {
+	homeTempl.Execute(w, r.Host)
+}
 
 const (
 	killedByOtherDevice  = "Another device login %d"
-	wronggloginParams     = "Wrong login params %s"
-	wronggloginType       = "Wrong login type %s"
-	wronggloginDevice     = "Wrong login deviceId %s"
-	wronggloginTimestamp  = "Wrong login timestamp %s"
-	usergloginTimeout     = "User %d login timeout"
+	wronggloginParams    = "Wrong login params %s"
+	wronggloginType      = "Wrong login type %s"
+	wronggloginDevice    = "Wrong login deviceId %s"
+	wronggloginTimestamp = "Wrong login timestamp %s"
+	usergloginTimeout    = "User %d login timeout"
 	userReconnectTimeout = "Reconnect timeout %d"
 	wrongMd5Check        = "User %d has wrong md5"
-	wronggloginTimeout    = "Wrong login %d timeout %s"
+	wronggloginTimeout   = "Wrong login %d timeout %s"
 
 	LOGIN_PARAM_COUNT = 6
 	READ_TIMEOUT      = 10
@@ -41,15 +42,15 @@ const (
 var (
 	LOGIN_PARAM_ERROR = errors.New("glogin params parse error!")
 	ParamsError       = &ErrorCode{2001, "登陆参数错误"}
-	gloginFailed       = &ErrorCode{2002, "登陆失败"}
+	gloginFailed      = &ErrorCode{2002, "登陆失败"}
 
 	AckgloginOK             = []byte{byte(0)} // 登陆成功
-	AckWrongParams         = []byte{byte(1)} // 错误的登陆参数
+	AckWrongParams          = []byte{byte(1)} // 错误的登陆参数
 	AckWronggloginType      = []byte{byte(2)} // 登陆类型解析错误
 	AckWronggloginDevice    = []byte{byte(3)} // 登陆设备ID解析错误
 	AckWronggloginTimestamp = []byte{byte(4)} // 登陆时间戳解析错误
 	AckgloginTimeout        = []byte{byte(5)} // 登陆超时
-	AckWrongMD5            = []byte{byte(6)} // 错误的md5
+	AckWrongMD5             = []byte{byte(6)} // 错误的md5
 	AckOtherglogoned        = []byte{byte(7)} // 您已在别处登陆
 	AckWronggloginTimeout   = []byte{byte(8)} // 超时解析错误
 )
@@ -69,7 +70,7 @@ func StartHttp(bindAddrs []string) {
 
 func websocketListen(bindAddr string) {
 	httpServeMux := http.NewServeMux()
-	//httpServeMux.HandleFunc("/", homeHandle)
+	httpServeMux.HandleFunc("/", homeHandle)
 	httpServeMux.Handle("/ws", websocket.Handler(WsHandler))
 	server := &http.Server{
 		Addr: bindAddr,
