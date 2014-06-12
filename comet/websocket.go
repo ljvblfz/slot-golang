@@ -71,13 +71,20 @@ func websocketListen(bindAddr string) {
 	httpServeMux := http.NewServeMux()
 	//httpServeMux.HandleFunc("/", homeHandle)
 	httpServeMux.Handle("/ws", websocket.Handler(WsHandler))
-	server := &http.Server{Handler: httpServeMux, ReadTimeout: READ_TIMEOUT * time.Second}
-	l, err := net.Listen("tcp", bindAddr)
-	if err != nil {
-		glog.Error("net.Listen(\"tcp\", \"%s\") error(%v)", bindAddr, err)
-		panic(err)
+	server := &http.Server{
+		Addr: bindAddr,
+		Handler: httpServeMux,
+		ReadTimeout: READ_TIMEOUT * time.Second,
 	}
-	if err := server.Serve(l); err != nil {
+	err := server.ListenAndServe()
+
+	//l, err := net.Listen("tcp", bindAddr)
+	//if err != nil {
+	//	glog.Error("net.Listen(\"tcp\", \"%s\") error(%v)", bindAddr, err)
+	//	panic(err)
+	//}
+	//err := server.Serve(l)
+	if err != nil {
 		glog.Error("server.Serve(\"%s\") error(%v)", bindAddr, err)
 		panic(err)
 	}
@@ -127,6 +134,9 @@ func WsHandler(ws *websocket.Conn) {
 		glog.Errorf("[%s] websocket.Message.Receive() error(%s)\n", addr, err)
 		return
 	}
+	// 旧程序需要成功登陆后的一次回复
+	websocket.Message.Send(ws, 0)
+
 	glog.Infof("Recv glogin %s\n", reply)
 	// parse login params
 	id, mac, alias, expire, hmac, loginErr := getgloginParams(reply)
@@ -141,8 +151,10 @@ func WsHandler(ws *websocket.Conn) {
 		websocket.Message.Send(ws, gloginFailed)
 		return
 	}
+	localHost := ws.LocalAddr().String()
 	s := NewSession(id, alias, mac, ws)
-	se := gSessionList.AddSession(s)
+	gSessionList.AddSession(s)
+	SetUserOnline(id, localHost)
 
 	start := time.Now().UnixNano()
 	end := int64(start + int64(time.Second))
@@ -173,7 +185,8 @@ func WsHandler(ws *websocket.Conn) {
 		}
 		end = time.Now().UnixNano()
 	}
+	SetUserOffline(id, localHost)
 	// remove exists conn
-	gSessionList.RemoveSession(se)
+	gSessionList.RemoveSession(s)
 	return
 }

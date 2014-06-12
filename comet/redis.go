@@ -74,7 +74,7 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 	return ret, err
 }
 
-func SetUserOffline(uid int32, host string) error {
+func SetUserOffline(uid int64, host string) error {
 	r := Redix[_SetUserOnline].Get()
 	var (
 		err error
@@ -98,5 +98,7 @@ func SetUserOffline(uid int32, host string) error {
 			return err
 		}
 	}
+	r.Close()
 	return err
 }
+

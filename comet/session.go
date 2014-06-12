@@ -22,6 +22,10 @@ type Session struct {
 	Conn  *websocket.Conn
 }
 
+func NewSession(uid int64, alias string, mac string, conn *websocket.Conn) *Session {
+	return &Session{Uid: uid, Alias: alias, Mac: mac, Conn: conn}
+}
+
 func (this *Session) Close() {
 	this.Conn.Close()
 }
@@ -44,11 +48,8 @@ func InitSessionList() *SessionList {
 	return sl
 }
 
-func NewSession(uid int64, alias string, mac string, conn *websocket.Conn) *Session {
-	return &Session{Uid: uid, Alias: alias, Mac: mac, Conn: conn}
-}
-
-func (this *SessionList) AddSession(s *Session) *Session {
+func (this *SessionList) AddSession(s *Session) {
+	// 能想到的错误返回值是同一用户，同一mac多次登录，但这可能不算错误
 	blockId := getBlockID(s.Uid)
 	this.mu[blockId].Lock()
 	hlist, ok := this.kv[blockId][s.Uid]
@@ -56,10 +57,10 @@ func (this *SessionList) AddSession(s *Session) *Session {
 		hlist.PushFront(s)
 	} else {
 		hlist = hlist.Init()
+		this.kv[blockId][s.Uid] = hlist
 		hlist.PushFront(s)
 	}
 	this.mu[blockId].Unlock()
-	return s
 }
 
 func (this *SessionList) RemoveSession(s *Session) {
