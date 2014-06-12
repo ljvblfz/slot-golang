@@ -86,7 +86,7 @@ func packData(id int64, data []byte) []byte {
 // }
 
 func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, hmac string) {
-	buf := fmt.Sprintf("%d|%s|%s|%d|%s", id, mac, alias, timestamp, hmac)
+	buf := fmt.Sprintf("0|%d|%s|%s|%d|%s", id, mac, alias, timestamp, hmac)
 	c.conn.Write([]byte(buf))
 }
 

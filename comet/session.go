@@ -56,7 +56,7 @@ func (this *SessionList) AddSession(s *Session) {
 	if ok {
 		h.PushFront(s)
 	} else {
-		h = hlist.Init()
+		h = hlist.New()
 		this.kv[blockId][s.Uid] = h
 		h.PushFront(s)
 	}
