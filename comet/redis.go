@@ -62,13 +62,19 @@ func initRedix(addr string) {
 
 func SetUserOnline(uid int64, host string) (bool, error) {
 	r := Redix[_SetUserOnline].Get()
-	ret, err := redis.Bool(r.Do("hincrby", HostUsers, uid, 1))
+	ret, err := redis.Bool(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, 1))
+	if err != nil {
+		r.Close()
+		return false, err
+	}
 	if ret {
 		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s", uid, host))
 		if err != nil {
 			r.Close()
 			return false, err
 		}
+	} else {
+		glog.Error(ret, err, uid)
 	}
 	r.Close()
 	return ret, err

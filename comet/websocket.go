@@ -153,9 +153,13 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	localHost := ws.LocalAddr().String()
+	_, err = SetUserOnline(id, localHost)
+	if err != nil {
+		glog.Errorf("online error [%d] %v\n", id, err)
+		return
+	}
 	s := NewSession(id, alias, mac, ws)
 	gSessionList.AddSession(s)
-	SetUserOnline(id, localHost)
 
 	start := time.Now().UnixNano()
 	end := int64(start + int64(time.Second))
@@ -163,19 +167,19 @@ func WsHandler(ws *websocket.Conn) {
 		// more then 1 sec, reset the timer
 		if end-start >= int64(time.Second) {
 			if err = setReadTimeout(ws, TIME_OUT); err != nil {
-				glog.Errorf("<%s> user_id:\"%s\" websocket.SetReadDeadline() error(%s)\n", addr, id, err)
+				glog.Errorf("<%s> user_id:\"%d\" websocket.SetReadDeadline() error(%s)\n", addr, id, err)
 				break
 			}
 			start = end
 		}
 
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
-			glog.Errorf("<%s> user_id:\"%s\" websocket.Message.Receive() error(%s)\n", addr, id, err)
+			glog.Errorf("<%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
 			break
 		}
 		if reply == PING_MSG {
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
-				glog.Errorf("<%s> user_id:\"%s\" write heartbeat to client error(%s)\n", addr, id, err)
+				glog.Errorf("<%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
 				break
 			}
 			//glog.Debugf("<%s> user_id:\"%s\" receive heartbeat\n", addr, id)
