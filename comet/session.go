@@ -11,13 +11,15 @@ var (
 	MapSize   int64 = 1024
 )
 
-func getBlockID(uint64 uid) uint64 {
-	return id % BlockSize
+func getBlockID(uid int64) int64 {
+	return uid % BlockSize
 }
 
 type Session struct {
-	Uid  int64
-	Conn *websocket.Conn
+	Uid   int64
+	Alias string
+	Mac   string
+	Conn  *websocket.Conn
 }
 
 func (this *Session) Close() {
@@ -35,14 +37,15 @@ func InitSessionList() *SessionList {
 		kv: make([]map[int64]*hlist.Hlist, BlockSize),
 	}
 
-	for i := 0; i < BlockSize; i++ {
+	for i := int64(0); i < BlockSize; i++ {
 		sl.mu[i] = &sync.Mutex{}
 		sl.kv[i] = make(map[int64]*hlist.Hlist, MapSize)
 	}
+	return sl
 }
 
-func NewSession(uid int64, conn *websocket.Conn) *Session {
-	return &Session{Uid: uid, Conn: conn}
+func NewSession(uid int64, alias string, mac string, conn *websocket.Conn) *Session {
+	return &Session{Uid: uid, Alias: alias, Mac: mac, Conn: conn}
 }
 
 func (this *SessionList) AddSession(s *Session) *Session {
@@ -63,7 +66,7 @@ func (this *SessionList) RemoveSession(s *Session) {
 	blockId := getBlockID(s.Uid)
 	this.mu[blockId].Lock()
 	if list, ok := this.kv[blockId][s.Uid]; ok {
-		for e := hlist.Front(); e != nil; e = e.Next() {
+		for e := list.Front(); e != nil; e = e.Next() {
 			if session, ok := e.Value.(*Session); !ok {
 				this.mu[blockId].Unlock()
 				return
@@ -81,7 +84,7 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 	this.mu[blockId].Lock()
 
 	if list, ok := this.kv[blockId][uid]; ok {
-		for e := c.conn.Front(); e != nil; e = e.Next() {
+		for e := list.Front(); e != nil; e = e.Next() {
 			if session, ok := e.Value.(*Session); !ok {
 				this.mu[blockId].Unlock()
 				return

@@ -15,6 +15,7 @@ const (
 	_SetUserOnline = iota
 	_SetUserOffline
 	_PubState
+	_Max
 )
 
 var (
@@ -59,48 +60,42 @@ func initRedix(addr string) {
 	}
 }
 
-// 设置设备的状态，上线还是下线
-func SetUserOnline(uid int64, host int32) (bool, error) {
+func SetUserOnline(uid int64, host string) (bool, error) {
 	r := Redix[_SetUserOnline].Get()
-	var (
-		err error
-		ret int
-	)
-	ret, err = redis.Bool(r.Do("hincrby", HostUsers, uid, 1))
-	if ret == 1 {
-		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%d", uid, host))
+	ret, err := redis.Bool(r.Do("hincrby", HostUsers, uid, 1))
+	if ret {
+		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s", uid, host))
 		if err != nil {
 			r.Close()
 			return false, err
 		}
 	}
 	r.Close()
-	return exist, err
+	return ret, err
 }
 
-// 记录设备最后一次的状态
-func SetUserOffline(uid uint32, data string) error {
+func SetUserOffline(uid int32, host string) error {
 	r := Redix[_SetUserOnline].Get()
 	var (
 		err error
 		ret int
 	)
-	ret, err = redis.Int(r.Do("hincrby", HostUsers, uid, -1))
+	ret, err = redis.Int(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, -1))
 	if err != nil {
 		r.Close()
 		return err
 	}
 	// TODO 增加脚本保证事务全部执行
 	if ret <= 0 {
-		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%d", -uid, host))
+		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s", -uid, host))
 		if err != nil {
 			r.Close()
-			return false, err
+			return err
 		}
-		_, err = r.Do("hdel", HostUsers, uid)
+		_, err = r.Do("hdel", fmt.Sprintf(HostUsers, host), uid)
 		if err != nil {
 			r.Close()
-			return false, err
+			return err
 		}
 	}
 	return err

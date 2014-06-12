@@ -11,16 +11,16 @@ type closeFunc func()
 
 func handleSignal(closeF closeFunc) {
 	c := make(chan os.Signal, 1)
-	signal.Notify(c, SIG_STOP, SIG_STATUS, syscall.SIGTERM)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGSTOP, syscall.SIGTERM)
 
 	for sig := range c {
 		switch sig {
-		case SIG_STOP:
+		case syscall.SIGINT, syscall.SIGSTOP:
 			closeF()
-		case SIG_STATUS:
-			glog.Infoln("catch sigstatus, ignore")
+			return
 		case syscall.SIGTERM:
 			glog.Info("catch sigterm, ignore")
+			return
 		}
 	}
 }
