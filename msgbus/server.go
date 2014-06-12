@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	BUF_MAX     = 1024
 	HEADER_SIZE = 4
-	PAYLOAD_MAX = BUF_MAX - HEADER_SIZE
+	PAYLOAD_MAX = 1024
 )
 
 type Server struct {
@@ -75,15 +74,15 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 
 	// 	self.outputCh <- &TunnelPayload{header.Linkid, data}
 	// }
-	buf := make([]byte, BUF_MAX)
+	header := make([]byte, HEADER_SIZE)
+	buf := make([]byte, PAYLOAD_MAX)
 	for {
 		// read header : 4-bytes
-		header := buf[:HEADER_SIZE]
 		n, err := io.ReadFull(conn, header)
 		if n == 0 && err == io.EOF {
 			break
 		} else if err != nil {
-			glog.Errorf("error receiving header:%s\n", err)
+			glog.Errorf("[%s] error receiving header:%s\n", conn.RemoteAddr().String, err)
 			break
 		}
 
@@ -94,7 +93,7 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 			break
 		}
 
-		data := buf[HEADER_SIZE : HEADER_SIZE+size]
+		data := buf[:size]
 		n, err = io.ReadFull(conn, data)
 
 		if err != nil {
