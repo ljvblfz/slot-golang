@@ -12,10 +12,6 @@ const (
 	PAYLOAD_MAX = 1024
 )
 
-func HandleMsg(msg []byte) {
-	glog.Info(msg)
-}
-
 type MsgBusServer struct {
 	addr string
 	conn *net.TCPConn
