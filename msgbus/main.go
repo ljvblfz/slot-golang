@@ -2,14 +2,18 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/golang/glog"
 	"strconv"
 	"strings"
 )
 
 func main() {
+
+	rh := flag.String("rh", "193.168.1.224:6379", "Redis地址")
+	lPort := flag.Int("port", 9923, "设置MsgBus监听服务器端口地址")
 	flag.Parse()
-	initRedix("193.168.1.224:6379")
+	initRedix(*rh)
 	notifyUserState, err := SubUserState()
 	if err != nil {
 		glog.Fatal(err)
@@ -28,7 +32,10 @@ func main() {
 		}
 	}()
 
+	local := NewServer(fmt.Sprintf(":%d", *lPort))
+	local.Start()
 	handleSignal(func() {
 		glog.Info("Closed Server")
+		local.Stop()
 	})
 }
