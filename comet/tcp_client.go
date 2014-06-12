@@ -21,8 +21,12 @@ type MsgBusServer struct {
 	conn *net.TCPConn
 }
 
+func NewMsgBusServer(addr string) *MsgBusServer {
+	return &MsgBusServer{addr: addr}
+}
+
 func (this *MsgBusServer) Dail() error {
-	glog.Infof("Connecting to [%s]\n", this.addr)
+	glog.Infof("Dail to [%s]\n", this.addr)
 	var (
 		err     error
 		tcpAddr *net.TCPAddr
@@ -34,9 +38,10 @@ func (this *MsgBusServer) Dail() error {
 	}
 	this.conn, err = net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
-		glog.Errorf("DailTcp [%s] [%s]\n", this.addr, err.Error())
+		glog.Errorf("Dail [%s] [%s]\n", this.addr, err.Error())
 		return err
 	}
+	// glog.Infof("Dail to [%s] ok\n", this.addr)
 	return nil
 }
 
@@ -62,12 +67,11 @@ func (this *MsgBusServer) Reciver() {
 		}
 
 		data := buf[:size]
-		// packet seq_id uint32
 		n, err = io.ReadFull(this.conn, data)
 		if n == 0 && err == io.EOF {
 			break
 		} else if err != nil {
-			glog.Errorf("[%s] error receiving [%s]", this.addr, err.Error())
+			glog.Errorf("[%s] error receiving [%s]\n", this.addr, err.Error())
 			break
 		}
 		HandleMsg(data)
