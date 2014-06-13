@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"github.com/golang/glog"
 	"io"
@@ -56,7 +57,7 @@ func (this *MsgBusServer) Reciver() {
 			glog.Errorf("[%s] error receiving header: %s\n", this.addr, err.Error())
 			break
 		}
-		size := binary.BigEndian.Uint32(header)
+		size := binary.LittleEndian.Uint32(header)
 		if size > PAYLOAD_MAX {
 			glog.Errorf("[%s] overload the max[%d]>[%d]\n", this.addr, size, PAYLOAD_MAX)
 			break
@@ -75,7 +76,10 @@ func (this *MsgBusServer) Reciver() {
 }
 
 func (this *MsgBusServer) Send(msg []byte) {
-	_, err := this.conn.Write(msg)
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, uint32(len(msg)))
+	binary.Write(buf, binary.LittleEndian, msg)
+	_, err := this.conn.Write(buf.Bytes())
 	if err != nil {
 		this.conn.Close()
 	}

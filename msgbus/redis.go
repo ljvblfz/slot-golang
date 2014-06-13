@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
+	//"strconv"
 	"time"
 )
 
@@ -28,7 +29,7 @@ func newPool(server, password string) *redis.Pool {
 	return &redis.Pool{
 		MaxIdle: 5,
 		// MaxActive:   100,
-		IdleTimeout: 10 * time.Second,
+		//IdleTimeout: 10 * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", server)
 			if err != nil {
@@ -91,6 +92,38 @@ func GetAllUsers(hosts []string) error {
 
 func SubUserState() (<-chan []byte, error) {
 	r := Redix[_SubKey].Get()
+
+	//replys, err := redis.Strings(r.Do("config", "get", "timeout"))
+	//if err != nil || len(replys) != 2 || replys[0] != "timeout" {
+	//	glog.Errorf("Redis error %v", err)
+	//	defer r.Close()
+	//	return nil, err
+	//}
+	//timeout, _ := strconv.Atoi(replys[1])
+	//if timeout > 0 {
+	//	newTimeout := int(float64(timeout) * 0.9)
+	//	if newTimeout == 0 {
+	//		newTimeout = 1
+	//	}
+	//	if newTimeout > timeout {
+	//		newTimeout = timeout
+	//	}
+	//	glog.Infof("start ping redis for %d sec", newTimeout)
+	//	go func() {
+	//		for {
+	//			select {
+	//			case <-time.After(time.Duration(newTimeout) * time.Second):
+	//				_, err := r.Do("PING")
+	//				glog.Info("ping...")
+	//				if err != nil {
+	//					return
+	//				}
+	//			}
+	//		}
+	//	}()
+	//} else {
+	//	glog.Infof("redis has no timeout")
+	//}
 	psc := redis.PubSubConn{Conn: r}
 	ch := make(chan []byte, 128)
 	go func() {
@@ -104,7 +137,7 @@ func SubUserState() (<-chan []byte, error) {
 			// 	fmt.Printf("PMessage: %s %s %s\n", n.Pattern, n.Channel, n.Data)
 			case redis.Subscription:
 				if n.Count == 0 {
-					glog.Fatalf("Subscription: %s %s %d\n", n.Kind, n.Channel, n.Count)
+					glog.Fatalf("Subscription: %s %s %d, %v\n", n.Kind, n.Channel, n.Count, n)
 					return
 				}
 			case error:

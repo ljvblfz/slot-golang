@@ -38,7 +38,7 @@ var (
 	_Count        int
 	_Host         string
 	_LocalHost    string
-	_SendInterval int64
+	_SendInterval int
 	_StartId      int64
 	_StatPort     string
 )
@@ -48,7 +48,7 @@ func init() {
 	flag.IntVar(&_Count, "n", 4096, "连接数的大小，最大不能超过64511")
 	flag.StringVar(&_Host, "h", "ws://127.0.0.1:1234/ws", "指定远端服务器WebSocket地址")
 	flag.StringVar(&_LocalHost, "l", "127.0.0.1", "指定本地地址,不要设置端口号,端口号是自动从1024+!")
-	flag.Int64Var(&_SendInterval, "i", 30, "发送数据的频率,单位秒")
+	flag.IntVar(&_SendInterval, "i", 30, "发送数据的频率,单位秒")
 	flag.Int64Var(&_StartId, "s", 1, "设置id的初始值自动增加1")
 	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
 }
@@ -75,8 +75,8 @@ func readData(c *Connection) ([]byte, error) {
 
 func packData(id int64, data []byte) []byte {
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, id)
-	binary.Write(buf, binary.BigEndian, data)
+	binary.Write(buf, binary.LittleEndian, id)
+	binary.Write(buf, binary.LittleEndian, data)
 	return buf.Bytes()
 }
 
@@ -93,6 +93,7 @@ func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, hma
 func sendData(c *Connection, id int64, data []byte) {
 	new_byte := packData(id, data)
 	c.conn.Write(new_byte)
+	glog.Infof("[msg] [%d] sent msg: %s\n", id, string(data))
 }
 
 // 状态统计
@@ -191,7 +192,6 @@ func main() {
 
 	sysc := make(chan os.Signal, 1)
 	signal.Notify(sysc, os.Interrupt, os.Kill)
-	dd := make([]byte, 512)
 	for i := 0; i < _Count; i++ {
 		go func(num int) {
 			//localAddr.Port = 1024 + num
@@ -223,14 +223,50 @@ func main() {
 				// log.Println(num, ack[0])
 				incLoginCount()
 				defer decLoginCount()
+
+				// writer
+				msgChan := make(chan []byte)
+				quitChan := make(chan struct{})
+				defer close(quitChan)
+				go func() {
+					index := 0
+					for {
+						select {
+						case <-time.After(10 * time.Second):
+							incrQueryCount()
+							sendData(c, id, []byte("p"))
+						case <-time.After(time.Duration(_SendInterval) * time.Second):
+							incrQueryCount()
+							sendData(c, id, []byte(fmt.Sprintf("msg %d", index)))
+							index++
+						case msg, ok := <-msgChan:
+							if !ok {
+								return
+							}
+							incrQueryCount()
+							sendData(c, id, msg)
+						case <-quitChan:
+							return
+						}
+					}
+				}()
+				// reader
 				for {
-					sendData(c, id, dd)
-					incrQueryCount()
-					_, err := readData(c)
-					time.Sleep(time.Duration(_SendInterval) * time.Second)
+					//sendData(c, id, dd)
+					msgReceived, err := readData(c)
+					//time.Sleep(time.Duration(_SendInterval) * time.Second)
 					if err != nil {
 						glog.Infoln("Error Data", err)
 						return
+					}
+					strMsg := string(msgReceived)
+					if strMsg == "P" {
+						go func() {
+							time.After(10 * time.Second)
+							msgChan <- []byte("p")
+						}()
+					} else {
+						glog.Infof("[msg] %d receive: %s\n", id, strMsg)
 					}
 				}
 			} else {

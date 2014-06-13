@@ -136,7 +136,7 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	// 旧程序需要成功登陆后的一次回复
-	websocket.Message.Send(ws, 0)
+	websocket.Message.Send(ws, []byte{0})
 
 	glog.Infof("Recv glogin %s\n", reply)
 	// parse login params
@@ -186,7 +186,7 @@ func WsHandler(ws *websocket.Conn) {
 		} else {
 			//glog.Debugf("<%s> user_id:\"%s\" recv msg %s\n", addr, id, reply)
 			// Send to Message Bus
-
+			gMsgBusServer.Send([]byte(reply))
 		}
 		end = time.Now().UnixNano()
 	}

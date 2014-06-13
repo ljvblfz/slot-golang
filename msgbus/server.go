@@ -87,7 +87,7 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 		}
 
 		// read payload, the size of the payload is given by header
-		size := binary.BigEndian.Uint32(header)
+		size := binary.LittleEndian.Uint32(header)
 		if size > PAYLOAD_MAX {
 			// log
 			break

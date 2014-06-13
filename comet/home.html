@@ -34,7 +34,7 @@
     if (window["WebSocket"]) {
         conn = new WebSocket("ws://{{$}}/ws");
         conn.onopen = function(evt) {
-            appendLog($("<div><b>Connection opened.</b></div>"))
+            appendLog($("<div><b>Connection opened, input login msg first:</b></div>"))
         }
         conn.onclose = function(evt) {
             appendLog($("<div><b>Connection closed.</b></div>"))
