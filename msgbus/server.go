@@ -24,10 +24,10 @@ func (this *Server) listen() {
 	for {
 		conn, err := this.accept()
 		if err != nil {
-			glog.Errorf("front server acceept failed:%s\n", err.Error())
+			glog.Errorf("comet acceept failed:%s\n", err.Error())
 			break
 		}
-		glog.V(1).Infof("front server, new connection from %v\n", conn.RemoteAddr())
+		glog.Infof("comet from %v\n", conn.RemoteAddr())
 		this.wg.Add(1)
 		go this.handleClient(conn)
 	}
