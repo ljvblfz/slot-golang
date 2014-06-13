@@ -11,20 +11,20 @@ func ServerTrigger(existed bool, event zookeeper.Event) {
 	glog.Infof("Existed [%v], event [%v]", existed, event)
 }
 
-func InitZK(zkAddrs []string) error {
+func InitZK(zkAddrs []string) {
 	conn, err := zk.Connect(zkAddrs, time.Second)
 	if err != nil {
-		return err
+		glog.Fatal(err)
 	}
 	glog.Infof("Connect zk[%v] OK!", zkAddrs)
 	nodes, event, nerr := zk.GetNodesW(conn, "/MsgBusServers")
 	if nerr != nil {
-		return nerr
+		glog.Fatal(nerr)
 	}
 	for _, n := range nodes {
 		addr, err := zk.GetNodeData(conn, "/MsgBusServers/"+n)
 		if err != nil {
-			return err
+			glog.Fatal(err)
 		}
 		gMsgBusServer = NewMsgBusServer(addr)
 		if gMsgBusServer.Dail() == nil {
@@ -34,5 +34,4 @@ func InitZK(zkAddrs []string) error {
 	for e := range event {
 		glog.Info(e)
 	}
-	return nil
 }

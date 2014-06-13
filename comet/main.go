@@ -17,9 +17,7 @@ func main() {
 	lHost := flag.String("ports", ":1234,:1235", "监听的websocket地址")
 	flag.Parse()
 	initRedix(*rh)
-	if err := InitZK([]string{"193.168.1.221", "193.168.1.222", "193.168.1.223"}); err != nil {
-		glog.Fatal(err)
-	}
+	go InitZK([]string{"193.168.1.221", "193.168.1.222", "193.168.1.223"})
 
 	gSessionList = InitSessionList()
 	hostList := strings.Split(*lHost, ",")
