@@ -73,8 +73,8 @@ func websocketListen(bindAddr string) {
 	httpServeMux.HandleFunc("/", homeHandle)
 	httpServeMux.Handle("/ws", websocket.Handler(WsHandler))
 	server := &http.Server{
-		Addr: bindAddr,
-		Handler: httpServeMux,
+		Addr:        bindAddr,
+		Handler:     httpServeMux,
 		ReadTimeout: READ_TIMEOUT * time.Second,
 	}
 	err := server.ListenAndServe()
@@ -186,7 +186,7 @@ func WsHandler(ws *websocket.Conn) {
 		} else {
 			//glog.Debugf("<%s> user_id:\"%s\" recv msg %s\n", addr, id, reply)
 			// Send to Message Bus
-			gMsgBusServer.Send([]byte(reply))
+			GMsgBusManager.Push2Backend([]byte(reply))
 		}
 		end = time.Now().UnixNano()
 	}

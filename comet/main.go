@@ -7,8 +7,7 @@ import (
 )
 
 var (
-	gSessionList  *SessionList
-	gMsgBusServer *MsgBusServer
+	gSessionList *SessionList
 )
 
 func main() {

@@ -26,10 +26,7 @@ func InitZK(zkAddrs []string) {
 		if err != nil {
 			glog.Fatal(err)
 		}
-		gMsgBusServer = NewMsgBusServer(addr)
-		if gMsgBusServer.Dail() == nil {
-			go gMsgBusServer.Reciver()
-		}
+		GMsgBusManager.Online(addr)
 	}
 	for e := range event {
 		glog.Info(e)
