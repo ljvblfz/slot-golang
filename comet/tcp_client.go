@@ -42,7 +42,7 @@ func (this *MsgBusServer) Dail() error {
 	return nil
 }
 
-func (this *MsgBusServer) Reciver() {
+func (this *MsgBusServer) Reciver(onCloseEventFunc func(s *MsgBusServer)) {
 	defer this.conn.Close()
 
 	header := make([]byte, HEADER_SIZE)
@@ -73,6 +73,7 @@ func (this *MsgBusServer) Reciver() {
 		}
 		HandleMsg(data)
 	}
+	onCloseEventFunc(this)
 }
 
 func (this *MsgBusServer) Send(msg []byte) {
