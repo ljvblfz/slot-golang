@@ -236,7 +236,7 @@ func main() {
 						select {
 						case <-time.After(10 * time.Second):
 							incrQueryCount()
-							sendData(c, id, []byte("p"))
+							c.conn.Write([]byte("p"))
 						case <-time.After(time.Duration(_SendInterval) * time.Second):
 							incrQueryCount()
 							sendData(c, id, []byte(fmt.Sprintf("%s-%d", _SN, index)))
@@ -246,7 +246,11 @@ func main() {
 								return
 							}
 							incrQueryCount()
-							sendData(c, id, msg)
+							if string(msg) == "p" {
+								c.conn.Write(msg)
+							} else {
+								sendData(c, id, msg)
+							}
 						case <-quitChan:
 							return
 						}
