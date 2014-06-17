@@ -88,7 +88,7 @@ func GetAllHosts() ([]string, error) {
 func GetAllUsers(hosts []string) error {
 	r := Redix[_GetAllUsers].Get()
 	var (
-		err   error
+		err error
 		//users []string
 	)
 	for _, host := range hosts {
@@ -144,7 +144,6 @@ func SubUserState() (<-chan []byte, error) {
 		defer psc.Close()
 		for {
 			data := psc.Receive()
-			glog.Infof("subbbbbbbbbbbbbbb: %v", data)
 			switch n := data.(type) {
 			case redis.Message:
 				glog.Infof("Message: %s %s\n", n.Channel, n.Data)
