@@ -7,10 +7,6 @@ import (
 	"time"
 )
 
-func ServerTrigger(existed bool, event zookeeper.Event) {
-	glog.Infof("Existed [%v], event [%v]", existed, event)
-}
-
 var zkConn *zookeeper.Conn
 
 func InitZK(zkAddrs []string) {
