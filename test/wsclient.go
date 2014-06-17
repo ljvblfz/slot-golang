@@ -266,10 +266,10 @@ func main() {
 					}
 					strMsg := string(msgReceived)
 					if strMsg == "P" {
-						go func() {
-							time.After(10 * time.Second)
-							msgChan <- []byte("p")
-						}()
+						//go func() {
+						//	time.After(10 * time.Second)
+						//	msgChan <- []byte("p")
+						//}()
 					} else {
 						rc++
 						glog.Infof("[msg] %d receive: %s, index: %d\n", id, strMsg, rc)
