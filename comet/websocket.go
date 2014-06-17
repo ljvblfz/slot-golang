@@ -152,7 +152,7 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	s := NewSession(id, alias, mac, bindedIds, ws)
-	gSessionList.AddSession(s)
+	selement := gSessionList.AddSession(s)
 
 	start := time.Now().UnixNano()
 	end := int64(start + int64(time.Second))
@@ -192,6 +192,6 @@ func WsHandler(ws *websocket.Conn) {
 	}
 	SetUserOffline(id, kHostName)
 	// remove exists conn
-	gSessionList.RemoveSession(s)
+	gSessionList.RemoveSession(selement)
 	return
 }

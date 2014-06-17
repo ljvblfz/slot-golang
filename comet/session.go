@@ -16,11 +16,11 @@ func getBlockID(uid int64) int64 {
 }
 
 type Session struct {
-	Uid			int64
-	Alias		string
-	Mac			string
-	BindedIds	[]int64
-	Conn		*websocket.Conn
+	Uid       int64
+	Alias     string
+	Mac       string
+	BindedIds []int64
+	Conn      *websocket.Conn
 }
 
 func NewSession(uid int64, alias string, mac string, bindedIds []int64, conn *websocket.Conn) *Session {
@@ -58,34 +58,30 @@ func InitSessionList() *SessionList {
 	return sl
 }
 
-func (this *SessionList) AddSession(s *Session) {
+func (this *SessionList) AddSession(s *Session) *hlist.Element {
 	// 能想到的错误返回值是同一用户，同一mac多次登录，但这可能不算错误
 	blockId := getBlockID(s.Uid)
 	this.mu[blockId].Lock()
 	h, ok := this.kv[blockId][s.Uid]
+	var e *hlist.Element
 	if ok {
-		h.PushFront(s)
+		e = h.PushFront(s)
 	} else {
 		h = hlist.New()
 		this.kv[blockId][s.Uid] = h
-		h.PushFront(s)
+		e = h.PushFront(s)
 	}
 	this.mu[blockId].Unlock()
+	return e
 }
 
-func (this *SessionList) RemoveSession(s *Session) {
+func (this *SessionList) RemoveSession(e *hlist.Element) {
+	s, _ := e.Value.(*Session)
 	blockId := getBlockID(s.Uid)
+	s.Close()
 	this.mu[blockId].Lock()
 	if list, ok := this.kv[blockId][s.Uid]; ok {
-		for e := list.Front(); e != nil; e = e.Next() {
-			if session, ok := e.Value.(*Session); !ok {
-				this.mu[blockId].Unlock()
-				return
-			} else {
-				session.Close()
-				list.Remove(e)
-			}
-		}
+		list.Remove(e)
 	}
 	this.mu[blockId].Unlock()
 }
