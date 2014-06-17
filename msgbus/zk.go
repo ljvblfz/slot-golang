@@ -7,6 +7,8 @@ import (
 	"time"
 )
 
+var zkConn *zookeeper.Conn
+
 func watchZK(existed bool, event zookeeper.Event) {
 	glog.Infof("Existed [%v], event [%v]", existed, event)
 }
@@ -22,5 +24,13 @@ func InitZK(addrs []string, listenAddr string) error {
 	if createErr != nil {
 		return createErr
 	}
+	zkConn = conn
 	return nil
+}
+
+func CloseZK() {
+	if zkConn != nil {
+		glog.Infoln("ZK closed")
+		zkConn.Close()
+	}
 }

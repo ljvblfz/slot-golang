@@ -11,6 +11,8 @@ func ServerTrigger(existed bool, event zookeeper.Event) {
 	glog.Infof("Existed [%v], event [%v]", existed, event)
 }
 
+var zkConn *zookeeper.Conn
+
 func InitZK(zkAddrs []string) {
 	conn, err := zk.Connect(zkAddrs, time.Second)
 	if err != nil {
@@ -30,5 +32,12 @@ func InitZK(zkAddrs []string) {
 	}
 	for e := range event {
 		glog.Info(e)
+	}
+	zkConn = conn
+}
+
+func CloseZK() {
+	if zkConn != nil {
+		zkConn.Close()
 	}
 }
