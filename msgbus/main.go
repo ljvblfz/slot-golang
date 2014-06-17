@@ -26,10 +26,11 @@ func main() {
 				users_def := strings.Split(user_ori, "|")
 				uid, _ := strconv.ParseInt(users_def[0], 10, 64)
 				host := users_def[1]
-				if uid > 0 {
-					GUserMap.Online(uid, hostName(host))
+				isOnline := users_def[2]
+				if isOnline == "1" {
+					GUserMap.Online(uid, host)
 				} else {
-					GUserMap.Offline(uid, hostName(host))
+					GUserMap.Offline(uid, host)
 				}
 			}
 		}()
@@ -43,6 +44,7 @@ func main() {
 		glog.Fatal(err)
 	}
 	handleSignal(func() {
+		CloseZK()
 		glog.Info("Closed Server")
 		local.Stop()
 	})
