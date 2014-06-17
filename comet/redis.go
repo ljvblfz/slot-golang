@@ -68,7 +68,7 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 		return false, err
 	}
 	if ret {
-		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s", uid, host))
+		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 1))
 		if err != nil {
 			r.Close()
 			return false, err
@@ -93,7 +93,7 @@ func SetUserOffline(uid int64, host string) error {
 	}
 	// TODO 增加脚本保证事务全部执行
 	if ret <= 0 {
-		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s", -uid, host))
+		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 0))
 		if err != nil {
 			r.Close()
 			return err
@@ -107,4 +107,3 @@ func SetUserOffline(uid int64, host string) error {
 	r.Close()
 	return err
 }
-
