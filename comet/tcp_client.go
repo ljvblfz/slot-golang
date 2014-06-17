@@ -14,29 +14,38 @@ const (
 )
 
 type MsgBusServer struct {
-	addr string
-	conn *net.TCPConn
+	localAddr  string
+	remoteAddr string
+	conn       *net.TCPConn
 }
 
-func NewMsgBusServer(addr string) *MsgBusServer {
-	return &MsgBusServer{addr: addr}
+func NewMsgBusServer(localAddr, remoteAddr string) *MsgBusServer {
+	return &MsgBusServer{localAddr: localAddr, remoteAddr: remoteAddr}
 }
 
 func (this *MsgBusServer) Dail() error {
-	glog.Infof("Dail to [%s]\n", this.addr)
+	glog.Infof("Dail to [%s]->[%s]\n", this.localAddr, this.remoteAddr)
 	var (
-		err     error
-		tcpAddr *net.TCPAddr
+		err           error
+		tcpLocalAddr  *net.TCPAddr
+		tcpRemoteAddr *net.TCPAddr
 	)
-	tcpAddr, err = net.ResolveTCPAddr("tcp", this.addr)
+
+	tcpLocalAddr, err = net.ResolveTCPAddr("tcp", this.localAddr)
 	if err != nil {
-		glog.Errorf("ResovleTcpAddr [%s] [%s]\n", this.addr, err.Error())
+		glog.Errorf("Resovle Local TcpAddr [%s] [%s]\n", this.localAddr, err.Error())
+		return err
+	}
+
+	tcpRemoteAddr, err = net.ResolveTCPAddr("tcp", this.remoteAddr)
+	if err != nil {
+		glog.Errorf("Resovle Remote TcpAddr [%s] [%s]\n", this.remoteAddr, err.Error())
 		return err
 	}
 	// TODO add local addr to below(second parameter)
-	this.conn, err = net.DialTCP("tcp", nil, tcpAddr)
+	this.conn, err = net.DialTCP("tcp", tcpLocalAddr, tcpRemoteAddr)
 	if err != nil {
-		glog.Errorf("Dail [%s] [%s]\n", this.addr, err.Error())
+		glog.Errorf("Dail [%s]->[%s] [%s]\n", this.localAddr, this.remoteAddr, err.Error())
 		return err
 	}
 	// glog.Infof("Dail to [%s] ok\n", this.addr)
@@ -55,12 +64,12 @@ func (this *MsgBusServer) Reciver(onCloseEventFunc func(s *MsgBusServer)) {
 		if n == 0 && err == io.EOF {
 			break
 		} else if err != nil {
-			glog.Errorf("[%s] error receiving header: %s\n", this.addr, err.Error())
+			glog.Errorf("[%s] error receiving header: %s\n", this.remoteAddr, err.Error())
 			break
 		}
 		size := binary.LittleEndian.Uint32(header)
 		if size > PAYLOAD_MAX {
-			glog.Errorf("[%s] overload the max[%d]>[%d]\n", this.addr, size, PAYLOAD_MAX)
+			glog.Errorf("[%s] overload the max[%d]>[%d]\n", this.remoteAddr, size, PAYLOAD_MAX)
 			break
 		}
 
@@ -69,7 +78,7 @@ func (this *MsgBusServer) Reciver(onCloseEventFunc func(s *MsgBusServer)) {
 		if n == 0 && err == io.EOF {
 			break
 		} else if err != nil {
-			glog.Errorf("[%s] error receiving [%s]\n", this.addr, err.Error())
+			glog.Errorf("[%s] error receiving [%s]\n", this.remoteAddr, err.Error())
 			break
 		}
 		HandleMsg(data)

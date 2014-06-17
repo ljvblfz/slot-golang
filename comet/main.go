@@ -8,19 +8,16 @@ import (
 
 var (
 	gSessionList *SessionList
-)
-
-var (
-	kHostName string
+	gLocalAddr   string
 )
 
 func main() {
 	rh := flag.String("rh", "193.168.1.224:6379", "Redis地址")
 	lHost := flag.String("ports", ":1234,:1235", "监听的websocket地址")
-	flag.StringVar(&kHostName, "lip", "", "comet服务器本地地址")
+	flag.StringVar(&gLocalAddr, "lip", "", "comet服务器本地地址")
 	flag.Parse()
 
-	if len(kHostName) == 0 {
+	if len(gLocalAddr) == 0 {
 		glog.Fatalf("必须指定本机IP")
 	}
 

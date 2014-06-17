@@ -146,7 +146,7 @@ func WsHandler(ws *websocket.Conn) {
 		websocket.Message.Send(ws, gloginFailed)
 		return
 	}
-	_, err = SetUserOnline(id, kHostName)
+	_, err = SetUserOnline(id, gLocalAddr)
 	if err != nil {
 		glog.Errorf("online error [%d] %v\n", id, err)
 		return
@@ -190,7 +190,7 @@ func WsHandler(ws *websocket.Conn) {
 		}
 		end = time.Now().UnixNano()
 	}
-	SetUserOffline(id, kHostName)
+	SetUserOffline(id, gLocalAddr)
 	// remove exists conn
 	gSessionList.RemoveSession(selement)
 	return

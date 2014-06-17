@@ -21,13 +21,13 @@ func NewMsgBusManager() *MsgBusManager {
 
 func onMsgBusCloseEvent(s *MsgBusServer) {
 	glog.Info(s.conn.RemoteAddr(), "has been closed")
-	s.conn.Close()
+	GMsgBusManager.Offline(s)
 }
 
-func (this *MsgBusManager) Online(addr string) {
+func (this *MsgBusManager) Online(remoteAddr string) {
 	this.mu.Lock()
 
-	g := NewMsgBusServer(addr)
+	g := NewMsgBusServer(gLocalAddr, remoteAddr)
 	if g.Dail() == nil {
 		go g.Reciver(onMsgBusCloseEvent)
 	}
@@ -49,7 +49,7 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 			return
 		} else {
 			if srv == s {
-				glog.Info("Removed", s.conn.RemoteAddr(), "OK")
+				glog.Infoln("Removed", s.conn.RemoteAddr(), "OK")
 				this.list.Remove(e)
 				break
 			}
