@@ -3,10 +3,10 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"net"
-	"sync"
-	"strings"
 	"github.com/golang/glog"
+	"net"
+	"strings"
+	"sync"
 )
 
 var HostPrefix = "Host:"
@@ -60,7 +60,12 @@ func (this *Comets) AddServer(host string, conn *net.TCPConn) {
 // addr传入的是ip
 func (this *Comets) RemoveServer(host string) {
 	this.mu.Lock()
-	delete(this.Servers, host)
+	if _, ok := this.Servers[host]; ok {
+		delete(this.Servers, host)
+	} else {
+		// TODO add error log
+		glog.Errorf("[%s] Removed", host)
+	}
 	this.mu.Unlock()
 }
 
@@ -70,6 +75,7 @@ func (this *Comets) AddUserToHost(uid int64, host string) {
 		h.addUser(uid)
 	} else {
 		// TODO add error log
+		glog.Errorf("[%s] duplicated add user [%d]", host, uid)
 	}
 	this.mu.Unlock()
 }
@@ -80,6 +86,7 @@ func (this *Comets) RemoveUserFromHost(uid int64, host string) {
 		h.delUser(uid)
 	} else {
 		// TODO add error log
+		glog.Errorf("[%s] cannot find user [%d]", host, uid)
 	}
 	this.mu.Unlock()
 }
@@ -90,6 +97,7 @@ func (this *Comets) PushMsg(msg []byte, host string) {
 	if !ok {
 		glog.Errorf("unexpected uninitialized server(host: %s), %v", host, this.Servers)
 	}
+	glog.Info(host, msg)
 	server.Push(msg)
 	this.mu.Unlock()
 }

@@ -15,5 +15,6 @@ func MainHandle(msg []byte) {
 }
 
 func HandleClose(host string) {
-	glog.Infof("server closed")
+	glog.Infof("[%s] server closed", host)
+	GComets.RemoveServer(hostName(host))
 }

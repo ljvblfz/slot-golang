@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/cuixin/cloud/hlist"
+	"github.com/golang/glog"
 	"strconv"
 	"sync"
 )
@@ -50,6 +51,7 @@ func (this *UserMap) Offline(uid int64, host string) {
 	for e := hostlist.Front(); e != nil; e = e.Next() {
 		if _host, ok := e.Value.(string); !ok {
 			// TODO error log
+			glog.Fatal("Fatal error")
 			this.mu.Unlock()
 			return
 		} else {
@@ -60,8 +62,9 @@ func (this *UserMap) Offline(uid int64, host string) {
 		}
 	}
 	// TODO check err is equals 0
-	if err > 1 {
+	if err != 1 {
 		// LOG
+		glog.Errorln(uid, "canot find in host", host)
 	}
 	this.mu.Unlock()
 }

@@ -32,6 +32,7 @@ func main() {
 	StartHttp(hostList)
 
 	handleSignal(func() {
+		CloseZK()
 		glog.Info("Closed Server")
 	})
 }
