@@ -16,18 +16,28 @@ func getBlockID(uid int64) int64 {
 }
 
 type Session struct {
-	Uid   int64
-	Alias string
-	Mac   string
-	Conn  *websocket.Conn
+	Uid			int64
+	Alias		string
+	Mac			string
+	BindedIds	[]int64
+	Conn		*websocket.Conn
 }
 
-func NewSession(uid int64, alias string, mac string, conn *websocket.Conn) *Session {
-	return &Session{Uid: uid, Alias: alias, Mac: mac, Conn: conn}
+func NewSession(uid int64, alias string, mac string, bindedIds []int64, conn *websocket.Conn) *Session {
+	return &Session{Uid: uid, Alias: alias, Mac: mac, BindedIds: bindedIds, Conn: conn}
 }
 
 func (this *Session) Close() {
 	this.Conn.Close()
+}
+
+func (this *Session) IsBinded(id int64) bool {
+	for _, v := range this.BindedIds {
+		if v == id {
+			return true
+		}
+	}
+	return false
 }
 
 type SessionList struct {
@@ -82,12 +92,14 @@ func (this *SessionList) RemoveSession(s *Session) {
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {
 	blockId := getBlockID(uid)
-	this.mu[blockId].Lock()
+
+	lock := this.mu[blockId]
+	lock.Lock()
 
 	if list, ok := this.kv[blockId][uid]; ok {
 		for e := list.Front(); e != nil; e = e.Next() {
 			if session, ok := e.Value.(*Session); !ok {
-				this.mu[blockId].Unlock()
+				lock.Unlock()
 				return
 			} else {
 				err := websocket.Message.Send(session.Conn, data)
@@ -98,5 +110,5 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 			}
 		}
 	}
-	this.mu[blockId].Unlock()
+	lock.Unlock()
 }

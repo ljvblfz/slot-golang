@@ -6,6 +6,7 @@ import (
 	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"hash"
@@ -81,6 +82,32 @@ func PBKDF2(password, salt []byte, iter, keyLen int, h func() hash.Hash) []byte 
 	return dk[:keyLen]
 }
 
+// n2b int64->base64
+func n2b(n int64) string {
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, uint64(n))
+	return base64.StdEncoding.EncodeToString(buf)
+}
+
+// b2n base64->int64
+func b2n(b string) int64 {
+	buf, err := base64.StdEncoding.DecodeString(b)
+	if err != nil {
+		return -1
+	}
+	return int64(binary.LittleEndian.Uint64(buf))
+}
+
+// ns2b []byte->base64
+func bs2b(bs []byte) string {
+	return base64.StdEncoding.EncodeToString(bs)
+}
+
+// b2ns base64->int64
+//func b2ns(b string) ([]byte, err) {
+//	return base64.StdEncoding.DecodeString(b)
+//}
+
 func writeCommonResp(w http.ResponseWriter) {
 	w.Header().Add("Content-Type", "application/json; charset=UTF-8")
 	w.Header().Add("Server", "blackapi")
@@ -89,9 +116,11 @@ func writeCommonResp(w http.ResponseWriter) {
 // 生成用于登录另一个websocket服务器的key
 // TODO(yy) 测试实现，不完善
 func GenerateKey(id int64, timestamp int64, expire int64) string {
-	buf := fmt.Sprintf("0|%d|%d|%d", id, timestamp, expire)
-	md5_buf := fmt.Sprintf("%d|%d|%d|%s", id, timestamp, expire, kWbSalt)
-	md5Str := fmt.Sprintf("%x", md5.Sum([]byte(md5_buf)))
+	timestampB := n2b(timestamp)
+	buf := fmt.Sprintf("0|%x|%s|%x", id, timestampB, expire)
+	md5_buf := fmt.Sprintf("%x|%s|%x|%s", id, timestampB, expire, kWbSalt)
+	bytes := md5.Sum([]byte(md5_buf))
+	md5Str := bs2b(bytes[0:])
 	return fmt.Sprintf("%s|%s", buf, md5Str)
 }
 

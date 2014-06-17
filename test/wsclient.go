@@ -41,6 +41,7 @@ var (
 	_SendInterval int
 	_StartId      int64
 	_StatPort     string
+	_SN           string
 )
 
 func init() {
@@ -51,6 +52,7 @@ func init() {
 	flag.IntVar(&_SendInterval, "i", 30, "发送数据的频率,单位秒")
 	flag.Int64Var(&_StartId, "s", 1, "设置id的初始值自动增加1")
 	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
+	flag.StringVar(&_SN, "sn", "client1", "设置客户端sn")
 }
 
 type Connection struct {
@@ -237,7 +239,7 @@ func main() {
 							sendData(c, id, []byte("p"))
 						case <-time.After(time.Duration(_SendInterval) * time.Second):
 							incrQueryCount()
-							sendData(c, id, []byte(fmt.Sprintf("msg %d", index)))
+							sendData(c, id, []byte(fmt.Sprintf("%s-%d", _SN, index)))
 							index++
 						case msg, ok := <-msgChan:
 							if !ok {
@@ -251,10 +253,9 @@ func main() {
 					}
 				}()
 				// reader
+				rc := 0
 				for {
-					//sendData(c, id, dd)
 					msgReceived, err := readData(c)
-					//time.Sleep(time.Duration(_SendInterval) * time.Second)
 					if err != nil {
 						glog.Infoln("Error Data", err)
 						return
@@ -266,7 +267,8 @@ func main() {
 							msgChan <- []byte("p")
 						}()
 					} else {
-						glog.Infof("[msg] %d receive: %s\n", id, strMsg)
+						rc++
+						glog.Infof("[msg] %d receive: %s, index: %d\n", id, strMsg, rc)
 					}
 				}
 			} else {

@@ -1,9 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"net"
 	"sync"
+	"strings"
+	"github.com/golang/glog"
 )
+
+var HostPrefix = "Host:"
 
 var GComets = NewComets()
 
@@ -26,8 +32,11 @@ func (this *CometServer) delUser(uid int64) {
 }
 
 func (this *CometServer) Push(msg []byte) (err error) {
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, uint32(len(msg)))
+	binary.Write(buf, binary.LittleEndian, msg)
 	this.mu.Lock()
-	_, err = this.conn.Write(msg)
+	_, err = this.conn.Write(buf.Bytes())
 	this.mu.Unlock()
 	return
 }
@@ -41,15 +50,17 @@ func NewComets() *Comets {
 	return &Comets{mu: &sync.Mutex{}, Servers: make(map[string]*CometServer, 512)}
 }
 
-func (this *Comets) AddServer(addr string, conn *net.TCPConn) {
+// host不包括Host:等前缀
+func (this *Comets) AddServer(host string, conn *net.TCPConn) {
 	this.mu.Lock()
-	this.Servers[addr] = &CometServer{mu: &sync.Mutex{}, kv: make(map[int64]struct{}, 10240), conn: conn}
+	this.Servers[host] = &CometServer{mu: &sync.Mutex{}, kv: make(map[int64]struct{}, 10240), conn: conn}
 	this.mu.Unlock()
 }
 
-func (this *Comets) RemoveServer(addr string) {
+// addr传入的是ip
+func (this *Comets) RemoveServer(host string) {
 	this.mu.Lock()
-	delete(this.Servers, addr)
+	delete(this.Servers, host)
 	this.mu.Unlock()
 }
 
@@ -75,6 +86,19 @@ func (this *Comets) RemoveUserFromHost(uid int64, host string) {
 
 func (this *Comets) PushMsg(msg []byte, host string) {
 	this.mu.Lock()
-	this.Servers[host].Push(msg)
+	server, ok := this.Servers[host]
+	if !ok {
+		glog.Errorf("unexpected uninitialized server(host: %s), %v", host, this.Servers)
+	}
+	server.Push(msg)
 	this.mu.Unlock()
+}
+
+// hostName Comets中Servers存储的字段来自tcp连接的ip，但来自redis的host名为Host:ip
+func hostName(hostName string) string {
+	n := strings.Index(hostName, HostPrefix)
+	if n != 0 {
+		return hostName
+	}
+	return hostName[len(HostPrefix):]
 }

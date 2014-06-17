@@ -24,10 +24,9 @@ func (this *Server) listen() {
 	for {
 		conn, err := this.accept()
 		if err != nil {
-			glog.Errorf("comet acceept failed:%s\n", err.Error())
+			glog.Errorf("comet accept failed:%s\n", err.Error())
 			break
 		}
-		glog.Infof("comet from %v\n", conn.RemoteAddr())
 		this.wg.Add(1)
 		go this.handleClient(conn)
 	}
@@ -46,8 +45,14 @@ func (this *Server) Start() error {
 
 func (this *Server) handleClient(conn *net.TCPConn) {
 	defer this.wg.Done()
-
 	defer conn.Close()
+	addr, err := net.ResolveTCPAddr(conn.RemoteAddr().Network(), conn.RemoteAddr().String())
+	if err != nil {
+		glog.Errorf("ResolveTCPAddr failed [%v], %v", conn.RemoteAddr(), err)
+		return
+	}
+	GComets.AddServer(addr.IP.String(), conn)
+	glog.Infof("New comet [%s]", addr.IP.String())
 	// head := make([]byte, 4)
 	// rd := bufio.NewReaderSize(conn, 1024)
 	// for {

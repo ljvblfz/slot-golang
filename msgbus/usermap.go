@@ -17,13 +17,14 @@ type UserMap struct {
 func (this *UserMap) Load(users []string, host string) {
 	for i := 0; i < len(users); i++ {
 		uid, _ := strconv.ParseInt(users[i], 10, 64)
-		hlist, ok := this.kv[uid]
+		h, ok := this.kv[uid]
 		if !ok {
-			hlist = hlist.Init()
-			this.kv[uid] = hlist
+			h = hlist.New()
+			this.kv[uid] = h
 		}
-		hlist.PushFront(host)
+		h.PushFront(host)
 	}
+	//fmt.Println(this.kv)
 }
 
 func (this *UserMap) Online(uid int64, host string) {

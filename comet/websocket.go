@@ -78,20 +78,13 @@ func websocketListen(bindAddr string) {
 		ReadTimeout: READ_TIMEOUT * time.Second,
 	}
 	err := server.ListenAndServe()
-
-	//l, err := net.Listen("tcp", bindAddr)
-	//if err != nil {
-	//	glog.Error("net.Listen(\"tcp\", \"%s\") error(%v)", bindAddr, err)
-	//	panic(err)
-	//}
-	//err := server.Serve(l)
 	if err != nil {
 		glog.Error("server.Serve(\"%s\") error(%v)", bindAddr, err)
 		panic(err)
 	}
 }
 
-func getgloginParams(req string) (id int64, mac, alias, expire, hmac string, err error) {
+func getLoginParams(req string) (id int64, mac, alias, expire string, bindedIds []int64, hmac string, err error) {
 	args := strings.Split(req, "|")
 	if len(args) != LOGIN_PARAM_COUNT {
 		err = LOGIN_PARAM_ERROR
@@ -138,9 +131,9 @@ func WsHandler(ws *websocket.Conn) {
 	// 旧程序需要成功登陆后的一次回复
 	websocket.Message.Send(ws, []byte{0})
 
-	glog.Infof("Recv glogin %s\n", reply)
+	glog.Infof("Recv login %s\n", reply)
 	// parse login params
-	id, mac, alias, expire, hmac, loginErr := getgloginParams(reply)
+	id, mac, alias, expire, bindedIds, hmac, loginErr := getLoginParams(reply)
 	if loginErr != nil {
 		glog.Errorf("[%s] params error (%s)\n", addr, reply)
 		websocket.Message.Send(ws, ParamsError)
@@ -152,19 +145,18 @@ func WsHandler(ws *websocket.Conn) {
 		websocket.Message.Send(ws, gloginFailed)
 		return
 	}
-	localHost := ws.LocalAddr().String()
-	_, err = SetUserOnline(id, localHost)
+	_, err = SetUserOnline(id, kHostName)
 	if err != nil {
 		glog.Errorf("online error [%d] %v\n", id, err)
 		return
 	}
-	s := NewSession(id, alias, mac, ws)
+	s := NewSession(id, alias, mac, bindedIds, ws)
 	gSessionList.AddSession(s)
 
 	start := time.Now().UnixNano()
 	end := int64(start + int64(time.Second))
 	for {
-		// more then 1 sec, reset the timer
+		// more than 1 sec, reset the timer
 		if end-start >= int64(time.Second) {
 			if err = setReadTimeout(ws, TIME_OUT); err != nil {
 				glog.Errorf("<%s> user_id:\"%d\" websocket.SetReadDeadline() error(%s)\n", addr, id, err)
@@ -186,11 +178,16 @@ func WsHandler(ws *websocket.Conn) {
 		} else {
 			//glog.Debugf("<%s> user_id:\"%s\" recv msg %s\n", addr, id, reply)
 			// Send to Message Bus
-			GMsgBusManager.Push2Backend([]byte(reply))
+			msg := []byte(reply)
+			toId := binary.LittleEndian.Uint64(msg[:8])
+			if !s.IsBinded(toId) {
+				// TODO 无权发送到toId，暂时不实现该校验
+			}
+			GMsgBusManager.Push2Backend(msg)
 		}
 		end = time.Now().UnixNano()
 	}
-	SetUserOffline(id, localHost)
+	SetUserOffline(id, kHostName)
 	// remove exists conn
 	gSessionList.RemoveSession(s)
 	return

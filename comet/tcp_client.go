@@ -33,6 +33,7 @@ func (this *MsgBusServer) Dail() error {
 		glog.Errorf("ResovleTcpAddr [%s] [%s]\n", this.addr, err.Error())
 		return err
 	}
+	// TODO add local addr to below(second parameter)
 	this.conn, err = net.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
 		glog.Errorf("Dail [%s] [%s]\n", this.addr, err.Error())

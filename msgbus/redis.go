@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	//"fmt"
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
 	//"strconv"
@@ -53,6 +53,15 @@ func newPool(server, password string) *redis.Pool {
 	}
 }
 
+func InitModel(addr string) error {
+	initRedix(addr)
+	hosts, err := GetAllHosts()
+	if err != nil {
+		return err
+	}
+	return GetAllUsers(hosts)
+}
+
 func initRedix(addr string) {
 	Redix = make([]*redis.Pool, _Max)
 	redisAddr = addr
@@ -80,11 +89,15 @@ func GetAllUsers(hosts []string) error {
 	r := Redix[_GetAllUsers].Get()
 	var (
 		err   error
-		users []string
+		//users []string
 	)
 	for _, host := range hosts {
-		users, _ = redis.Strings(r.Do("hkeys", fmt.Sprintf(HostUsers, host)))
-		GUserMap.Load(users, host)
+		users, e := redis.Strings(r.Do("hkeys", host))
+		if e != nil {
+			glog.Errorf("redis error %v", e)
+			continue
+		}
+		GUserMap.Load(users, hostName(host))
 	}
 	r.Close()
 	return err
@@ -125,11 +138,14 @@ func SubUserState() (<-chan []byte, error) {
 	//	glog.Infof("redis has no timeout")
 	//}
 	psc := redis.PubSubConn{Conn: r}
+	psc.Subscribe(SubKey)
 	ch := make(chan []byte, 128)
 	go func() {
-		defer r.Close()
+		defer psc.Close()
 		for {
-			switch n := psc.Receive().(type) {
+			data := psc.Receive()
+			glog.Infof("subbbbbbbbbbbbbbb: %v", data)
+			switch n := data.(type) {
 			case redis.Message:
 				glog.Infof("Message: %s %s\n", n.Channel, n.Data)
 				ch <- n.Data
@@ -146,6 +162,5 @@ func SubUserState() (<-chan []byte, error) {
 			}
 		}
 	}()
-	psc.Subscribe(SubKey)
 	return ch, nil
 }
