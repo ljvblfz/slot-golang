@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"github.com/cuixin/cloud/hlist"
 	"github.com/golang/glog"
 	"sync"
@@ -58,14 +59,25 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 	this.mu.Unlock()
 }
 
-func (this *MsgBusManager) Push2Backend(msg []byte) {
+func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 	this.mu.Lock()
-	this.curr.Value.(*MsgBusServer).Send(msg)
+	size := uint16(len(ids))
+
+	pushData := make([]byte, 2+size*8+uint16(len(msg)))
+	binary.LittleEndian.PutUint16(pushData[:2], size)
+	idsData := pushData[2 : size*8]
+	for i := uint16(0); i < size; i++ {
+		binary.LittleEndian.PutUint64(idsData[i*8:i*8+8], uint64(ids[i]))
+	}
+
+	copy(pushData[2+size*8:], msg)
+	this.curr.Value.(*MsgBusServer).Send(pushData)
 	next := this.curr.Next()
 	if next != nil {
 		this.curr = next
 	} else {
 		this.curr = this.head
 	}
+
 	this.mu.Unlock()
 }

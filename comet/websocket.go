@@ -181,12 +181,16 @@ func WsHandler(ws *websocket.Conn) {
 			// Send to Message Bus
 			msg := []byte(reply)
 			toId := binary.LittleEndian.Uint64(msg[:8])
-			if !s.IsBinded(int64(toId)) {
-				// TODO 无权发送到toId，暂时不实现该校验
+			if toId == 0 {
+				GMsgBusManager.Push2Backend([]int64{int64(toId)}, msg)
+			} else {
+				if !s.IsBinded(int64(toId)) {
+					// TODO 无权发送到toId，暂时不实现该校验
+				}
+				GMsgBusManager.Push2Backend(s.BindedIds, msg)
 			}
 			// glog.Infof("%v Recv %v [%#T] [%#T] [%v] [%v] [%v]", s.Uid, reply, reply, PING_MSG,
 			//  reply == PING_MSG, []byte(reply), []byte(PING_MSG))
-			GMsgBusManager.Push2Backend(msg)
 		}
 		end = time.Now().UnixNano()
 	}
