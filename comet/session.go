@@ -79,13 +79,18 @@ func (this *SessionList) AddSession(s *Session) *hlist.Element {
 func (this *SessionList) RemoveSession(e *hlist.Element) {
 	s, _ := e.Value.(*Session)
 	blockId := getBlockID(s.Uid)
-	s.Close()
+	if s.Conn != nil {
+		s.Close()
+	}
 	this.mu[blockId].Lock()
-	defer this.mu[blockId].Unlock()
 	list, ok := this.kv[blockId][s.Uid]
 	if ok {
 		list.Remove(e)
+		if list.Len() == 0 {
+			delete(this.kv[blockId], s.Uid)
+		}
 	}
+	this.mu[blockId].Unlock()
 }
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {
@@ -104,7 +109,7 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 				if err != nil {
 					// 不要在这里移除用户session，用户的websocket连接会处理这个情况
 					if glog.V(1) {
-						glog.V(1).Infof("[push failed] uid: %d, error: %v", session.Uid, err)
+						glog.Infof("[push failed] uid: %d, error: %v", session.Uid, err)
 					}
 				}
 			}
