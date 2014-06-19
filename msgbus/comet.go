@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"github.com/golang/glog"
 	"net"
@@ -32,11 +31,12 @@ func (this *CometServer) delUser(uid int64) {
 }
 
 func (this *CometServer) Push(msg []byte) (err error) {
-	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.LittleEndian, uint32(len(msg)))
-	binary.Write(buf, binary.LittleEndian, msg)
 	this.mu.Lock()
-	_, err = this.conn.Write(buf.Bytes())
+	// 这里不用buffer，是为了避免一次额外的内存分配，以时间换空间
+	err = binary.Write(this.conn, binary.LittleEndian, uint32(len(msg)))
+	if err == nil {
+		err = binary.Write(this.conn, binary.LittleEndian, msg)
+	}
 	this.mu.Unlock()
 	return
 }
@@ -97,7 +97,7 @@ func (this *Comets) PushMsg(msg []byte, host string) {
 	if !ok {
 		glog.Errorf("unexpected uninitialized server(host: %s), %v", host, this.Servers)
 	}
-	glog.Info(host, msg)
+	//glog.Info(host, msg)
 	server.Push(msg)
 	this.mu.Unlock()
 }

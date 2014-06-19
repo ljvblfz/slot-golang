@@ -11,7 +11,7 @@ func MainHandle(msg []byte) {
 	if err != nil {
 		glog.Errorf("Push to comet failed, [%d] %v", uid, err)
 	}
-	glog.Info(string(msg[8:]))
+	//glog.Info(string(msg[8:]))
 }
 
 func HandleClose(host string) {

@@ -106,37 +106,6 @@ func GetAllUsers(hosts []string) error {
 func SubUserState() (<-chan []byte, error) {
 	r := Redix[_SubKey].Get()
 
-	//replys, err := redis.Strings(r.Do("config", "get", "timeout"))
-	//if err != nil || len(replys) != 2 || replys[0] != "timeout" {
-	//	glog.Errorf("Redis error %v", err)
-	//	defer r.Close()
-	//	return nil, err
-	//}
-	//timeout, _ := strconv.Atoi(replys[1])
-	//if timeout > 0 {
-	//	newTimeout := int(float64(timeout) * 0.9)
-	//	if newTimeout == 0 {
-	//		newTimeout = 1
-	//	}
-	//	if newTimeout > timeout {
-	//		newTimeout = timeout
-	//	}
-	//	glog.Infof("start ping redis for %d sec", newTimeout)
-	//	go func() {
-	//		for {
-	//			select {
-	//			case <-time.After(time.Duration(newTimeout) * time.Second):
-	//				_, err := r.Do("PING")
-	//				glog.Info("ping...")
-	//				if err != nil {
-	//					return
-	//				}
-	//			}
-	//		}
-	//	}()
-	//} else {
-	//	glog.Infof("redis has no timeout")
-	//}
 	psc := redis.PubSubConn{Conn: r}
 	psc.Subscribe(SubKey)
 	ch := make(chan []byte, 128)

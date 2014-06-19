@@ -53,35 +53,14 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 	}
 	GComets.AddServer(addr.IP.String(), conn)
 	glog.Infof("New comet [%s]", addr.IP.String())
-	// head := make([]byte, 4)
-	// rd := bufio.NewReaderSize(conn, 1024)
-	// for {
-	// 	err = binary.Read(rd, binary.LittleEndian, &head)
-	// 	if err != nil {
-	// 		glog.Errorf("read tunnel failed:%s\n", err.Error())
-	// 		break
-	// 	}
-
-	// 	var data []byte
-
-	// 	// if header.Sz == 0, it's ok too
-	// 	data = make([]byte, header.Sz)
-	// 	c := 0
-	// 	for c < int(header.Sz) {
-	// 		var n int
-	// 		n, err = rd.Read(data[c:])
-	// 		if err != nil {
-	// 			Error("read tunnel failed:%s", err.Error())
-	// 			return
-	// 		}
-	// 		c += n
-	// 	}
-
-	// 	self.outputCh <- &TunnelPayload{header.Linkid, data}
-	// }
 	header := make([]byte, HEADER_SIZE)
 	buf := make([]byte, PAYLOAD_MAX)
 	for {
+		// TODO 这里有一个可优化的空间，在接受数据之前创建一个buffer，前四字节是长度，后面
+		// 该长度的字节是内容，然后将这个buffer整体传给后续的处理程序，后续的转发就可以直接
+		// 使用该buffer转发内容，不需要再单独拼接长度头和内容，或者调用两次发送，这样避免了
+		// 了多余的一次内存分配或多余的一次系统调用
+
 		// read header : 4-bytes
 		n, err := io.ReadFull(conn, header)
 		if n == 0 && err == io.EOF {

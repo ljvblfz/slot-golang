@@ -12,6 +12,8 @@ func main() {
 	rh := flag.String("rh", "193.168.1.224:6379", "Redis地址")
 	lhost := flag.String("addr", "localhost:9923", "设置MsgBus监听服务器端口地址")
 	flag.Parse()
+
+	InitUserMap()
 	err := InitModel(*rh)
 	if err != nil {
 		glog.Fatal(err)
