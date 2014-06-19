@@ -14,6 +14,7 @@ var (
 func main() {
 	rh := flag.String("rh", "193.168.1.224:6379", "Redis地址")
 	lHost := flag.String("ports", ":1234,:1235", "监听的websocket地址")
+	zkHosts := flag.String("zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK的地址,多个地址用逗号分割")
 	flag.StringVar(&gLocalAddr, "lip", "", "comet服务器本地地址")
 	flag.Parse()
 
@@ -22,11 +23,10 @@ func main() {
 	}
 
 	initRedix(*rh)
-	go InitZK([]string{"193.168.1.221", "193.168.1.222", "193.168.1.223"})
+	go InitZK(strings.Split(*zkHosts, ","))
 
 	gSessionList = InitSessionList()
-	hostList := strings.Split(*lHost, ",")
-	StartHttp(hostList)
+	StartHttp(strings.Split(*lHost, ","))
 
 	handleSignal(func() {
 		CloseZK()
