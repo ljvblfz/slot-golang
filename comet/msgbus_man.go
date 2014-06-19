@@ -65,7 +65,7 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 
 	pushData := make([]byte, 2+size*8+uint16(len(msg)))
 	binary.LittleEndian.PutUint16(pushData[:2], size)
-	idsData := pushData[2 : size*8]
+	idsData := pushData[2 : 2+size*8]
 	for i := uint16(0); i < size; i++ {
 		binary.LittleEndian.PutUint64(idsData[i*8:i*8+8], uint64(ids[i]))
 	}
