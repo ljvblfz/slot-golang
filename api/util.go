@@ -129,7 +129,7 @@ func GenerateDeviceKey(mac string, id int64) string {
 	h := hmac.New(sha256.New, kDeviceSalt)
 	h.Reset()
 	h.Write([]byte(mac))
-	return fmt.Sprintf("%x|%s", id, base64.StdEncoding.EncodeToString(h.Sum([]byte("bc"))))
+	return fmt.Sprintf("%x|%s", id, base64.StdEncoding.EncodeToString(h.Sum(nil)))
 }
 
 func extractDeviceId(cookie string) int64 {
