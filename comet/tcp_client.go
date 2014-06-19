@@ -27,15 +27,19 @@ func (this *MsgBusServer) Dail() error {
 	glog.Infof("Dail to [%s]->[%s]\n", this.localAddr, this.remoteAddr)
 	var (
 		err           error
-		tcpLocalAddr  *net.TCPAddr
+		tcpLocalAddr  net.TCPAddr
 		tcpRemoteAddr *net.TCPAddr
 	)
 
-	tcpLocalAddr, err = net.ResolveTCPAddr("tcp", this.localAddr)
-	if err != nil {
-		glog.Errorf("Resovle Local TcpAddr [%s] [%s]\n", this.localAddr, err.Error())
-		return err
+	tcpLocalAddr.IP = net.ParseIP(this.localAddr)
+	if tcpLocalAddr.IP == nil {
+		glog.Fatalf("Resovle Local TcpAddr [%s] [%s]\n", this.localAddr, err.Error())
 	}
+	//tcpLocalAddr, err = net.ResolveTCPAddr("tcp", this.localAddr)
+	//if err != nil {
+	//	glog.Errorf("Resovle Local TcpAddr [%s] [%s]\n", this.localAddr, err.Error())
+	//	return err
+	//}
 
 	tcpRemoteAddr, err = net.ResolveTCPAddr("tcp", this.remoteAddr)
 	if err != nil {
@@ -43,7 +47,7 @@ func (this *MsgBusServer) Dail() error {
 		return err
 	}
 	// TODO add local addr to below(second parameter)
-	this.conn, err = net.DialTCP("tcp", tcpLocalAddr, tcpRemoteAddr)
+	this.conn, err = net.DialTCP("tcp", &tcpLocalAddr, tcpRemoteAddr)
 	if err != nil {
 		glog.Errorf("Dail [%s]->[%s] [%s]\n", this.localAddr, this.remoteAddr, err.Error())
 		return err

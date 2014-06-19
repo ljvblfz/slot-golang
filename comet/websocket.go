@@ -151,6 +151,7 @@ func WsHandler(ws *websocket.Conn) {
 		glog.Errorf("online error [%d] %v\n", id, err)
 		return
 	}
+
 	s := NewSession(id, alias, mac, bindedIds, ws)
 	selement := gSessionList.AddSession(s)
 
@@ -195,7 +196,6 @@ func WsHandler(ws *websocket.Conn) {
 		end = time.Now().UnixNano()
 	}
 	SetUserOffline(id, gLocalAddr)
-	// remove exists conn
 	gSessionList.RemoveSession(selement)
 	return
 }

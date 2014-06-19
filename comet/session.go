@@ -3,6 +3,7 @@ package main
 import (
 	"code.google.com/p/go.net/websocket"
 	"github.com/cuixin/cloud/hlist"
+	"github.com/golang/glog"
 	"sync"
 )
 
@@ -80,10 +81,11 @@ func (this *SessionList) RemoveSession(e *hlist.Element) {
 	blockId := getBlockID(s.Uid)
 	s.Close()
 	this.mu[blockId].Lock()
-	if list, ok := this.kv[blockId][s.Uid]; ok {
+	defer this.mu[blockId].Unlock()
+	list, ok := this.kv[blockId][s.Uid]
+	if ok {
 		list.Remove(e)
 	}
-	this.mu[blockId].Unlock()
 }
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {
@@ -100,8 +102,10 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 			} else {
 				err := websocket.Message.Send(session.Conn, data)
 				if err != nil {
-					session.Close()
-					list.Remove(e)
+					// 不要在这里移除用户session，用户的websocket连接会处理这个情况
+					if glog.V(1) {
+						glog.V(1).Infof("[push failed] uid: %d, error: %v", session.Uid, err)
+					}
 				}
 			}
 		}
