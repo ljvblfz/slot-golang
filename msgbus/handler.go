@@ -7,7 +7,7 @@ import (
 
 func MainHandle(msg []byte) {
 	toSize := binary.LittleEndian.Uint16(msg[:2])
-	toIds := msg[2 : toSize*8]
+	toIds := msg[2 : 2+toSize*8]
 	data := msg[2+toSize*8:]
 	for i := uint16(0); i < toSize; i++ {
 		uid := binary.LittleEndian.Uint64(toIds[i*8 : i*8+8])
