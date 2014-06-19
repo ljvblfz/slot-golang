@@ -66,7 +66,7 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 		if n == 0 && err == io.EOF {
 			break
 		} else if err != nil {
-			glog.Errorf("[%s] error receiving header:%s\n", conn.RemoteAddr().String, err)
+			glog.Errorf("[%s] error receiving header:%s\n", conn.RemoteAddr().String(), err)
 			break
 		}
 

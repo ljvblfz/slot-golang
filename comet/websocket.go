@@ -80,7 +80,7 @@ func websocketListen(bindAddr string) {
 	}
 	err := server.ListenAndServe()
 	if err != nil {
-		glog.Error("server.Serve(\"%s\") error(%v)", bindAddr, err)
+		glog.Errorf("server.Serve(\"%s\") error(%v)", bindAddr, err)
 		panic(err)
 	}
 }
@@ -132,7 +132,7 @@ func WsHandler(ws *websocket.Conn) {
 	// 旧程序需要成功登陆后的一次回复
 	websocket.Message.Send(ws, []byte{0})
 
-	glog.Infof("Recv login %s\n", reply)
+	//glog.Infof("Recv login %s\n", reply)
 	// parse login params
 	id, mac, alias, expire, bindedIds, hmac, loginErr := getLoginParams(reply)
 	if loginErr != nil {
@@ -142,7 +142,7 @@ func WsHandler(ws *websocket.Conn) {
 	}
 	// check login
 	if !isAuth(id, mac, alias, expire, hmac) {
-		glog.Errorf("[%s] auth failed:\"%s\" error(%s)\n", addr, reply)
+		glog.Errorf("[%s] auth failed:\"%s\"\n", addr, reply)// error(%s)
 		websocket.Message.Send(ws, LoginFailed)
 		return
 	}
@@ -168,7 +168,7 @@ func WsHandler(ws *websocket.Conn) {
 		}
 
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
-			glog.Errorf("<%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
+			//glog.Errorf("<%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
 			break
 		}
 		if reply == PING_MSG {

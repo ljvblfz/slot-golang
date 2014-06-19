@@ -27,7 +27,7 @@ func TestEncodeAndDecode(t *testing.T) {
 		idSrc := v.id
 		expireSrc := v.expire
 
-		cond := fmt.Sprintf("id=%s, expire=%d", idSrc, expireSrc)
+		cond := fmt.Sprintf("id=%d, expire=%d", idSrc, expireSrc)
 
 		res, err := Encode(idSrc, expireSrc)
 		if err != nil {
