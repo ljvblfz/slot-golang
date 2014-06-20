@@ -10,7 +10,7 @@ import (
 
 var (
 	BlockSize int64 = 128
-	MapSize = 10240
+	MapSize         = 10240
 
 	GUserMap *UserMap
 )
@@ -91,6 +91,28 @@ func (this *UserMap) Offline(uid int64, host string) {
 	this.mu[bn].Unlock()
 }
 
+func (this *UserMap) GetUserComet(uid int64) (*hlist.Hlist, error) {
+	bn := getBlockID(uid)
+	this.mu[bn].Lock()
+	hosts, ok := this.kv[bn][uid]
+	if !ok {
+		this.mu[bn].Unlock()
+		return nil, fmt.Errorf("Cannot found %d comet", uid)
+	}
+	newList := hlist.New()
+	for e := hosts.Front(); e != nil; e = e.Next() {
+		// glog.Info("UID", uid, e.Value)
+		newList.PushFront(e.Value)
+	}
+	this.mu[bn].Unlock()
+	return newList, nil
+}
+
+func (this *UserMap) BroadToComet(addr string, msg []byte) error {
+	err := GComets.PushMsg(msg, addr)
+	return err
+}
+
 func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 	bn := getBlockID(uid)
 	this.mu[bn].Lock()
@@ -100,16 +122,16 @@ func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 		this.mu[bn].Unlock()
 		return fmt.Errorf("%d not found", uid)
 	}
-
+	var err error
 	for e := hostlist.Front(); e != nil; e = e.Next() {
 		if h, ok := e.Value.(string); !ok {
 			// TODO error log
 			this.mu[bn].Unlock()
 			return fmt.Errorf("wrong type error [%v] uid[%d]", e.Value, uid)
 		} else {
-			GComets.PushMsg(msg, h)
+			err = GComets.PushMsg(msg, h)
 		}
 	}
 	this.mu[bn].Unlock()
-	return nil
+	return err
 }
