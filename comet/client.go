@@ -10,7 +10,7 @@ func HandleMsg(msg []byte) {
 		glog.Fatalf("Invalidate msg length: [%d bytes] %v", len(msg), msg)
 	}
 	size := binary.LittleEndian.Uint16(msg[:2])
-	msg = msg[:2]
+	msg = msg[2:]
 	data := msg[size*8:]
 	for i := uint16(0); i < size; i++ {
 		start := i * 8
