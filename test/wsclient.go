@@ -41,17 +41,20 @@ var (
 	_LocalHost    string
 	_SendInterval int
 	_StartId      int64
+	_ToId         string
 	_StatPort     string
 	_SN           string
 )
 
 func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
-	flag.IntVar(&_Count, "n", 4096, "连接数的大小，最大不能超过64511")
+	flag.IntVar(&_Count, "n", 1, "(暂时无效)连接数的大小，最大不能超过64511")
 	flag.StringVar(&_Host, "h", "ws://127.0.0.1:1234/ws", "指定远端服务器WebSocket地址")
 	flag.StringVar(&_LocalHost, "l", "127.0.0.1", "指定本地地址,不要设置端口号,端口号是自动从1024+!")
 	flag.IntVar(&_SendInterval, "i", 30, "发送数据的频率,单位秒")
-	flag.Int64Var(&_StartId, "s", 1, "设置id的初始值自动增加1")
+	//flag.Int64Var(&_StartId, "s", 1, "设置id的初始值自动增加1")
+	flag.Int64Var(&_StartId, "id", 1, "本客户端")
+	flag.StringVar(&_ToId, "to_id", "", "发送到id,&符连接, 如: 2&3")
 	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
 	flag.StringVar(&_SN, "sn", "client1", "设置客户端sn")
 }
@@ -90,12 +93,13 @@ func packData(id int64, data []byte) []byte {
 
 func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, bindedIds []int64, hmac string) {
 	var ids string
-	for k, v := range bindedIds {
-		if k != 0 {
-			ids += "&"
-		}
-		ids += fmt.Sprintf("%d", v)
-	}
+	//for k, v := range bindedIds {
+	//	if k != 0 {
+	//		ids += "&"
+	//	}
+	//	ids += fmt.Sprintf("%d", v)
+	//}
+	ids = _ToId
 	buf := fmt.Sprintf("0|%d|%s|%s|%d|%s|%s", id, mac, alias, timestamp, ids, hmac)
 	c.conn.Write([]byte(buf))
 }
@@ -202,6 +206,7 @@ func main() {
 
 	sysc := make(chan os.Signal, 1)
 	signal.Notify(sysc, os.Interrupt, os.Kill)
+	_Count = 1
 	for i := 0; i < _Count; i++ {
 		go func(num int) {
 			//localAddr.Port = 1024 + num
