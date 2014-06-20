@@ -16,17 +16,17 @@ import (
 	"os"
 	"os/signal"
 	//"strings"
+	"github.com/golang/glog"
 	"sync"
 	"sync/atomic"
 	"time"
-	"github.com/golang/glog"
 )
 
 var (
 	RecvCount int
 
 	// loginCount 在线数的统计
-	lock = sync.Mutex{}
+	lock       = sync.Mutex{}
 	loginCount int
 
 	// queryCount 请求数的计数字段
@@ -148,9 +148,9 @@ func getQueryCount(reset bool) int64 {
 // 状态信息
 
 type statusInfo struct {
-	AppStartTime	time.Time	// 应用启动时间
-	Connections		int			// 当前连接数
-	Querys			int64		// 当前已受到的总请求数
+	AppStartTime time.Time // 应用启动时间
+	Connections  int       // 当前连接数
+	Querys       int64     // 当前已受到的总请求数
 }
 
 func statusHandler(w http.ResponseWriter, r *http.Request) {
@@ -252,7 +252,7 @@ func main() {
 							c.conn.Write([]byte("p"))
 						case <-time.After(time.Duration(_SendInterval) * time.Second):
 							incrQueryCount()
-							sendData(c, id+1, []byte(fmt.Sprintf("%s(%d->%d) %d", _SN, id, id+1, index)))
+							sendData(c, 0, []byte(fmt.Sprintf("%s(%d->%d) %d", _SN, id, id, index)))
 							index++
 						case msg, ok := <-msgChan:
 							if !ok {
@@ -262,7 +262,7 @@ func main() {
 							if string(msg) == "p" {
 								c.conn.Write(msg)
 							} else {
-								sendData(c, id, msg)
+								sendData(c, 0, msg)
 							}
 						case <-quitChan:
 							return
