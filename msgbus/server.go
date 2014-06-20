@@ -74,6 +74,10 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 		size := binary.LittleEndian.Uint32(header)
 		if size > PAYLOAD_MAX {
 			// log
+			glog.Error("Overflow the max size", size, PAYLOAD_MAX)
+			// 超过最大长度不应该出现这样的问题，一旦出现只能关闭服务器，或者忽略这个消息内容
+			// 如果忽略消息内容，应该将内容读取完毕再break
+
 			break
 		}
 
