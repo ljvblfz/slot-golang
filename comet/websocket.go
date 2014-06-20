@@ -21,14 +21,14 @@ func homeHandle(w http.ResponseWriter, r *http.Request) {
 
 const (
 	killedByOtherDevice  = "Another device login %d"
-	wrongLoginParams    = "Wrong login params %s"
-	wrongLoginType      = "Wrong login type %s"
-	wrongLoginDevice    = "Wrong login deviceId %s"
-	wrongLoginTimestamp = "Wrong login timestamp %s"
-	userLoginTimeout    = "User %d login timeout"
+	wrongLoginParams     = "Wrong login params %s"
+	wrongLoginType       = "Wrong login type %s"
+	wrongLoginDevice     = "Wrong login deviceId %s"
+	wrongLoginTimestamp  = "Wrong login timestamp %s"
+	userLoginTimeout     = "User %d login timeout"
 	userReconnectTimeout = "Reconnect timeout %d"
 	wrongMd5Check        = "User %d has wrong md5"
-	wrongLoginTimeout   = "Wrong login %d timeout %s"
+	wrongLoginTimeout    = "Wrong login %d timeout %s"
 
 	LOGIN_PARAM_COUNT = 7
 	READ_TIMEOUT      = 10
@@ -43,16 +43,16 @@ const (
 var (
 	LOGIN_PARAM_ERROR = errors.New("Login params parse error!")
 	ParamsError       = &ErrorCode{2001, "登陆参数错误"}
-	LoginFailed      = &ErrorCode{2002, "登陆失败"}
+	LoginFailed       = &ErrorCode{2002, "登陆失败"}
 
 	AckLoginOK             = []byte{byte(0)} // 登陆成功
-	AckWrongParams          = []byte{byte(1)} // 错误的登陆参数
+	AckWrongParams         = []byte{byte(1)} // 错误的登陆参数
 	AckWrongLoginType      = []byte{byte(2)} // 登陆类型解析错误
 	AckWrongLoginDevice    = []byte{byte(3)} // 登陆设备ID解析错误
 	AckWrongLoginTimestamp = []byte{byte(4)} // 登陆时间戳解析错误
 	AckLoginTimeout        = []byte{byte(5)} // 登陆超时
-	AckWrongMD5             = []byte{byte(6)} // 错误的md5
-	AckOtherglogoned        = []byte{byte(7)} // 您已在别处登陆
+	AckWrongMD5            = []byte{byte(6)} // 错误的md5
+	AckOtherglogoned       = []byte{byte(7)} // 您已在别处登陆
 	AckWrongLoginTimeout   = []byte{byte(8)} // 超时解析错误
 )
 
@@ -152,7 +152,7 @@ func WsHandler(ws *websocket.Conn) {
 	}
 	// check login
 	if !isAuth(id, mac, alias, expire, hmac) {
-		glog.Errorf("[%s] auth failed:\"%s\"\n", addr, reply)// error(%s)
+		glog.Errorf("[%s] auth failed:\"%s\"\n", addr, reply) // error(%s)
 		websocket.Message.Send(ws, LoginFailed)
 		return
 	}
@@ -192,7 +192,7 @@ func WsHandler(ws *websocket.Conn) {
 			// Send to Message Bus
 			msg := []byte(reply)
 			toId := binary.LittleEndian.Uint64(msg[:8])
-			if toId == 0 {
+			if toId != 0 {
 				GMsgBusManager.Push2Backend([]int64{int64(toId)}, msg)
 			} else {
 				if !s.IsBinded(int64(toId)) {
