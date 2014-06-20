@@ -30,7 +30,7 @@ const (
 	wrongMd5Check        = "User %d has wrong md5"
 	wrongLoginTimeout   = "Wrong login %d timeout %s"
 
-	LOGIN_PARAM_COUNT = 6
+	LOGIN_PARAM_COUNT = 7
 	READ_TIMEOUT      = 10
 	PING_MSG          = "p"
 	PONG_MSG          = "P"
@@ -99,7 +99,17 @@ func getLoginParams(req string) (id int64, mac, alias, expire string, bindedIds 
 	mac = args[2]
 	alias = args[3]
 	expire = args[4]
-	hmac = args[5]
+	ids := strings.Split(args[5], "&")
+	var bid int64
+	for n, _ := range ids {
+		bid, err = strconv.ParseInt(ids[n], 10, 64)
+		if err != nil {
+			return
+		}
+		bindedIds = append(bindedIds, bid)
+	}
+
+	hmac = args[6]
 	return
 }
 
@@ -136,7 +146,7 @@ func WsHandler(ws *websocket.Conn) {
 	// parse login params
 	id, mac, alias, expire, bindedIds, hmac, loginErr := getLoginParams(reply)
 	if loginErr != nil {
-		glog.Errorf("[%s] params error (%s)\n", addr, reply)
+		glog.Errorf("[%s] params (%s) error (%v)\n", addr, reply, loginErr)
 		websocket.Message.Send(ws, ParamsError)
 		return
 	}

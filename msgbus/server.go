@@ -59,7 +59,7 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 		// TODO 这里有一个可优化的空间，在接受数据之前创建一个buffer，前四字节是长度，后面
 		// 该长度的字节是内容，然后将这个buffer整体传给后续的处理程序，后续的转发就可以直接
 		// 使用该buffer转发内容，不需要再单独拼接长度头和内容，或者调用两次发送，这样避免了
-		// 了多余的一次内存分配或多余的一次系统调用
+		// 多余的一次内存分配或多余的一次系统调用
 
 		// read header : 4-bytes
 		n, err := io.ReadFull(conn, header)

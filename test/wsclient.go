@@ -15,6 +15,7 @@ import (
 	//"net/url"
 	"os"
 	"os/signal"
+	//"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -87,8 +88,15 @@ func packData(id int64, data []byte) []byte {
 // 	return err
 // }
 
-func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, hmac string) {
-	buf := fmt.Sprintf("0|%d|%s|%s|%d|%s", id, mac, alias, timestamp, hmac)
+func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, bindedIds []int64, hmac string) {
+	var ids string
+	for k, v := range bindedIds {
+		if k != 0 {
+			ids += "&"
+		}
+		ids += fmt.Sprintf("%d", v)
+	}
+	buf := fmt.Sprintf("0|%d|%s|%s|%d|%s|%s", id, mac, alias, timestamp, ids, hmac)
 	c.conn.Write([]byte(buf))
 }
 
@@ -213,7 +221,7 @@ func main() {
 			alias := fmt.Sprintf("alias%d", id)
 			timestamp := uint32(time.Now().Unix())
 			hmac := "whatever"
-			sendLogin(c, id, mac, alias, timestamp, hmac)
+			sendLogin(c, id, mac, alias, timestamp, []int64{1, 2}, hmac)
 
 			incrQueryCount()
 			ack, err := readData(c)
@@ -239,7 +247,7 @@ func main() {
 							c.conn.Write([]byte("p"))
 						case <-time.After(time.Duration(_SendInterval) * time.Second):
 							incrQueryCount()
-							sendData(c, id, []byte(fmt.Sprintf("%s-%d", _SN, index)))
+							sendData(c, id+1, []byte(fmt.Sprintf("%s(%d->%d) %d", _SN, id, id+1, index)))
 							index++
 						case msg, ok := <-msgChan:
 							if !ok {
