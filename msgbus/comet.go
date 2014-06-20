@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"fmt"
 	"github.com/golang/glog"
 	"net"
 	"strings"
@@ -91,15 +92,19 @@ func (this *Comets) RemoveUserFromHost(uid int64, host string) {
 	this.mu.Unlock()
 }
 
-func (this *Comets) PushMsg(msg []byte, host string) {
+func (this *Comets) PushMsg(msg []byte, host string) (err error) {
 	this.mu.Lock()
 	server, ok := this.Servers[host]
 	if !ok {
 		glog.Errorf("unexpected uninitialized server(host: %s), %v", host, this.Servers)
+		this.mu.Unlock()
+		return fmt.Errorf("cannot find %s", host)
+	} else {
+		//glog.Info(host, msg)
+		err = server.Push(msg)
 	}
-	//glog.Info(host, msg)
-	server.Push(msg)
 	this.mu.Unlock()
+	return err
 }
 
 // hostName Comets中Servers存储的字段来自tcp连接的ip，但来自redis的host名为Host:ip
