@@ -26,11 +26,19 @@ func onMsgBusCloseEvent(s *MsgBusServer) {
 }
 
 func (this *MsgBusManager) Online(remoteAddr string) {
+	this.mu.Lock()
+	for e := this.list.Front(); e != nil; e = e.Next() {
+		msgbus, _ := e.Value.(*MsgBusServer)
+		if msgbus.conn.RemoteAddr().String() == remoteAddr {
+			this.mu.Unlock()
+			return
+		}
+	}
+
 	g := NewMsgBusServer(gLocalAddr, remoteAddr)
 	if g.Dail() == nil {
 		go g.Reciver(onMsgBusCloseEvent)
 	}
-	this.mu.Lock()
 	e := this.list.PushFront(g)
 	if this.list.Len() == 1 {
 		this.head = e
