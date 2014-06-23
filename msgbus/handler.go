@@ -13,7 +13,7 @@ func MainHandle(msg []byte) {
 	data := msg[2+idsSize*8:]
 	if idsSize == 1 {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
-		err := GUserMap.PushToComet(uid, data)
+		err := GUserMap.PushToComet(uid, msg)
 		if err != nil {
 			glog.Errorf("Push to comet failed, [%d] %v", uid, err)
 		}
