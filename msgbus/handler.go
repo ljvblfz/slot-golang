@@ -49,6 +49,7 @@ func MainHandle(msg []byte) {
 		for e := v.Front(); e != nil; e = e.Next() {
 			id, _ := e.Value.(int64)
 			binary.LittleEndian.PutUint64(pushData[2+i*8:2+i*8+8], uint64(id))
+			i++
 		}
 		copy(pushData[2+vSize*8:], data)
 		err := GUserMap.BroadToComet(k, pushData)
