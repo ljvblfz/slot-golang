@@ -54,7 +54,7 @@ func init() {
 	flag.IntVar(&_SendInterval, "i", 30, "发送数据的频率,单位秒")
 	//flag.Int64Var(&_StartId, "s", 1, "设置id的初始值自动增加1")
 	flag.Int64Var(&_StartId, "id", 1, "本客户端")
-	flag.StringVar(&_ToId, "to_id", "", "发送到id,&符连接, 如: 2&3")
+	flag.StringVar(&_ToId, "to_id", "", "发送到id,逗号\",\"符连接, 如: 2,3")
 	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
 	flag.StringVar(&_SN, "sn", "client1", "设置客户端sn")
 }
@@ -211,7 +211,7 @@ func main() {
 		go func(num int) {
 			//localAddr.Port = 1024 + num
 			// log.Println(localAddr, localAddr.Network())
-			ws, err := websocket.Dial(_Host, websocket.SupportedProtocolVersion, "http://localhost:1234")
+			ws, err := websocket.Dial(_Host, websocket.SupportedProtocolVersion, "http://localhost")
 			if err != nil {
 				glog.Infof("websocket error [%s] %v", _Host, err)
 				return
@@ -252,7 +252,7 @@ func main() {
 							c.conn.Write([]byte("p"))
 						case <-time.After(time.Duration(_SendInterval) * time.Second):
 							incrQueryCount()
-							sendData(c, 0, []byte(fmt.Sprintf("%s(%d->%d) %d", _SN, id, id, index)))
+							sendData(c, 0, []byte(fmt.Sprintf("(<-%d from)", id)))
 							index++
 						case msg, ok := <-msgChan:
 							if !ok {
@@ -285,7 +285,7 @@ func main() {
 						//}()
 					} else {
 						rc++
-						glog.Infof("[msg] %d receive: %s, index: %d\n", id, strMsg, rc)
+						glog.Infof("[msg] %d receive: %s\n", id, strMsg)
 					}
 				}
 			} else {

@@ -99,7 +99,7 @@ func getLoginParams(req string) (id int64, mac, alias, expire string, bindedIds 
 	mac = args[2]
 	alias = args[3]
 	expire = args[4]
-	ids := strings.Split(args[5], "&")
+	ids := strings.Split(args[5], ",")
 	var bid int64
 	for n, _ := range ids {
 		bid, err = strconv.ParseInt(ids[n], 10, 64)
