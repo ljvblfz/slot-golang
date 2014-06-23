@@ -150,7 +150,9 @@ func VerifyDeviceKey(mac string, cookie string) bool {
 	if id <= 0 {
 		return false
 	}
-	return GenerateDeviceKey(mac, id) == cookie
+	s := GenerateDeviceKey(mac, id)
+	fmt.Printf("%s == %s ? %v", s, cookie, s == cookie)
+	return s == cookie
 }
 
 // 依据时间尽可能生成顺序增长的ID，但仍有重复的几率，需要测试

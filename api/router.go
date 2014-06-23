@@ -21,9 +21,9 @@ const (
 	JKStatusMsg		= "statusMsg"
 	JKUserId		= "userId"
 	JKCookie		= "cookie"
-	JKKey			= "wbKey"
 	JKUrlOrigin		= "urlOrigin"
-	JKWebsocketAddr = "websocketAddr"
+	JKKey			= "proxyKey"
+	JKWebsocketAddr = "proxyAddr"
 	JKMac			= "mac"
 	JKSn			= "sn"
 	JKEmail			= "email"
@@ -231,12 +231,15 @@ func apiDeviceRegister(w http.ResponseWriter, r *http.Request) {
 	data := make(map[string]interface{})
 
 	if VerifySn(sn) {
+		if glog.V(1) {
+			glog.Infof("[DeviceRegitser trace] mac: %s, sn: %s", mac, sn)
+		}
 		d, apiErr := RegisterDevice(mac, sn)
 
 		if apiErr == nil {
 			w.WriteHeader(http.StatusOK)
 			data[JKStatus] = ErrOk
-			data[JKCookie] = d.Key
+			data[JKCookie] = strings.Replace(d.Key, "+", "%2b", -1)
 			data[JKKey] = GenerateKey(d.Id, time.Now().UnixNano(), *gCookieExpire)
 		} else {
 			w.WriteHeader(http.StatusOK)

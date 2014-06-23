@@ -204,16 +204,16 @@ type Device struct {
 	BindedUsers		[]int64
 }
 
-func NewDeviceId() (int64, *ApiErr) {
-	c := gPool.Get()
-	defer c.Close()
-
-	id, err := redis.Int64(c.Do("incr", nsDeviceNewId))
-	if err != nil {
-		return 0, NewError(ErrRedisError, err)
-	}
-	return id, nil
-}
+//func NewDeviceId() (int64, *ApiErr) {
+//	c := gPool.Get()
+//	defer c.Close()
+//
+//	id, err := redis.Int64(c.Do("incr", nsDeviceNewId))
+//	if err != nil {
+//		return 0, NewError(ErrRedisError, err)
+//	}
+//	return id, nil
+//}
 
 func (d *Device) GetIdByMac() *ApiErr {
 	if len(d.Mac) == 0 {
@@ -237,7 +237,20 @@ func (d *Device) Register() *ApiErr {
 	c := gPool.Get()
 	defer c.Close()
 
-	err := c.Send("hsetnx", nsDeviceMacToId, d.Mac, d.Id)
+	id, err := redis.Int64(c.Do("hget", nsDeviceMacToId, d.Mac))
+	if err == nil && id > 0 {
+		d.Id = id
+		return NewError(ErrMacRegistered, nil)
+	}
+
+	newId, err := redis.Int64(c.Do("incr", nsDeviceNewId))
+	if err != nil {
+		return NewError(ErrRedisError, err)
+	}
+
+	d.Id = newId
+
+	err = c.Send("hsetnx", nsDeviceMacToId, d.Mac, d.Id)
 	if err != nil {
 		return NewError(ErrRedisError, err)
 	}
@@ -245,7 +258,7 @@ func (d *Device) Register() *ApiErr {
 	if err != nil {
 		return NewError(ErrRedisError, err)
 	}
-	err = c.Send("hset", nsDeviceSn, d.Id, d.Mac)
+	err = c.Send("hset", nsDeviceSn, d.Id, d.Sn)
 	if err != nil {
 		return NewError(ErrRedisError, err)
 	}

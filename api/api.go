@@ -61,28 +61,37 @@ func GetUserDevices(uid int64) ([]int64, *ApiErr) {
 
 // RegisterDevice 设备注册
 func RegisterDevice(mac string, sn string) (*Device, *ApiErr) {
-	if len(mac) == 0 || len(sn) == 0 {
+	if len(mac) == 0 {
 		return nil, NewError(ErrInvalidMac, nil)
 	}
-
-	newId, err := NewDeviceId()
-	if err != nil {
-		return nil, err
+	if len(sn) == 0 {
+		return nil, NewError(ErrInvalidSn, nil)
 	}
-	key := GenerateDeviceKey(mac, newId)
+
+	//newId, err := NewDeviceId()
+	//if err != nil {
+	//	return nil, err
+	//}
 	d := &Device{
-		Id: newId,
+		//Id: newId,
 		Mac: mac,
 		Sn: sn,
-		Key: key,
 		RegisterTime: time.Now(),
 	}
+
 	glog.Infof("[RegisterDevice] mac: %s, sn: %s\n", mac, sn)
 	apiErr := d.Register()
 	if apiErr != nil {
+		// 如果是重复注册，会把原有第一次注册的id取出来
+		if apiErr.Code == ErrMacRegistered && d.Id > 0 {
+			d.Key = GenerateDeviceKey(mac, d.Id)
+			glog.Infof("[RegisterDevice repeat] mac: %s, sn: %s", mac, sn)
+			return d, nil
+		}
 		glog.Infof("[RegisterDevice failed] mac: %s, sn: %s, error: %v", mac, sn, apiErr)
 		return nil, apiErr
 	}
+	d.Key = GenerateDeviceKey(mac, d.Id)
 	return d, apiErr
 }
 

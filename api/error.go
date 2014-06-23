@@ -23,6 +23,7 @@ const (
 	ErrServerWrong1		// Shadow is empty
 
 	// Add new code here:
+	ErrMacRegistered
 )
 
 // ApiErr 预定义的错误类型，用于具体错误的定义和描述
