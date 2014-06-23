@@ -74,7 +74,7 @@ func CreateTempW(conn *zk.Conn, fpath, data string, watchFunc func(bool, zk.Even
 	return nil
 }
 
-// 获取节点信息，并监听实践，如果一直监听，必须自己实现
+// 获取节点信息，并监听事件，如果一直监听，必须自己实现
 func GetNodesW(conn *zk.Conn, path string) ([]string, <-chan zk.Event, error) {
 	nodes, stat, watch, err := conn.ChildrenW(path)
 	if err != nil {
