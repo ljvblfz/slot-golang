@@ -15,7 +15,7 @@ func InitZK(zkAddrs []string) {
 		err   error
 		conn  *zookeeper.Conn
 		addr  string
-		event <-chan zookeeper.Event
+		watch <-chan zookeeper.Event
 	)
 	conn, err = zk.Connect(zkAddrs, time.Second)
 	if err != nil {
@@ -23,23 +23,31 @@ func InitZK(zkAddrs []string) {
 	}
 	glog.Infof("Connect zk[%v] OK!", zkAddrs)
 	for {
-		nodes, event, err = zk.GetNodesW(conn, "/MsgBusServers")
-		if err != nil {
+		nodes, watch, err = zk.GetNodesW(conn, "/MsgBusServers")
+		if err == zookeeper.ErrNoNode || err == zookeeper.ErrNoChildrenForEphemerals {
+			glog.Errorln(err)
+			time.Sleep(time.Second)
+			continue
+		} else if err != nil {
 			glog.Errorln(err)
 			time.Sleep(time.Second)
 			continue
 		}
+		var addrs []string = make([]string, 0, len(nodes))
 		for _, n := range nodes {
 			addr, err = zk.GetNodeData(conn, "/MsgBusServers/"+n)
 			if err != nil {
-				glog.Fatal(err)
+				glog.Errorf("[%s] cannot get", addr)
+				continue
+				// glog.Fatal(err)
 			}
+			addrs = append(addrs, addr)
+		}
+		for _, addr := range addrs {
 			GMsgBusManager.Online(addr)
 		}
-
-		for e := range event {
-			glog.Infof("Got Event %v", e)
-		}
+		e := <-watch
+		glog.Infof("zk receive an event %v", e)
 	}
 	zkConn = conn
 }
