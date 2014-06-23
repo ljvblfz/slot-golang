@@ -10,24 +10,36 @@ import (
 var zkConn *zookeeper.Conn
 
 func InitZK(zkAddrs []string) {
-	conn, err := zk.Connect(zkAddrs, time.Second)
+	var (
+		nodes []string
+		err   error
+		conn  *zookeeper.Conn
+		addr  string
+		event <-chan zookeeper.Event
+	)
+	conn, err = zk.Connect(zkAddrs, time.Second)
 	if err != nil {
 		glog.Fatal(err)
 	}
 	glog.Infof("Connect zk[%v] OK!", zkAddrs)
-	nodes, event, nerr := zk.GetNodesW(conn, "/MsgBusServers")
-	if nerr != nil {
-		glog.Fatal(nerr)
-	}
-	for _, n := range nodes {
-		addr, err := zk.GetNodeData(conn, "/MsgBusServers/"+n)
+	for {
+		nodes, event, err = zk.GetNodesW(conn, "/MsgBusServers")
 		if err != nil {
-			glog.Fatal(err)
+			glog.Errorln(err)
+			time.Sleep(time.Second)
+			continue
 		}
-		GMsgBusManager.Online(addr)
-	}
-	for e := range event {
-		glog.Info(e)
+		for _, n := range nodes {
+			addr, err = zk.GetNodeData(conn, "/MsgBusServers/"+n)
+			if err != nil {
+				glog.Fatal(err)
+			}
+			GMsgBusManager.Online(addr)
+		}
+
+		for e := range event {
+			glog.Infof("Got Event %v", e)
+		}
 	}
 	zkConn = conn
 }
