@@ -21,7 +21,7 @@ func NewMsgBusManager() *MsgBusManager {
 }
 
 func onMsgBusCloseEvent(s *MsgBusServer) {
-	glog.Info(s.conn.RemoteAddr(), "has been closed")
+	glog.Infof("[%s] closed", s.conn.RemoteAddr())
 	GMsgBusManager.Offline(s)
 }
 
@@ -50,7 +50,7 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 			return
 		} else {
 			if srv == s {
-				glog.Infoln("Removed", s.conn.RemoteAddr(), "OK")
+				glog.Infof("[%s] removed ok", s.conn.RemoteAddr())
 				this.list.Remove(e)
 				break
 			}
