@@ -72,7 +72,12 @@ func StartHttp(bindAddrs []string) {
 func websocketListen(bindAddr string) {
 	httpServeMux := http.NewServeMux()
 	httpServeMux.HandleFunc("/", homeHandle)
-	httpServeMux.Handle("/ws", websocket.Handler(WsHandler))
+
+	wsHandler := websocket.Server{
+		Handshake: nil,
+		Handler: WsHandler,
+	}
+	httpServeMux.Handle("/ws", wsHandler)
 	server := &http.Server{
 		Addr:        bindAddr,
 		Handler:     httpServeMux,
@@ -192,12 +197,13 @@ func WsHandler(ws *websocket.Conn) {
 			// Send to Message Bus
 			msg := []byte(reply)
 			toId := binary.LittleEndian.Uint64(msg[:8])
+			//glog.Infof("[msg] %d <- %d, binded(%v)", toId, id, s.BindedIds)
 			if toId != 0 {
+				if !s.IsBinded(int64(toId)) {
+					continue
+				}
 				GMsgBusManager.Push2Backend([]int64{int64(toId)}, msg)
 			} else {
-				if !s.IsBinded(int64(toId)) {
-					// TODO 无权发送到toId，暂时不实现该校验
-				}
 				GMsgBusManager.Push2Backend(s.BindedIds, msg)
 			}
 			// glog.Infof("%v Recv %v [%#T] [%#T] [%v] [%v] [%v]", s.Uid, reply, reply, PING_MSG,

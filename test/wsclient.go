@@ -107,7 +107,7 @@ func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, bin
 func sendData(c *Connection, id int64, data []byte) {
 	new_byte := packData(id, data)
 	c.conn.Write(new_byte)
-	glog.Infof("[msg] [%d] sent msg: %s\n", id, string(data))
+	glog.Infof("[msg] [%d] sent msg: %s >>>\n", id, string(data))
 }
 
 // 状态统计
@@ -240,7 +240,7 @@ func main() {
 				defer decLoginCount()
 
 				// writer
-				msgChan := make(chan []byte)
+				//msgChan := make(chan []byte)
 				quitChan := make(chan struct{})
 				defer close(quitChan)
 				go func() {
@@ -254,16 +254,16 @@ func main() {
 							incrQueryCount()
 							sendData(c, 0, []byte(fmt.Sprintf("(<-%d from)", id)))
 							index++
-						case msg, ok := <-msgChan:
-							if !ok {
-								return
-							}
-							incrQueryCount()
-							if string(msg) == "p" {
-								c.conn.Write(msg)
-							} else {
-								sendData(c, 0, msg)
-							}
+						//case msg, ok := <-msgChan:
+						//	if !ok {
+						//		return
+						//	}
+						//	incrQueryCount()
+						//	if string(msg) == "p" {
+						//		c.conn.Write(msg)
+						//	} else {
+						//		sendData(c, 0, msg)
+						//	}
 						case <-quitChan:
 							return
 						}
@@ -285,7 +285,7 @@ func main() {
 						//}()
 					} else {
 						rc++
-						glog.Infof("[msg] %d receive: %s\n", id, strMsg)
+						glog.Infof("[msg] [%d] recv msg: %s\n", id, strMsg)
 					}
 				}
 			} else {

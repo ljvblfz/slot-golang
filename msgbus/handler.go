@@ -39,7 +39,7 @@ func MainHandle(msg []byte) {
 			hl.PushFront(uid)
 		}
 	}
-	glog.Info("ToMap %v", smap, len(smap))
+	glog.Infof("ToMap (%d)%v", smap, len(smap))
 	for k, v := range smap {
 		glog.Info(k, ">>>>> ", v)
 		vSize := uint16(v.Len())

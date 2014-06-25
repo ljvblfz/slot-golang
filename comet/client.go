@@ -16,5 +16,6 @@ func HandleMsg(msg []byte) {
 		start := i * 8
 		uid := binary.LittleEndian.Uint64(msg[start : start+8])
 		gSessionList.PushMsg(int64(uid), data)
+		//glog.Infof("[push2] %d <- %v", uid, data)
 	}
 }
