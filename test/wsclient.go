@@ -42,6 +42,7 @@ var (
 	_SendInterval int
 	_StartId      int64
 	_ToId         string
+	_SpecifyTo    int64
 	_StatPort     string
 	_SN           string
 )
@@ -57,6 +58,7 @@ func init() {
 	flag.StringVar(&_ToId, "to_id", "", "发送到id,逗号\",\"符连接, 如: 2,3")
 	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
 	flag.StringVar(&_SN, "sn", "client1", "设置客户端sn")
+	flag.Int64Var(&_SpecifyTo, "to_sid", 0, "发往客户端的指定id，0或to_id中的一项")
 }
 
 type Connection struct {
@@ -79,7 +81,7 @@ func readData(c *Connection) ([]byte, error) {
 	return ioutil.ReadAll(r)
 }
 
-var kHeader1 [8]byte	= [8]byte{1, 1, 1, 1}
+var kHeader1 [4]byte	= [4]byte{1, 1, 1, 1}
 var kHeader3 [12]byte	= [12]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 
 func packData(id int64, data []byte) []byte {
@@ -113,7 +115,7 @@ func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, bin
 func sendData(c *Connection, id int64, data []byte) {
 	new_byte := packData(id, data)
 	c.conn.Write(new_byte)
-	glog.Infof("[msg] [%d] sent msg: %s >>>\n", id, string(data))
+	glog.Infof("[msg] [%d] sent msg: %v >>>\n", id, data)
 }
 
 // 状态统计
@@ -258,7 +260,7 @@ func main() {
 							c.conn.Write([]byte("p"))
 						case <-time.After(time.Duration(_SendInterval) * time.Second):
 							incrQueryCount()
-							sendData(c, 0, []byte(fmt.Sprintf("(<-%d from)", id)))
+							sendData(c, _SpecifyTo, []byte(fmt.Sprintf("(<-%d from)", id)))
 							index++
 						//case msg, ok := <-msgChan:
 						//	if !ok {
