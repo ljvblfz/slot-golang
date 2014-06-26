@@ -196,8 +196,13 @@ func WsHandler(ws *websocket.Conn) {
 			//glog.Debugf("<%s> user_id:\"%s\" recv msg %s\n", addr, id, reply)
 			// Send to Message Bus
 			msg := []byte(reply)
-			toId := binary.LittleEndian.Uint64(msg[:8])
-			//glog.Infof("[msg] %d <- %d, binded(%v)", toId, id, s.BindedIds)
+
+			// 提取消息中的目标id
+			toId := binary.LittleEndian.Uint64(msg[4:12])
+
+			if glog.V(1) {
+				glog.Infof("[msg] %d <- %d, binded(%v)", toId, id, s.BindedIds)
+			}
 			if toId != 0 {
 				if !s.IsBinded(int64(toId)) {
 					continue

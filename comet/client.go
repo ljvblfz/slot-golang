@@ -6,7 +6,7 @@ import (
 )
 
 func HandleMsg(msg []byte) {
-	if len(msg) <= 8 {
+	if len(msg) < 2 {
 		glog.Fatalf("Invalidate msg length: [%d bytes] %v", len(msg), msg)
 	}
 	size := binary.LittleEndian.Uint16(msg[:2])

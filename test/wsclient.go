@@ -79,9 +79,15 @@ func readData(c *Connection) ([]byte, error) {
 	return ioutil.ReadAll(r)
 }
 
+var kHeader1 [8]byte	= [8]byte{1, 1, 1, 1}
+var kHeader3 [12]byte	= [12]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+
 func packData(id int64, data []byte) []byte {
 	buf := new(bytes.Buffer)
+	// 协议头包含24字节的数据头，其中[4:8]是目标id，我们需要这个
+	binary.Write(buf, binary.LittleEndian, kHeader1)
 	binary.Write(buf, binary.LittleEndian, id)
+	binary.Write(buf, binary.LittleEndian, kHeader3)
 	binary.Write(buf, binary.LittleEndian, data)
 	return buf.Bytes()
 }
@@ -274,7 +280,7 @@ func main() {
 				for {
 					msgReceived, err := readData(c)
 					if err != nil {
-						glog.Infoln("Error Data", err)
+						glog.Infoln("Recv Data", err)
 						return
 					}
 					strMsg := string(msgReceived)
