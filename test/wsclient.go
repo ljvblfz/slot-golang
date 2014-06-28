@@ -29,8 +29,11 @@ var (
 	lock       = sync.Mutex{}
 	loginCount int
 
-	// queryCount 请求数的计数字段
+	// queryCount 已发送的请求数
 	queryCount int64
+
+	// recvCount 已收到的消息数
+	recvCount int64
 
 	// 程序启动时间
 	startTime time.Time
@@ -49,16 +52,16 @@ var (
 
 func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
-	flag.IntVar(&_Count, "n", 1, "(暂时无效)连接数的大小，最大不能超过64511")
+	flag.IntVar(&_Count, "n", 1, "连接数的大小，最大不能超过64511")
 	flag.StringVar(&_Host, "h", "ws://127.0.0.1:1234/ws", "指定远端服务器WebSocket地址")
 	flag.StringVar(&_LocalHost, "l", "127.0.0.1", "指定本地地址,不要设置端口号,端口号是自动从1024+!")
 	flag.IntVar(&_SendInterval, "i", 30, "发送数据的频率,单位秒")
 	//flag.Int64Var(&_StartId, "s", 1, "设置id的初始值自动增加1")
-	flag.Int64Var(&_StartId, "id", 1, "本客户端")
+	flag.Int64Var(&_StartId, "id", 1, "第一个客户端的id，多个客户端时自动累加")
 	flag.StringVar(&_ToId, "to_id", "", "发送到id,逗号\",\"符连接, 如: 2,3")
-	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
-	flag.StringVar(&_SN, "sn", "client1", "设置客户端sn")
 	flag.Int64Var(&_SpecifyTo, "to_sid", 0, "发往客户端的指定id，0或to_id中的一项")
+	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
+	//flag.StringVar(&_SN, "sn", "client1", "设置客户端sn")
 }
 
 type Connection struct {
@@ -86,7 +89,7 @@ var kHeader3 [12]byte	= [12]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 
 func packData(id int64, data []byte) []byte {
 	buf := new(bytes.Buffer)
-	// 协议头包含24字节的数据头，其中[4:8]是目标id，我们需要这个
+	// 协议头包含24字节的数据头，其中[4:12]是目标id，我们需要这个
 	binary.Write(buf, binary.LittleEndian, kHeader1)
 	binary.Write(buf, binary.LittleEndian, id)
 	binary.Write(buf, binary.LittleEndian, kHeader3)
@@ -94,20 +97,18 @@ func packData(id int64, data []byte) []byte {
 	return buf.Bytes()
 }
 
-// func sendData(conn net.Conn, data []byte) error {
-// 	_, err := conn.Write(data)
-// 	return err
-// }
-
 func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, bindedIds []int64, hmac string) {
 	var ids string
-	//for k, v := range bindedIds {
-	//	if k != 0 {
-	//		ids += "&"
-	//	}
-	//	ids += fmt.Sprintf("%d", v)
-	//}
-	ids = _ToId
+	if bindedIds == nil {
+		ids = _ToId
+	} else {
+		for k, v := range bindedIds {
+			if k != 0 {
+				ids += ","
+			}
+			ids += fmt.Sprintf("%d", v)
+		}
+	}
 	buf := fmt.Sprintf("0|%d|%s|%s|%d|%s|%s", id, mac, alias, timestamp, ids, hmac)
 	c.conn.Write([]byte(buf))
 }
@@ -115,7 +116,6 @@ func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, bin
 func sendData(c *Connection, id int64, data []byte) {
 	new_byte := packData(id, data)
 	c.conn.Write(new_byte)
-	glog.Infof("[msg] [%d] sent msg: %v >>>\n", id, data)
 }
 
 // 状态统计
@@ -153,12 +153,34 @@ func getQueryCount(reset bool) int64 {
 	}
 }
 
+func incrRecvCount() {
+	atomic.AddInt64(&recvCount, 1)
+}
+
+func getRecvCount(reset bool) int64 {
+	if reset {
+		return atomic.SwapInt64(&recvCount, 0)
+	} else {
+		return atomic.LoadInt64(&recvCount)
+	}
+}
+
 // 状态信息
 
 type statusInfo struct {
 	AppStartTime time.Time // 应用启动时间
 	Connections  int       // 当前连接数
-	Querys       int64     // 当前已受到的总请求数
+	Querys       int64     // 当前已收到的总请求数
+	Recvs        int64     // 当前已收到的总消息树
+}
+
+// record 用于统计的消息格式
+type Record struct {
+	IdFrom		int64		`json:"IdFrom"`
+	IdTo		int64		`json:"IdTo"`
+	TimeSent	time.Time	`json:"TimeSent"`
+	//TimeRecv	time.Time	`json:"TimeRecv"`
+	Duration	time.Duration `json:"Dura"`
 }
 
 func statusHandler(w http.ResponseWriter, r *http.Request) {
@@ -166,7 +188,12 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method Not Allowed", 405)
 		return
 	}
-	stat := statusInfo{startTime, getLoginCount(), getQueryCount(false)}
+	stat := statusInfo{
+		startTime,
+		getLoginCount(),
+		getQueryCount(false),
+		getRecvCount(false),
+	}
 
 	body, err := json.MarshalIndent(stat, "", "\t")
 
@@ -196,6 +223,10 @@ func runStat(statPort string) {
 func main() {
 	flag.Parse()
 
+	if _Count == 1 && len(_ToId) == 0 {
+		glog.Fatalf("\"-to_id\" can't be empty")
+	}
+
 	startTime = time.Now()
 
 	//u, err := url.Parse(_Host)
@@ -212,16 +243,21 @@ func main() {
 	var localAddr net.TCPAddr
 	localAddr.IP = net.ParseIP(_LocalHost)
 
+	wg := sync.WaitGroup{}
+
 	sysc := make(chan os.Signal, 1)
 	signal.Notify(sysc, os.Interrupt, os.Kill)
-	_Count = 1
 	for i := 0; i < _Count; i++ {
+
+		wg.Add(1)
+
 		go func(num int) {
 			//localAddr.Port = 1024 + num
 			// log.Println(localAddr, localAddr.Network())
 			ws, err := websocket.Dial(_Host, websocket.SupportedProtocolVersion, "http://localhost")
 			if err != nil {
 				glog.Infof("websocket error [%s] %v", _Host, err)
+				wg.Done()
 				return
 			}
 			defer ws.Close()
@@ -234,18 +270,33 @@ func main() {
 			alias := fmt.Sprintf("alias%d", id)
 			timestamp := uint32(time.Now().Unix())
 			hmac := "whatever"
-			sendLogin(c, id, mac, alias, timestamp, []int64{1, 2}, hmac)
 
-			incrQueryCount()
+			toId := _SpecifyTo
+
+			if _Count > 1 {
+				if (id % 2) == (_StartId % 2) {
+					toId = id + 1
+				} else {
+					toId = id - 1
+				}
+				sendLogin(c, id, mac, alias, timestamp, []int64{toId}, hmac)
+			} else {
+				sendLogin(c, id, mac, alias, timestamp, nil, hmac)
+			}
+
 			ack, err := readData(c)
 			if err != nil {
 				glog.Infoln("Error read login", err)
+				wg.Done()
 				return
 			}
+			wg.Done()
 			if ack[0] == 0 {
 				// log.Println(num, ack[0])
 				incLoginCount()
 				defer decLoginCount()
+
+				wg.Wait()
 
 				// writer
 				//msgChan := make(chan []byte)
@@ -253,6 +304,7 @@ func main() {
 				defer close(quitChan)
 				go func() {
 					index := 0
+					re := Record{IdFrom: id, IdTo: toId}
 					for {
 						select {
 						case <-time.After(10 * time.Second):
@@ -260,18 +312,13 @@ func main() {
 							c.conn.Write([]byte("p"))
 						case <-time.After(time.Duration(_SendInterval) * time.Second):
 							incrQueryCount()
-							sendData(c, _SpecifyTo, []byte(fmt.Sprintf("(<-%d from)", id)))
+							re.TimeSent = time.Now()
+							data, _ := json.Marshal(&re)
+							sendData(c, toId, data)
 							index++
-						//case msg, ok := <-msgChan:
-						//	if !ok {
-						//		return
-						//	}
-						//	incrQueryCount()
-						//	if string(msg) == "p" {
-						//		c.conn.Write(msg)
-						//	} else {
-						//		sendData(c, 0, msg)
-						//	}
+							if glog.V(1) {
+								glog.Infof("[record] %v >>>\n", data)
+							}
 						case <-quitChan:
 							return
 						}
@@ -279,12 +326,14 @@ func main() {
 				}()
 				// reader
 				rc := 0
+				record := Record{}
 				for {
 					msgReceived, err := readData(c)
 					if err != nil {
 						glog.Infoln("Recv Data", err)
 						return
 					}
+					incrRecvCount()
 					strMsg := string(msgReceived)
 					if strMsg == "P" {
 						//go func() {
@@ -293,7 +342,18 @@ func main() {
 						//}()
 					} else {
 						rc++
-						glog.Infof("[msg] [%d] recv msg: %s\n", id, strMsg)
+						if len(msgReceived) <= 24 {
+							glog.Errorf("[tcp] read bad data, length less than 25, %d bytes, %v", len(msgReceived), msgReceived)
+							break
+						}
+						err = json.Unmarshal(msgReceived[24:], &record)
+						if err != nil {
+							glog.Fatalln("Json error:", err)
+						}
+						record.Duration = time.Now().Sub(record.TimeSent)
+						if glog.V(1) {
+							glog.Infof("[record] %s\n", fmt.Sprintf("%d,%d,%v,%d", record.IdFrom, record.IdTo, record.TimeSent, record.Duration.Nanoseconds()))
+						}
 					}
 				}
 			} else {
@@ -308,5 +368,6 @@ func main() {
 
 	n := getLoginCount()
 	querys := getQueryCount(false)
-	glog.Infof("当前连接数: %d, 请求数: %d\n", n, querys)
+	recvs := getRecvCount(false)
+	glog.Infof("当前连接数: %d, 发送数: %d, 接收数: %d\n", n, querys, recvs)
 }
