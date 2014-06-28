@@ -161,6 +161,9 @@ func WsHandler(ws *websocket.Conn) {
 		websocket.Message.Send(ws, LoginFailed)
 		return
 	}
+	statIncConnTotal()
+	statIncConnOnline()
+	defer statDecConnOnline()
 	_, err = SetUserOnline(id, gLocalAddr)
 	if err != nil {
 		glog.Errorf("online error [%d] %v\n", id, err)
@@ -193,14 +196,19 @@ func WsHandler(ws *websocket.Conn) {
 			}
 			//glog.Debugf("<%s> user_id:\"%s\" receive heartbeat\n", addr, id)
 		} else {
+			statIncUpStreamIn()
 			//glog.Debugf("<%s> user_id:\"%s\" recv msg %s\n", addr, id, reply)
 			// Send to Message Bus
 			msg := []byte(reply)
 
+			if len(msg) < 12 {
+				glog.Infof("Invalid msg lenght %d bytes, %v", len(msg), msg)
+				break
+			}
 			// 提取消息中的目标id
 			toId := binary.LittleEndian.Uint64(msg[4:12])
 
-			if glog.V(1) {
+			if glog.V(2) {
 				glog.Infof("[msg] %d <- %d, binded(%v)", toId, id, s.BindedIds)
 			}
 			if toId != 0 {

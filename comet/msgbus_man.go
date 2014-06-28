@@ -86,4 +86,5 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 		this.curr = this.head
 	}
 	this.mu.Unlock()
+	statIncUpStreamOut()
 }

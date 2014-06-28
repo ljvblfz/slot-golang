@@ -9,6 +9,7 @@ import (
 var (
 	gSessionList *SessionList
 	gLocalAddr   string
+	gStatusAddr  string
 )
 
 func main() {
@@ -16,7 +17,10 @@ func main() {
 	lHost := flag.String("ports", ":1234,:1235", "监听的websocket地址")
 	zkHosts := flag.String("zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK的地址,多个地址用逗号分割")
 	flag.StringVar(&gLocalAddr, "lip", "", "comet服务器本地地址")
+	flag.StringVar(&gStatusAddr, "sh", ":29999", "程序状态http服务端口")
 	flag.Parse()
+
+	InitStat(gStatusAddr)
 
 	if len(gLocalAddr) == 0 {
 		glog.Fatalf("必须指定本机IP")
