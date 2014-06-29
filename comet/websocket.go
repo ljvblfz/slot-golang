@@ -135,13 +135,15 @@ func setReadTimeout(conn net.Conn, delaySec int) error {
 func WsHandler(ws *websocket.Conn) {
 	addr := ws.Request().RemoteAddr
 	var err error
-	if err = setReadTimeout(ws, 10); err != nil {
+	if err = setReadTimeout(ws, 60); err != nil {
 		glog.Errorf("[%s] websocket.SetReadDeadline() error(%s)\n", addr, err)
+		ws.Close()
 		return
 	}
 	reply := ""
 	if err = websocket.Message.Receive(ws, &reply); err != nil {
 		glog.Errorf("[%s] websocket.Message.Receive() error(%s)\n", addr, err)
+		ws.Close()
 		return
 	}
 	// 旧程序需要成功登陆后的一次回复
@@ -153,21 +155,33 @@ func WsHandler(ws *websocket.Conn) {
 	if loginErr != nil {
 		glog.Errorf("[%s] params (%s) error (%v)\n", addr, reply, loginErr)
 		websocket.Message.Send(ws, ParamsError)
+		ws.Close()
 		return
 	}
 	// check login
 	if !isAuth(id, mac, alias, expire, hmac) {
 		glog.Errorf("[%s] auth failed:\"%s\"\n", addr, reply) // error(%s)
 		websocket.Message.Send(ws, LoginFailed)
+		ws.Close()
 		return
 	}
+	defer func() {
+		if recvErr := recover(); recvErr != nil {
+			glog.Errorf("[panic] uid: %d, err: %v", recvErr)
+			ws.Close()
+		}
+	}()
 	statIncConnTotal()
 	statIncConnOnline()
 	defer statDecConnOnline()
 	_, err = SetUserOnline(id, gLocalAddr)
 	if err != nil {
-		glog.Errorf("online error [%d] %v\n", id, err)
+		glog.Errorf("redis online error [uid: %d] %v\n", id, err)
+		ws.Close()
 		return
+	}
+	if glog.V(1) {
+		glog.Infof("[online] user %d on %s", id, gLocalAddr)
 	}
 
 	s := NewSession(id, alias, mac, bindedIds, ws)
@@ -224,7 +238,13 @@ func WsHandler(ws *websocket.Conn) {
 		}
 		end = time.Now().UnixNano()
 	}
-	SetUserOffline(id, gLocalAddr)
+	err = SetUserOffline(id, gLocalAddr)
+	if err != nil {
+		glog.Errorf("[offline error] uid %d, error: %v", id, err)
+	}
+	if glog.V(1) {
+		glog.Infof("[offline] user %d on %s", id, gLocalAddr)
+	}
 	gSessionList.RemoveSession(selement)
 	return
 }

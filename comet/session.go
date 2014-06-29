@@ -105,6 +105,9 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 				lock.Unlock()
 				return
 			} else {
+				if len(data) <= 24 {
+					glog.Errorf("[invalid data] [uid: %d] length less than 25 (%d)%v", uid, len(data), data)
+				}
 				err := websocket.Message.Send(session.Conn, data)
 				if err != nil {
 					// 不要在这里移除用户session，用户的websocket连接会处理这个情况
