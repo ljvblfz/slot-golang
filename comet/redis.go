@@ -14,7 +14,6 @@ const (
 const (
 	_SetUserOnline = iota
 	_SetUserOffline
-	_PubState
 	_Max
 )
 
@@ -79,7 +78,7 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 }
 
 func SetUserOffline(uid int64, host string) error {
-	r := Redix[_SetUserOnline].Get()
+	r := Redix[_SetUserOffline].Get()
 	var (
 		err error
 		ret int
