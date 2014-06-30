@@ -349,12 +349,13 @@ func main() {
 		wg.Add(1)
 
 		go func(num int) {
-			//localAddr.Port = 1024 + num
+			la := &localAddr[num%len(localAddr)]
+			la.Port = 1024 + num
 			// log.Println(localAddr, localAddr.Network())
 
 			// new code
 			ws, err := dialWebsocket(_Host, websocket.SupportedProtocolVersion, "http://localhost",
-				&localAddr[num%len(localAddr)])
+				la)
 			// old code
 			//ws, err := websocket.Dial(_Host, websocket.SupportedProtocolVersion, "http://localhost")
 
@@ -453,7 +454,7 @@ func main() {
 						rc++
 						if len(msgReceived) <= 24 {
 							glog.Errorf("[websocket] [uid: %d] read bad data, less than 25, %d bytes, %v(%s)", id, len(msgReceived), msgReceived, strMsg)
-							continue
+							break
 						}
 						incrRecvCount()
 						err = json.Unmarshal(msgReceived[24:], &record)
