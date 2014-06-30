@@ -146,8 +146,6 @@ func WsHandler(ws *websocket.Conn) {
 		ws.Close()
 		return
 	}
-	// 旧程序需要成功登陆后的一次回复
-	websocket.Message.Send(ws, []byte{0})
 
 	//glog.Infof("Recv login %s\n", reply)
 	// parse login params
@@ -174,13 +172,22 @@ func WsHandler(ws *websocket.Conn) {
 	statIncConnTotal()
 	statIncConnOnline()
 	defer statDecConnOnline()
+
+	// 旧程序需要成功登陆后的一次回复
+	err = websocket.Message.Send(ws, []byte{0})
+	if err != nil {
+		glog.Errorf("[%s] [uid: %d] sent login-ack error (%v)\n", addr, id, err)
+		ws.Close()
+		return
+	}
+
 	_, err = SetUserOnline(id, gLocalAddr)
 	if err != nil {
 		glog.Errorf("redis online error [uid: %d] %v\n", id, err)
 		ws.Close()
 		return
 	}
-	if glog.V(1) {
+	if glog.V(2) {
 		glog.Infof("[online] user %d on %s", id, gLocalAddr)
 	}
 
@@ -242,7 +249,7 @@ func WsHandler(ws *websocket.Conn) {
 	if err != nil {
 		glog.Errorf("[offline error] uid %d, error: %v", id, err)
 	}
-	if glog.V(1) {
+	if glog.V(2) {
 		glog.Infof("[offline] user %d on %s", id, gLocalAddr)
 	}
 	gSessionList.RemoveSession(selement)

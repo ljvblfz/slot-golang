@@ -25,8 +25,8 @@ var redisAddr string
 
 func newPool(server, password string) *redis.Pool {
 	return &redis.Pool{
-		MaxIdle: 5,
-		// MaxActive:   100,
+		MaxIdle: 100,
+		MaxActive:   100,
 		IdleTimeout: 10 * time.Second,
 		Dial: func() (redis.Conn, error) {
 			c, err := redis.Dial("tcp", server)
