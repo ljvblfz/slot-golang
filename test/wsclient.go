@@ -8,15 +8,14 @@ import (
 	"fmt"
 	//"github.com/gorilla/websocket"
 	"code.google.com/p/go.net/websocket"
+	"github.com/golang/glog"
 	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
-	//"net/url"
 	"os"
 	"os/signal"
-	//"strings"
-	"github.com/golang/glog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,33 +34,45 @@ var (
 	// recvCount 已收到的消息数
 	recvCount int64
 
+	// 已尝试建立的连接数
+	connIndex int64
+
 	// 程序启动时间
 	startTime time.Time
+
+	querysPerSec int64
+	recvsPerSec  int64
+
+	allGo int32
 
 	// 配置项
 	_Count        int
 	_Host         string
 	_LocalHost    string
-	_SendInterval int
+	_ConnPerSec   int
+	_SendInterval time.Duration
 	_StartId      int64
 	_ToId         string
 	_SpecifyTo    int64
 	_StatPort     string
 	_SN           string
+	_SentCount    int64
 )
 
 func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 	flag.IntVar(&_Count, "n", 1, "连接数的大小，最大不能超过64511")
 	flag.StringVar(&_Host, "h", "ws://127.0.0.1:1234/ws", "指定远端服务器WebSocket地址")
-	flag.StringVar(&_LocalHost, "l", "127.0.0.1", "指定本地地址,不要设置端口号,端口号是自动从1024+!")
-	flag.IntVar(&_SendInterval, "i", 30, "发送数据的频率,单位秒")
+	flag.StringVar(&_LocalHost, "l", "127.0.0.1,192.168.2.10", "指定本地地址,逗号分隔多个")
+	flag.IntVar(&_ConnPerSec, "cps", 0, "限制每秒创建连接，0为无限制")
+	flag.DurationVar(&_SendInterval, "i", 30*time.Second, "设置发送的间隔(如:1s, 10us)")
 	//flag.Int64Var(&_StartId, "s", 1, "设置id的初始值自动增加1")
 	flag.Int64Var(&_StartId, "id", 1, "第一个客户端的id，多个客户端时自动累加")
 	flag.StringVar(&_ToId, "to_id", "", "发送到id,逗号\",\"符连接, 如: 2,3")
 	flag.Int64Var(&_SpecifyTo, "to_sid", 0, "发往客户端的指定id，0或to_id中的一项")
 	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
 	//flag.StringVar(&_SN, "sn", "client1", "设置客户端sn")
+	flag.Int64Var(&_SentCount, "sc", -1, "Sent msg count per client")
 }
 
 type Connection struct {
@@ -77,15 +88,16 @@ func (this *Connection) Close() {
 }
 
 func readData(c *Connection) ([]byte, error) {
-	r, e := c.conn.NewFrameReader()
-	if e != nil {
-		return nil, e
-	}
-	return ioutil.ReadAll(r)
+	//r, e := c.conn.NewFrameReader()
+	//if e != nil {
+	//	return nil, e
+	//}
+	//return ioutil.ReadAll(r)
+	return ioutil.ReadAll(c.conn)
 }
 
-var kHeader1 [4]byte	= [4]byte{1, 1, 1, 1}
-var kHeader3 [12]byte	= [12]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
+var kHeader1 [4]byte = [4]byte{1, 1, 1, 1}
+var kHeader3 [12]byte = [12]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}
 
 func packData(id int64, data []byte) []byte {
 	buf := new(bytes.Buffer)
@@ -165,22 +177,50 @@ func getRecvCount(reset bool) int64 {
 	}
 }
 
+// record 用于统计的消息格式
+type Record struct {
+	IdFrom   int64     `json:"IdFrom"`
+	IdTo     int64     `json:"IdTo"`
+	TimeSent time.Time `json:"TimeSent"`
+	//TimeRecv	time.Time	`json:"TimeRecv"`
+	Duration time.Duration `json:"Dura"`
+}
+
 // 状态信息
 
 type statusInfo struct {
-	AppStartTime time.Time // 应用启动时间
-	Connections  int       // 当前连接数
-	Querys       int64     // 当前已收到的总请求数
-	Recvs        int64     // 当前已收到的总消息树
+	AppStartTime  time.Time // 应用启动时间
+	Connections   int       // 当前连接数
+	Querys        int64     // 当前已收到的总请求数
+	QuerysPerSec  int64     `json:"QueryPerSec"`
+	Recvs         int64     // 当前已收到的总消息树
+	RecvsPerSec   int64     `json:"RecvsPerSec"`
+	ConnConfig    int64     `json:"ConnConfigCount"`
+	ConnStepOn    int64     `json:"ConnBuilding"`
+	Communicating bool      `json:"Communicating"`
 }
 
-// record 用于统计的消息格式
-type Record struct {
-	IdFrom		int64		`json:"IdFrom"`
-	IdTo		int64		`json:"IdTo"`
-	TimeSent	time.Time	`json:"TimeSent"`
-	//TimeRecv	time.Time	`json:"TimeRecv"`
-	Duration	time.Duration `json:"Dura"`
+func updateQPS() {
+
+	ticker := time.NewTicker(time.Second)
+
+	lastTime := time.Now()
+	lastQuerys := int64(0)
+	lastRecvs := int64(0)
+
+	for t := range ticker.C {
+		d := t.Sub(lastTime).Seconds()
+
+		qc := getQueryCount(false)
+		atomic.StoreInt64(&querysPerSec, int64(float64(qc-lastQuerys) / d))
+		lastQuerys = qc
+
+		rc := getRecvCount(false)
+		atomic.StoreInt64(&recvsPerSec, int64(float64(rc-lastRecvs) / d))
+		lastRecvs = rc
+
+		lastTime = t
+	}
 }
 
 func statusHandler(w http.ResponseWriter, r *http.Request) {
@@ -189,10 +229,15 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stat := statusInfo{
-		startTime,
-		getLoginCount(),
-		getQueryCount(false),
-		getRecvCount(false),
+		AppStartTime:  startTime,
+		Connections:   getLoginCount(),
+		Querys:        getQueryCount(false),
+		QuerysPerSec:  atomic.LoadInt64(&querysPerSec),
+		Recvs:         getRecvCount(false),
+		RecvsPerSec:   atomic.LoadInt64(&recvsPerSec),
+		ConnConfig:    int64(_Count),
+		ConnStepOn:    int64(atomic.LoadInt64(&connIndex)),
+		Communicating: 1 == atomic.LoadInt32(&allGo),
 	}
 
 	body, err := json.MarshalIndent(stat, "", "\t")
@@ -220,8 +265,57 @@ func runStat(statPort string) {
 	}
 }
 
+func dialWebsocket(url, protocol, origin string, localAddr *net.TCPAddr) (ws *websocket.Conn, err error) {
+	config, err := websocket.NewConfig(url, origin)
+	if err != nil {
+		return nil, err
+	}
+	if protocol != "" {
+		config.Protocol = []string{protocol}
+	}
+
+	var client net.Conn
+	if config.Location == nil {
+		return nil, &websocket.DialError{config, websocket.ErrBadWebSocketLocation}
+	}
+	if config.Origin == nil {
+		return nil, &websocket.DialError{config, websocket.ErrBadWebSocketOrigin}
+	}
+
+	//glog.Infof("location: %v, host: %v, url: %s", config.Location, config.Location.Host, url)
+	raddr, err := net.ResolveTCPAddr("tcp", config.Location.Host)
+	if err != nil {
+		goto Error
+	}
+
+	switch config.Location.Scheme {
+	case "ws":
+		client, err = net.DialTCP("tcp", localAddr, raddr)
+
+	//case "wss":
+	//	client, err = tls.Dial("tcp", config.Location.Host, config.TlsConfig)
+
+	default:
+		err = websocket.ErrBadScheme
+	}
+	if err != nil {
+		goto Error
+	}
+
+	ws, err = websocket.NewClient(config, client)
+	if err != nil {
+		goto Error
+	}
+	return
+
+Error:
+	return nil, &websocket.DialError{config, err}
+}
+
 func main() {
 	flag.Parse()
+
+	go updateQPS()
 
 	if _Count == 1 && len(_ToId) == 0 {
 		glog.Fatalf("\"-to_id\" can't be empty")
@@ -240,8 +334,11 @@ func main() {
 
 	go runStat(_StatPort)
 
-	var localAddr net.TCPAddr
-	localAddr.IP = net.ParseIP(_LocalHost)
+	localHosts := strings.Split(_LocalHost, ",")
+	var localAddr = make([]net.TCPAddr, len(localHosts))
+	for i := 0; i < len(localHosts); i++ {
+		localAddr[i].IP = net.ParseIP(localHosts[i])
+	}
 
 	wg := sync.WaitGroup{}
 
@@ -254,12 +351,20 @@ func main() {
 		go func(num int) {
 			//localAddr.Port = 1024 + num
 			// log.Println(localAddr, localAddr.Network())
-			ws, err := websocket.Dial(_Host, websocket.SupportedProtocolVersion, "http://localhost")
+
+			// new code
+			ws, err := dialWebsocket(_Host, websocket.SupportedProtocolVersion, "http://localhost",
+				&localAddr[num%len(localAddr)])
+			// old code
+			//ws, err := websocket.Dial(_Host, websocket.SupportedProtocolVersion, "http://localhost")
+
 			if err != nil {
 				glog.Infof("websocket error [%s] %v", _Host, err)
 				wg.Done()
+				atomic.AddInt64(&connIndex, 1)
 				return
 			}
+			atomic.AddInt64(&connIndex, 1)
 			defer ws.Close()
 
 			c := &Connection{conn: ws, isClosed: false}
@@ -296,28 +401,33 @@ func main() {
 				incLoginCount()
 				defer decLoginCount()
 
-				wg.Wait()
-
 				// writer
 				//msgChan := make(chan []byte)
 				quitChan := make(chan struct{})
 				defer close(quitChan)
 				go func() {
+					sentIndex := int64(0)
 					index := 0
 					re := Record{IdFrom: id, IdTo: toId}
+
+					//whenPing := time.Now()
 					for {
 						select {
 						case <-time.After(10 * time.Second):
-							incrQueryCount()
 							c.conn.Write([]byte("p"))
-						case <-time.After(time.Duration(_SendInterval) * time.Second):
-							incrQueryCount()
-							re.TimeSent = time.Now()
-							data, _ := json.Marshal(&re)
-							sendData(c, toId, data)
-							index++
-							if glog.V(1) {
-								glog.Infof("[record] %v >>>\n", data)
+						case <-time.After(_SendInterval):
+							if 1 == atomic.LoadInt32(&allGo) {
+								if _SentCount < 0 || sentIndex < _SentCount {
+									incrQueryCount()
+									sentIndex++
+									re.TimeSent = time.Now()
+									data, _ := json.Marshal(&re)
+									sendData(c, toId, data)
+									index++
+									if glog.V(2) {
+										glog.Infof("[record] %v >>>\n", data)
+									}
+								}
 							}
 						case <-quitChan:
 							return
@@ -330,10 +440,9 @@ func main() {
 				for {
 					msgReceived, err := readData(c)
 					if err != nil {
-						glog.Infoln("Recv Data", err)
+						glog.Infoln("[websocket] Recv Data", err)
 						return
 					}
-					incrRecvCount()
 					strMsg := string(msgReceived)
 					if strMsg == "P" {
 						//go func() {
@@ -343,9 +452,10 @@ func main() {
 					} else {
 						rc++
 						if len(msgReceived) <= 24 {
-							glog.Errorf("[tcp] read bad data, length less than 25, %d bytes, %v", len(msgReceived), msgReceived)
-							break
+							glog.Errorf("[websocket] [uid: %d] read bad data, less than 25, %d bytes, %v(%s)", id, len(msgReceived), msgReceived, strMsg)
+							continue
 						}
+						incrRecvCount()
 						err = json.Unmarshal(msgReceived[24:], &record)
 						if err != nil {
 							glog.Fatalln("Json error:", err)
@@ -361,7 +471,17 @@ func main() {
 			}
 
 		}(i)
+		if i > 0 && _ConnPerSec > 0 && ((i % _ConnPerSec) == (_ConnPerSec - 1)) {
+			time.Sleep(time.Second)
+		}
 	}
+	wg.Wait()
+
+	fmt.Printf("已建立连接%d/%d连接，按回车开始发送数据:\n", getLoginCount(), _Count)
+	any := ""
+	fmt.Scanln(&any)
+
+	atomic.StoreInt32(&allGo, 1)
 	// Block until a signal is received.
 	s := <-sysc
 	glog.Infoln("收到进程信号:", s)
