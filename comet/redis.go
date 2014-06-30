@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
+	"sync"
 	"time"
 )
 
@@ -18,13 +19,14 @@ const (
 )
 
 var (
-	Redix []*redis.Pool
+	Redix   []redis.Conn
+	RedixMu []*sync.Mutex
 )
 var redisAddr string
 
 func newPool(server, password string) *redis.Pool {
 	return &redis.Pool{
-		MaxIdle: 100,
+		MaxIdle:     100,
 		MaxActive:   100,
 		IdleTimeout: 10 * time.Second,
 		Dial: func() (redis.Conn, error) {
@@ -51,16 +53,27 @@ func newPool(server, password string) *redis.Pool {
 }
 
 func initRedix(addr string) {
-	Redix = make([]*redis.Pool, _Max)
-	redisAddr = addr
+	Redix = make([]redis.Conn, _Max)
+	RedixMu = make([]*sync.Mutex, _Max)
+
+	// redisAddr = addr
+	var err error
 	for i := 0; i < _Max; i++ {
-		Redix[i] = newPool(redisAddr, "")
+		Redix[i], err = redis.Dial("tcp", addr)
+		if err != nil {
+			panic(err)
+		}
+		RedixMu[i] = &sync.Mutex{}
+		// Redix[i] = newPool(redisAddr, "")
 		glog.Infof("RedisPool[%d] Init OK\n", i)
 	}
 }
 
 func SetUserOnline(uid int64, host string) (bool, error) {
-	r := Redix[_SetUserOnline].Get()
+	r := Redix[_SetUserOnline]
+	RedixMu[_SetUserOnline].Lock()
+	defer RedixMu[_SetUserOnline].Unlock()
+
 	ret, err := redis.Int(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, 1))
 	if err != nil {
 		r.Close()
@@ -73,12 +86,15 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 			return false, err
 		}
 	}
-	r.Close()
+	// r.Close()
 	return ret == 1, err
 }
 
 func SetUserOffline(uid int64, host string) error {
-	r := Redix[_SetUserOffline].Get()
+	// r := Redix[_SetUserOffline].Get()
+	r := Redix[_SetUserOffline]
+	RedixMu[_SetUserOffline].Lock()
+	defer RedixMu[_SetUserOffline].Unlock()
 	var (
 		err error
 		ret int
@@ -101,6 +117,6 @@ func SetUserOffline(uid int64, host string) error {
 			return err
 		}
 	}
-	r.Close()
+	// r.Close()
 	return err
 }
