@@ -12,7 +12,10 @@ func main() {
 	rh := flag.String("rh", "193.168.1.224:6379", "Redis地址")
 	lhost := flag.String("addr", "localhost:9923", "设置MsgBus监听服务器端口地址")
 	zks := flag.String("zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK服务器地址列表")
+	statusAddr := flag.String("sh", ":29998", "程序状态http服务端口")
 	flag.Parse()
+
+	InitStat(*statusAddr)
 
 	InitUserMap()
 	err := InitModel(*rh)
@@ -32,8 +35,14 @@ func main() {
 				isOnline := users_def[2]
 				if isOnline == "1" {
 					GUserMap.Online(uid, host)
+					if glog.V(1) {
+						glog.Infof("[online] user %d on %s", uid, host)
+					}
 				} else {
 					GUserMap.Offline(uid, host)
+					if glog.V(1) {
+						glog.Infof("[offline] user %d on %s", uid, host)
+					}
 				}
 			}
 		}()

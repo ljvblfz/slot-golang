@@ -115,8 +115,10 @@ func SubUserState() (<-chan []byte, error) {
 			data := psc.Receive()
 			switch n := data.(type) {
 			case redis.Message:
-				glog.Infof("Message: %s %s\n", n.Channel, n.Data)
 				ch <- n.Data
+				if glog.V(1) {
+					glog.Infof("Message: %s %s\n", n.Channel, n.Data)
+				}
 			// case redis.PMessage:
 			// 	fmt.Printf("PMessage: %s %s %s\n", n.Pattern, n.Channel, n.Data)
 			case redis.Subscription:

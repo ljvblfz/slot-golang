@@ -7,7 +7,9 @@ import (
 )
 
 func MainHandle(msg []byte) {
-	glog.Infof("%v", msg)
+	//glog.Infof("%v", msg)
+	statIncUpStreamIn()
+
 	idsSize := binary.LittleEndian.Uint16(msg[:2])
 	toIds := msg[2 : 2+idsSize*8]
 	data := msg[2+idsSize*8:]
@@ -15,7 +17,10 @@ func MainHandle(msg []byte) {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
 		err := GUserMap.PushToComet(uid, msg)
 		if err != nil {
+			statIncDownStreamOutBad()
 			glog.Errorf("Push to comet failed, [%d] %v", uid, err)
+		} else {
+			statIncDownStreamOut()
 		}
 		return
 	}
@@ -56,6 +61,7 @@ func MainHandle(msg []byte) {
 		if err != nil {
 			glog.Errorf("Broadcast to comet failed, [%s] %v", k, err)
 		}
+		statIncDownStreamOut()
 	}
 	//glog.Info(string(msg[8:]))
 }

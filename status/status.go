@@ -40,12 +40,21 @@ func (a *appStat) Add(key string) {
 	a.kv[key] = &v
 }
 
-func (a *appStat) Inc(key string) {
-	a.kv[key].Inc()
+func (a *appStat) Inc(key string) uint64 {
+	return a.kv[key].Inc()
 }
 
-func (a *appStat) Dec(key string) {
-	a.kv[key].Dec()
+func (a *appStat) Dec(key string) uint64 {
+	return a.kv[key].Dec()
+}
+
+func (a *appStat) Set(key string, value uint64) (old uint64) {
+	old = a.kv[key].Set(value)
+	return
+}
+
+func (a *appStat) Get(key string) uint64 {
+	return a.kv[key].Get()
 }
 
 func (a *appStat) JsonBytes() []byte {

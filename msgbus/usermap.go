@@ -44,6 +44,9 @@ func (this *UserMap) Load(users []string, host string) {
 			h = hlist.New()
 			this.kv[bn][uid] = h
 		}
+		if glog.V(1) {
+			glog.Infof("[load online] user %d on %s", uid, host)
+		}
 		h.PushFront(host)
 	}
 }
@@ -120,7 +123,7 @@ func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 	if !ok {
 		// TODO Error log
 		this.mu[bn].Unlock()
-		return fmt.Errorf("%d not found", uid)
+		return fmt.Errorf("user %d not found", uid)
 	}
 	var err error
 	for e := hostlist.Front(); e != nil; e = e.Next() {
