@@ -40,10 +40,8 @@ func (this *MsgBusManager) Online(remoteAddr string) {
 		go g.Reciver(onMsgBusCloseEvent)
 	}
 	e := this.list.PushFront(g)
-	if this.list.Len() == 1 {
-		this.head = e
-		this.curr = e
-	}
+	this.head = this.list.Front()
+	this.curr = e
 	this.mu.Unlock()
 }
 
