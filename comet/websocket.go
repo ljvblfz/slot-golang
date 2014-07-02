@@ -140,7 +140,8 @@ func WsHandler(ws *websocket.Conn) {
 		ws.Close()
 		return
 	}
-	reply := ""
+	//reply := ""
+	reply := make([]byte, 0, 1024)
 	if err = websocket.Message.Receive(ws, &reply); err != nil {
 		glog.Errorf("[%s] websocket.Message.Receive() error(%s)\n", addr, err)
 		ws.Close()
@@ -149,16 +150,16 @@ func WsHandler(ws *websocket.Conn) {
 
 	//glog.Infof("Recv login %s\n", reply)
 	// parse login params
-	id, mac, alias, expire, bindedIds, hmac, loginErr := getLoginParams(reply)
+	id, mac, alias, expire, bindedIds, hmac, loginErr := getLoginParams(string(reply))
 	if loginErr != nil {
-		glog.Errorf("[%s] params (%s) error (%v)\n", addr, reply, loginErr)
+		glog.Errorf("[%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
 		websocket.Message.Send(ws, ParamsError)
 		ws.Close()
 		return
 	}
 	// check login
 	if !isAuth(id, mac, alias, expire, hmac) {
-		glog.Errorf("[%s] auth failed:\"%s\"\n", addr, reply) // error(%s)
+		glog.Errorf("[%s] auth failed:\"%s\"\n", addr, string(reply)) // error(%s)
 		websocket.Message.Send(ws, LoginFailed)
 		ws.Close()
 		return
@@ -210,7 +211,7 @@ func WsHandler(ws *websocket.Conn) {
 			//glog.Errorf("<%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
 			break
 		}
-		if reply == PING_MSG {
+		if len(reply) == 1 && string(reply) == PING_MSG {
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
 				glog.Errorf("<%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
 				break
@@ -220,7 +221,7 @@ func WsHandler(ws *websocket.Conn) {
 			statIncUpStreamIn()
 			//glog.Debugf("<%s> user_id:\"%s\" recv msg %s\n", addr, id, reply)
 			// Send to Message Bus
-			msg := []byte(reply)
+			msg := reply
 
 			if len(msg) < 12 {
 				glog.Infof("Invalid msg lenght %d bytes, %v", len(msg), msg)

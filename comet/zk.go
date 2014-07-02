@@ -17,7 +17,7 @@ func InitZK(zkAddrs []string) {
 		addr  string
 		watch <-chan zookeeper.Event
 	)
-	conn, err = zk.Connect(zkAddrs, time.Second)
+	conn, err = zk.Connect(zkAddrs, 60 * time.Second)
 	if err != nil {
 		glog.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"github.com/cuixin/atomic"
 	glog "github.com/golang/glog"
 	"net/http"
+	"html/template"
 	"os"
 	"os/user"
 	"runtime"
@@ -183,9 +184,13 @@ func statHandle(w http.ResponseWriter, r *http.Request) {
 	}
 	params := r.URL.Query()
 	types := params.Get("type")
+	auto := params.Get("refresh")
 	res := []byte{}
+	htmlRes := true
+
 	switch types {
 	case "":
+		htmlRes = false
 		w.Header().Add("Content-Type", "text/html")
 		res = []byte(`<ul>
 			<li><a href="/stat?type=memory">memory</a></li>
@@ -193,6 +198,7 @@ func statHandle(w http.ResponseWriter, r *http.Request) {
 			<li><a href="/stat?type=golang">golang</a></li>
 			<li><a href="/stat?type=config">config</a></li>
 			<li><a href="/stat?type=app">online</a></li>
+			<li><a href="/stat?type=app&refresh=auto">online(auto refresh)</a></li>
 		</ul>`)
 	case "memory":
 		res = memStats()
@@ -204,23 +210,37 @@ func statHandle(w http.ResponseWriter, r *http.Request) {
 		res = configInfo()
 	case "app":
 		res = AppStat.JsonBytes()
-	//case "online":
-	//	res = OLStat.Stat()
-	//case "message":
-	//	res = MsgStat.Stat()
-	//case "connection":
-	//	res = ConnStat.Stat()
 	default:
+		htmlRes = false
 		http.Error(w, "Not Found", 404)
 	}
-	if res != nil {
-		if _, err := w.Write(res); err != nil {
-			glog.Errorf("w.Write(\"%s\") error(%v)\n", string(res), err)
+
+	if auto == "auto" && htmlRes {
+		w.Header().Add("Content-Type", "text/html; charset=utf-8")
+		autoTemp.Execute(w, string(res))
+	} else {
+		if res != nil {
+			if _, err := w.Write(res); err != nil {
+				glog.Errorf("w.Write(\"%s\") error(%v)\n", string(res), err)
+			}
 		}
 	}
 }
 
+var autoHtml = `
+<html>
+<body>
+<pre>
+{{.}}
+</pre>
+<script type="text/javascript">
+setInterval("window.location.reload()", 2000);
+</script>
+</body>
+</html>
+`
 
+var autoTemp = template.Must(template.New("autoRefresh").Parse(autoHtml))
 
 //// Connection stat info
 //type ConnectionStat struct {

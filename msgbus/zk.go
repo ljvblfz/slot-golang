@@ -14,7 +14,7 @@ func watchZK(existed bool, event zookeeper.Event) {
 }
 
 func InitZK(addrs []string, listenAddr string) error {
-	conn, err := zk.Connect(addrs, time.Second)
+	conn, err := zk.Connect(addrs, 60 * time.Second)
 	if err != nil {
 		return err
 	}

@@ -88,12 +88,12 @@ func (this *Connection) Close() {
 }
 
 func readData(c *Connection) ([]byte, error) {
-	//r, e := c.conn.NewFrameReader()
-	//if e != nil {
-	//	return nil, e
-	//}
-	//return ioutil.ReadAll(r)
-	return ioutil.ReadAll(c.conn)
+	r, e := c.conn.NewFrameReader()
+	if e != nil {
+		return nil, e
+	}
+	return ioutil.ReadAll(r)
+	//return ioutil.ReadAll(c.conn)
 }
 
 var kHeader1 [4]byte = [4]byte{1, 1, 1, 1}
@@ -350,7 +350,7 @@ func main() {
 
 		go func(num int) {
 			la := &localAddr[num%len(localAddr)]
-			la.Port = 1024 + num
+			//la.Port = 1024 + num
 			// log.Println(localAddr, localAddr.Network())
 
 			// new code
@@ -407,6 +407,16 @@ func main() {
 				quitChan := make(chan struct{})
 				defer close(quitChan)
 				go func() {
+					for {
+						select {
+						case <-time.After(10 * time.Second):
+							c.conn.Write([]byte("p"))
+						case <-quitChan:
+							return
+						}
+					}
+				}()
+				go func() {
 					sentIndex := int64(0)
 					index := 0
 					re := Record{IdFrom: id, IdTo: toId}
@@ -414,8 +424,6 @@ func main() {
 					//whenPing := time.Now()
 					for {
 						select {
-						case <-time.After(10 * time.Second):
-							c.conn.Write([]byte("p"))
 						case <-time.After(_SendInterval):
 							if 1 == atomic.LoadInt32(&allGo) {
 								if _SentCount < 0 || sentIndex < _SentCount {
@@ -478,9 +486,9 @@ func main() {
 	}
 	wg.Wait()
 
-	fmt.Printf("已建立连接%d/%d连接，按回车开始发送数据:\n", getLoginCount(), _Count)
-	any := ""
-	fmt.Scanln(&any)
+	//fmt.Printf("已建立连接%d/%d连接，按回车开始发送数据:\n", getLoginCount(), _Count)
+	//any := ""
+	//fmt.Scanln(&any)
 
 	atomic.StoreInt32(&allGo, 1)
 	// Block until a signal is received.
