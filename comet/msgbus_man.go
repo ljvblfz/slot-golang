@@ -74,13 +74,17 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 	copy(pushData[2+size*8:], msg)
 
 	//glog.Infof("[push] %v", pushData)
-	this.curr.Value.(*MsgBusServer).Send(pushData)
-	this.mu.Lock()
-	next := this.curr.Next()
-	if next != nil {
-		this.curr = next
+	if this.curr != nil {
+		this.curr.Value.(*MsgBusServer).Send(pushData)
+		this.mu.Lock()
+		next := this.curr.Next()
+		if next != nil {
+			this.curr = next
+		} else {
+			this.curr = this.head
+		}
 	} else {
-		this.curr = this.head
+		glog.Errorf("[msgbus] curr == nil, list: %v", this.list)
 	}
 	this.mu.Unlock()
 	statIncUpStreamOut()

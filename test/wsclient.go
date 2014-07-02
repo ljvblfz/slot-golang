@@ -302,7 +302,7 @@ func dialWebsocket(url, protocol, origin string, localAddr *net.TCPAddr) (ws *we
 		goto Error
 	}
 
-	ws, err = websocket.NewClient(config, client)
+	ws, err = websocket.NewClient(config, client, true)
 	if err != nil {
 		goto Error
 	}
@@ -411,6 +411,9 @@ func main() {
 						select {
 						case <-time.After(10 * time.Second):
 							c.conn.Write([]byte("p"))
+							if glog.V(2) {
+								glog.Infof("[ping] uid %d", id)
+							}
 						case <-quitChan:
 							return
 						}
@@ -434,7 +437,7 @@ func main() {
 									sendData(c, toId, data)
 									index++
 									if glog.V(2) {
-										glog.Infof("[record] %v >>>\n", data)
+										glog.Infof("[record] %s >>>\n", string(data))
 									}
 								}
 							}
@@ -458,6 +461,9 @@ func main() {
 						//	time.After(10 * time.Second)
 						//	msgChan <- []byte("p")
 						//}()
+						if glog.V(2) {
+							glog.Infof("[pong] uid %d", id)
+						}
 					} else {
 						rc++
 						if len(msgReceived) <= 24 {

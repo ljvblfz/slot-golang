@@ -76,6 +76,7 @@ func websocketListen(bindAddr string) {
 	wsHandler := websocket.Server{
 		Handshake: nil,
 		Handler: WsHandler,
+		MustMask: false,
 	}
 	httpServeMux.Handle("/ws", wsHandler)
 	server := &http.Server{
@@ -148,7 +149,7 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 
-	//glog.Infof("Recv login %s\n", reply)
+	glog.Infof("Recv login %s\n", string(reply))
 	// parse login params
 	id, mac, alias, expire, bindedIds, hmac, loginErr := getLoginParams(string(reply))
 	if loginErr != nil {
@@ -164,12 +165,12 @@ func WsHandler(ws *websocket.Conn) {
 		ws.Close()
 		return
 	}
-	defer func() {
-		if recvErr := recover(); recvErr != nil {
-			glog.Errorf("[panic] uid: %d, err: %v", recvErr)
-			ws.Close()
-		}
-	}()
+	//defer func() {
+	//	if recvErr := recover(); recvErr != nil {
+	//		glog.Errorf("[panic] uid: %d, err: %v", uid, recvErr)
+	//		ws.Close()
+	//	}
+	//}()
 	statIncConnTotal()
 	statIncConnOnline()
 	defer statDecConnOnline()
