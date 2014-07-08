@@ -5,7 +5,6 @@ import (
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -14,12 +13,14 @@ const (
 	HostUsers = "Host:%s" // (1, 2, 3)
 	PubKey    = "PubKey"
 
-    RedisDeviceUsers = "Device:Users"
+    RedisDeviceUsers = "bind:device"
+	RedisUserDevices = "bind:user"
 )
 const (
 	_SetUserOnline = iota
 	_SetUserOffline
 	_GetDeviceUsers
+	_GetUserDevices
 	_Max
 )
 
@@ -130,20 +131,43 @@ func GetDeviceUsers(deviceId int64) ([]int64, error) {
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
-	userString, err := redis.String(r.Do("hget", RedisDeviceUsers, deviceId))
+	users, err := redis.Strings(r.Do("smembers", fmt.Sprintf("%s:%d", RedisDeviceUsers, deviceId)))
 	if err != nil {
 		return nil, err
 	}
-    users := strings.Split(userString, ",")
 	bindedIds := make([]int64, 0, len(users))
     for _, user_id := range users {
-        u_id, err := strconv.ParseUint(user_id, 10, 64)
+        u_id, err := strconv.ParseInt(user_id, 10, 64)
 		if err != nil {
 			continue
 		}
 		bindedIds = append(bindedIds, int64(u_id))
 	}
 	if len(bindedIds) == len(users) {
+		err = nil
+	}
+	return bindedIds, err
+}
+
+
+func GetUserDevices(userId int64) ([]int64, error) {
+	r := Redix[_GetUserDevices]
+	RedixMu[_GetUserDevices].Lock()
+	defer RedixMu[_GetUserDevices].Unlock()
+
+	idStrs, err := redis.Strings(r.Do("smembers", fmt.Sprintf("%s:%d", RedisUserDevices, userId)))
+	if err != nil {
+		return nil, err
+	}
+	bindedIds := make([]int64, 0, len(idStrs))
+    for _, v := range idStrs {
+        id, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			continue
+		}
+		bindedIds = append(bindedIds, id)
+	}
+	if len(bindedIds) == len(idStrs) {
 		err = nil
 	}
 	return bindedIds, err

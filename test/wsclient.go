@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"
 	"encoding/binary"
 	"encoding/json"
 	"flag"
@@ -68,7 +69,7 @@ func init() {
 	flag.DurationVar(&_SendInterval, "i", 30*time.Second, "设置发送的间隔(如:1s, 10us)")
 	//flag.Int64Var(&_StartId, "s", 1, "设置id的初始值自动增加1")
 	flag.Int64Var(&_StartId, "id", 1, "第一个客户端的id，多个客户端时自动累加")
-	flag.StringVar(&_ToId, "to_id", "", "发送到id,逗号\",\"符连接, 如: 2,3")
+	//flag.StringVar(&_ToId, "to_id", "", "发送到id,逗号\",\"符连接, 如: 2,3")
 	flag.Int64Var(&_SpecifyTo, "to_sid", 0, "发往客户端的指定id，0或to_id中的一项")
 	flag.StringVar(&_StatPort, "sh", ":30001", "设置服务器统计日志端口")
 	//flag.StringVar(&_SN, "sn", "client1", "设置客户端sn")
@@ -109,19 +110,9 @@ func packData(id int64, data []byte) []byte {
 	return buf.Bytes()
 }
 
-func sendLogin(c *Connection, id int64, mac, alias string, timestamp uint32, bindedIds []int64, hmac string) {
-	var ids string
-	if bindedIds == nil {
-		ids = _ToId
-	} else {
-		for k, v := range bindedIds {
-			if k != 0 {
-				ids += ","
-			}
-			ids += fmt.Sprintf("%d", v)
-		}
-	}
-	buf := fmt.Sprintf("0|%d|%s|%s|%d|%s|%s", id, mac, alias, timestamp, ids, hmac)
+func sendLogin(c *Connection, id int64, timestamp uint32, timeout uint32) {
+	md5Value := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%d|%d|%d|BlackCrystal", id, timestamp, timeout))))
+	buf := fmt.Sprintf("%d|%d|%d|%s", id, timestamp, timeout, md5Value)
 	c.conn.Write([]byte(buf))
 }
 
@@ -317,9 +308,9 @@ func main() {
 
 	go updateQPS()
 
-	if _Count == 1 && len(_ToId) == 0 {
-		glog.Fatalf("\"-to_id\" can't be empty")
-	}
+	//if _Count == 1 && len(_ToId) == 0 {
+	//	glog.Fatalf("\"-to_id\" can't be empty")
+	//}
 
 	startTime = time.Now()
 
@@ -372,23 +363,14 @@ func main() {
 			// log.Println("Local Addr", conn.LocalAddr())
 
 			id := _StartId + int64(num)
-			mac := fmt.Sprintf("mac%d", id)
-			alias := fmt.Sprintf("alias%d", id)
 			timestamp := uint32(time.Now().Unix())
-			hmac := "whatever"
 
 			toId := _SpecifyTo
-
-			if _Count > 1 {
-				if (id % 2) == (_StartId % 2) {
-					toId = id + 1
-				} else {
-					toId = id - 1
-				}
-				sendLogin(c, id, mac, alias, timestamp, []int64{toId}, hmac)
-			} else {
-				sendLogin(c, id, mac, alias, timestamp, nil, hmac)
+			if id < 0 {
+				toId = 0
 			}
+
+			sendLogin(c, id, timestamp, 10)
 
 			ack, err := readData(c)
 			if err != nil {

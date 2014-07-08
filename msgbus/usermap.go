@@ -16,7 +16,11 @@ var (
 )
 
 func getBlockID(uid int64) int {
-	return int(uid % BlockSize)
+	if uid > 0 {
+		return int(uid % BlockSize)
+	} else {
+		return int(-uid % BlockSize)
+	}
 }
 
 type UserMap struct {

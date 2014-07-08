@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -37,7 +38,7 @@ const (
 	PING_MSG          = "p"
 	PONG_MSG          = "P"
 	TIME_OUT          = 3 * 60         // 3 mins
-	EXPIRE_TIME       = uint64(1 * 60) // 1 mins
+	EXPIRE_TIME       = int64(1 * 60) // 1 mins
 
 	kLoginKey = "BlackCrystal"
 )
@@ -126,7 +127,7 @@ func getLoginParams(req string) (id int64, timestamp, timeout uint64, md5Str str
 }
 
 func isAuth(id int64, timestamp uint64, timeout uint64, md5Str string) error {
-	if timestamp > 0 && uint64(time.Now().Unix()) - timestamp >= EXPIRE_TIME {
+	if timestamp > 0 && time.Now().Unix() - int64(timestamp) >= EXPIRE_TIME {
 		return fmt.Errorf("login timeout, %d - %d >= %d", uint64(time.Now().Unix()), timestamp, EXPIRE_TIME)
 		// return false
 	}
@@ -177,11 +178,13 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	var bindedIds []int64
-	//if id > 0 {
-	//	bindedIds, err = GetUserDevices(id)
-	//} else
-	if id < 0 {
+	if id > 0 {
+		bindedIds, err = GetUserDevices(id)
+	} else if id < 0 {
 		bindedIds, err = GetDeviceUsers(id)
+	}
+	if err != nil {
+		glog.Errorf("[getIds] id [%d] get ids error: %v, ids: %v", id, err, bindedIds)
 	}
 
 	statIncConnTotal()
@@ -225,7 +228,13 @@ func WsHandler(ws *websocket.Conn) {
 		}
 
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
-			glog.Errorf("[connection] <%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
+			if err == io.EOF {
+				if glog.V(1) {
+					glog.Errorf("[connection] user [%d] quit on EOF", id)
+				}
+			} else {
+				glog.Errorf("[connection] <%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
+			}
 			break
 		}
 		if len(reply) == 1 && string(reply) == PING_MSG {
@@ -245,14 +254,16 @@ func WsHandler(ws *websocket.Conn) {
 				break
 			}
 			// 提取消息中的目标id
-			toId := binary.LittleEndian.Uint64(msg[4:12])
+			toId := int64(binary.LittleEndian.Uint64(msg[4:12]))
 
 			if glog.V(2) {
 				glog.Infof("[msg in] %d <- %d, binded(%v)", toId, id, s.BindedIds)
 			}
 			if toId != 0 {
 				if !s.IsBinded(int64(toId)) {
-					continue
+					glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", id, toId, s.BindedIds)
+					// TODO: 初期测试时不需要校验，但实际插座逻辑需要校验
+					//continue
 				}
 				GMsgBusManager.Push2Backend([]int64{int64(toId)}, msg)
 			} else {

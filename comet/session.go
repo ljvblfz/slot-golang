@@ -13,7 +13,7 @@ var (
 )
 
 func getBlockID(uid int64) int64 {
-		if uid > 0 {
+	if uid > 0 {
 		return uid % BlockSize
 	} else {
 		return -uid % BlockSize
