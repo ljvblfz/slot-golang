@@ -13,19 +13,21 @@ var (
 )
 
 func getBlockID(uid int64) int64 {
-	return uid % BlockSize
+		if uid > 0 {
+		return uid % BlockSize
+	} else {
+		return -uid % BlockSize
+	}
 }
 
 type Session struct {
 	Uid       int64
-	Alias     string
-	Mac       string
 	BindedIds []int64
 	Conn      *websocket.Conn
 }
 
-func NewSession(uid int64, alias string, mac string, bindedIds []int64, conn *websocket.Conn) *Session {
-	return &Session{Uid: uid, Alias: alias, Mac: mac, BindedIds: bindedIds, Conn: conn}
+func NewSession(uid int64, bindedIds []int64, conn *websocket.Conn) *Session {
+	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn}
 }
 
 func (this *Session) Close() {

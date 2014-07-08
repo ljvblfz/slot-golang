@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -11,10 +13,13 @@ import (
 const (
 	HostUsers = "Host:%s" // (1, 2, 3)
 	PubKey    = "PubKey"
+
+    RedisDeviceUsers = "Device:Users"
 )
 const (
 	_SetUserOnline = iota
 	_SetUserOffline
+	_GetDeviceUsers
 	_Max
 )
 
@@ -65,7 +70,7 @@ func initRedix(addr string) {
 		}
 		RedixMu[i] = &sync.Mutex{}
 		// Redix[i] = newPool(redisAddr, "")
-		glog.Infof("RedisPool[%d] Init OK\n", i)
+		glog.Infof("RedisPool[%d] Init OK on %s\n", i, addr)
 	}
 }
 
@@ -119,4 +124,27 @@ func SetUserOffline(uid int64, host string) error {
 	}
 	// r.Close()
 	return err
+}
+
+func GetDeviceUsers(deviceId int64) ([]int64, error) {
+	r := Redix[_GetDeviceUsers]
+	RedixMu[_GetDeviceUsers].Lock()
+	defer RedixMu[_GetDeviceUsers].Unlock()
+	userString, err := redis.String(r.Do("hget", RedisDeviceUsers, deviceId))
+	if err != nil {
+		return nil, err
+	}
+    users := strings.Split(userString, ",")
+	bindedIds := make([]int64, 0, len(users))
+    for _, user_id := range users {
+        u_id, err := strconv.ParseUint(user_id, 10, 64)
+		if err != nil {
+			continue
+		}
+		bindedIds = append(bindedIds, int64(u_id))
+	}
+	if len(bindedIds) == len(users) {
+		err = nil
+	}
+	return bindedIds, err
 }

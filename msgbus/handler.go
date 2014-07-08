@@ -7,7 +7,9 @@ import (
 )
 
 func MainHandle(msg []byte) {
-	//glog.Infof("%v", msg)
+	if glog.V(2) {
+		glog.Infof("[msg] %s", string(msg))
+	}
 	statIncUpStreamIn()
 
 	idsSize := binary.LittleEndian.Uint16(msg[:2])
@@ -63,7 +65,6 @@ func MainHandle(msg []byte) {
 		}
 		statIncDownStreamOut()
 	}
-	//glog.Info(string(msg[8:]))
 }
 
 func HandleClose(host string) {

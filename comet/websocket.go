@@ -2,8 +2,10 @@ package main
 
 import (
 	"code.google.com/p/go.net/websocket"
+	"crypto/md5"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"github.com/golang/glog"
 	"html/template"
 	"net"
@@ -30,14 +32,14 @@ const (
 	wrongMd5Check        = "User %d has wrong md5"
 	wrongLoginTimeout    = "Wrong login %d timeout %s"
 
-	LOGIN_PARAM_COUNT = 7
+	LOGIN_PARAM_COUNT = 4
 	READ_TIMEOUT      = 10
 	PING_MSG          = "p"
 	PONG_MSG          = "P"
 	TIME_OUT          = 3 * 60         // 3 mins
 	EXPIRE_TIME       = uint64(1 * 60) // 1 mins
 
-	publicKey = "BlackCrystal"
+	kLoginKey = "BlackCrystal"
 )
 
 var (
@@ -91,42 +93,52 @@ func websocketListen(bindAddr string) {
 	}
 }
 
-func getLoginParams(req string) (id int64, mac, alias, expire string, bindedIds []int64, hmac string, err error) {
+func getLoginParams(req string) (id int64, timestamp, timeout uint64, md5Str string, err error) {
 	args := strings.Split(req, "|")
 	if len(args) != LOGIN_PARAM_COUNT {
 		err = LOGIN_PARAM_ERROR
 		return
 	}
 	// skip the 0
-	id, err = strconv.ParseInt(args[1], 10, 64)
+	id, err = strconv.ParseInt(args[0], 10, 64)
 	if err != nil {
 		return
 	}
-	mac = args[2]
-	alias = args[3]
-	expire = args[4]
-	ids := strings.Split(args[5], ",")
-	var bid int64
-	for n, _ := range ids {
-		bid, err = strconv.ParseInt(ids[n], 10, 64)
-		if err != nil {
-			return
-		}
-		bindedIds = append(bindedIds, bid)
+	if len(args[1]) == 0 {
+		err = errors.New("login needs timestamp")
+		return
+	}
+	timestamp, err = strconv.ParseUint(args[1], 10, 64)
+	if err != nil {
+		return
+	}
+	if len(args[2]) == 0 {
+		err = errors.New("login needs timeout")
+		return
+	}
+	timeout, err = strconv.ParseUint(args[2], 10, 64)
+	if err != nil {
+		return
 	}
 
-	hmac = args[6]
+	md5Str = args[3]
 	return
 }
 
-func isAuth(id int64, mac, alias, expire, hmac string) bool {
-	expireTime, err := strconv.ParseUint(expire, 10, 64)
-	if err != nil || uint64(time.Now().Unix())-expireTime >= EXPIRE_TIME {
-		return true
+func isAuth(id int64, timestamp uint64, timeout uint64, md5Str string) error {
+	if timestamp > 0 && uint64(time.Now().Unix()) - timestamp >= EXPIRE_TIME {
+		return fmt.Errorf("login timeout, %d - %d >= %d", uint64(time.Now().Unix()), timestamp, EXPIRE_TIME)
 		// return false
 	}
-	// TODO: check hmac is equal
-	return true
+	// check hmac is equal
+	md5New := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%d|%d|%d|%s", id, timestamp, timeout, kLoginKey))))
+	if md5New != md5Str {
+		if glog.V(1) {
+			glog.Warningf("auth not equal: %s != %s", md5New, md5Str)
+		}
+		return errors.New("login parameter is not verified")
+	}
+	return nil
 }
 
 func setReadTimeout(conn net.Conn, delaySec int) error {
@@ -141,7 +153,6 @@ func WsHandler(ws *websocket.Conn) {
 		ws.Close()
 		return
 	}
-	//reply := ""
 	reply := make([]byte, 0, 1024)
 	if err = websocket.Message.Receive(ws, &reply); err != nil {
 		glog.Errorf("[%s] websocket.Message.Receive() error(%s)\n", addr, err)
@@ -151,7 +162,7 @@ func WsHandler(ws *websocket.Conn) {
 
 	glog.Infof("Recv login %s\n", string(reply))
 	// parse login params
-	id, mac, alias, expire, bindedIds, hmac, loginErr := getLoginParams(string(reply))
+	id, timestamp, timeout, encryShadow, loginErr := getLoginParams(string(reply))
 	if loginErr != nil {
 		glog.Errorf("[%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
 		websocket.Message.Send(ws, ParamsError)
@@ -159,18 +170,20 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	// check login
-	if !isAuth(id, mac, alias, expire, hmac) {
-		glog.Errorf("[%s] auth failed:\"%s\"\n", addr, string(reply)) // error(%s)
+	if err = isAuth(id, timestamp, timeout, encryShadow); err != nil {
+		glog.Errorf("[%s] auth failed:\"%s\", error: %v", addr, string(reply), err)
 		websocket.Message.Send(ws, LoginFailed)
 		ws.Close()
 		return
 	}
-	//defer func() {
-	//	if recvErr := recover(); recvErr != nil {
-	//		glog.Errorf("[panic] uid: %d, err: %v", uid, recvErr)
-	//		ws.Close()
-	//	}
-	//}()
+	var bindedIds []int64
+	//if id > 0 {
+	//	bindedIds, err = GetUserDevices(id)
+	//} else
+	if id < 0 {
+		bindedIds, err = GetDeviceUsers(id)
+	}
+
 	statIncConnTotal()
 	statIncConnOnline()
 	defer statDecConnOnline()
@@ -193,9 +206,12 @@ func WsHandler(ws *websocket.Conn) {
 		glog.Infof("[online] user %d on %s", id, gLocalAddr)
 	}
 
-	s := NewSession(id, alias, mac, bindedIds, ws)
+	s := NewSession(id, bindedIds, ws)
 	selement := gSessionList.AddSession(s)
 
+	if timeout <= 0 {
+		timeout = TIME_OUT
+	}
 	start := time.Now().UnixNano()
 	end := int64(start + int64(time.Second))
 	for {
@@ -209,7 +225,7 @@ func WsHandler(ws *websocket.Conn) {
 		}
 
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
-			//glog.Errorf("<%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
+			glog.Errorf("[connection] <%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
 			break
 		}
 		if len(reply) == 1 && string(reply) == PING_MSG {
@@ -232,7 +248,7 @@ func WsHandler(ws *websocket.Conn) {
 			toId := binary.LittleEndian.Uint64(msg[4:12])
 
 			if glog.V(2) {
-				glog.Infof("[msg] %d <- %d, binded(%v)", toId, id, s.BindedIds)
+				glog.Infof("[msg in] %d <- %d, binded(%v)", toId, id, s.BindedIds)
 			}
 			if toId != 0 {
 				if !s.IsBinded(int64(toId)) {

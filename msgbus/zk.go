@@ -13,14 +13,15 @@ func watchZK(existed bool, event zookeeper.Event) {
 	glog.Infof("Existed [%v], event [%v]", existed, event)
 }
 
-func InitZK(addrs []string, listenAddr string) error {
+func InitZK(addrs []string, listenAddr string, rootName string) error {
 	conn, err := zk.Connect(addrs, 60 * time.Second)
 	if err != nil {
 		return err
 	}
-	zk.Create(conn, "/MsgBusServers")
-	glog.Infof("Connect zk[%v] OK!", addrs)
-	createErr := zk.CreateTempW(conn, "/MsgBusServers", listenAddr, watchZK)
+	zkRoot := "/" + rootName
+	zk.Create(conn, zkRoot)
+	glog.Infof("Connect zk[%v] on msgbus root [%s] OK!", addrs, rootName)
+	createErr := zk.CreateTempW(conn, zkRoot, listenAddr, watchZK)
 	if createErr != nil {
 		return createErr
 	}

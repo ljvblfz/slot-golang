@@ -12,6 +12,7 @@ func main() {
 	rh := flag.String("rh", "193.168.1.224:6379", "Redis地址")
 	lhost := flag.String("addr", "localhost:9923", "设置MsgBus监听服务器端口地址")
 	zks := flag.String("zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK服务器地址列表")
+	zkRootName := flag.String("zkroot", "MsgBusServers", "msgbus注册到zookeeper服务中的根节点名")
 	statusAddr := flag.String("sh", ":29998", "程序状态http服务端口")
 	flag.Parse()
 
@@ -52,7 +53,7 @@ func main() {
 	local.Start()
 
 	if err := InitZK(strings.Split(*zks, ","),
-		local.addr); err != nil {
+		local.addr, *zkRootName); err != nil {
 		glog.Fatal(err)
 	}
 	handleSignal(func() {
