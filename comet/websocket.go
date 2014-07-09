@@ -3,6 +3,7 @@ package main
 import (
 	"code.google.com/p/go.net/websocket"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -40,7 +41,7 @@ const (
 	TIME_OUT          = 3 * 60         // 3 mins
 	EXPIRE_TIME       = int64(1 * 60) // 1 mins
 
-	kLoginKey = "BlackCrystal"
+	kLoginKey = "BlackCrystalWb14527" // 和http服务器约定好的私有盐
 )
 
 var (
@@ -132,7 +133,8 @@ func isAuth(id int64, timestamp uint64, timeout uint64, md5Str string) error {
 		// return false
 	}
 	// check hmac is equal
-	md5New := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%d|%d|%d|%s", id, timestamp, timeout, kLoginKey))))
+	md5Buf := md5.Sum([]byte(fmt.Sprintf("%d|%d|%d|%s", id, timestamp, timeout, kLoginKey)))
+	md5New := base64.StdEncoding.EncodeToString(md5Buf[0:])
 	if md5New != md5Str {
 		if glog.V(1) {
 			glog.Warningf("auth not equal: %s != %s", md5New, md5Str)
@@ -166,14 +168,14 @@ func WsHandler(ws *websocket.Conn) {
 	id, timestamp, timeout, encryShadow, loginErr := getLoginParams(string(reply))
 	if loginErr != nil {
 		glog.Errorf("[%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
-		websocket.Message.Send(ws, ParamsError)
+		websocket.Message.Send(ws, AckWrongParams)
 		ws.Close()
 		return
 	}
 	// check login
 	if err = isAuth(id, timestamp, timeout, encryShadow); err != nil {
 		glog.Errorf("[%s] auth failed:\"%s\", error: %v", addr, string(reply), err)
-		websocket.Message.Send(ws, LoginFailed)
+		websocket.Message.Send(ws, LoginFailed.ErrorId)
 		ws.Close()
 		return
 	}
