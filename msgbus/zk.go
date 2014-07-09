@@ -7,10 +7,22 @@ import (
 	"time"
 )
 
-var zkConn *zookeeper.Conn
+var (
+	zkConn			*zookeeper.Conn
+	zkRoot			string
+	zkListenAddr	string
+)
 
 func watchZK(existed bool, event zookeeper.Event) {
 	glog.Infof("Existed [%v], event [%v]", existed, event)
+	if event.State == zookeeper.StateHasSession {
+		err := zk.CreateTempW(zkConn, zkRoot, zkListenAddr, watchZK)
+		if err == nil {
+			glog.Infof("[zk] register msgbus node ok")
+		} else {
+			glog.Errorf("[zk] write msgbus node on zookeeper.StateHasSession failed, error: %v", err)
+		}
+	}
 }
 
 func InitZK(addrs []string, listenAddr string, rootName string) error {
@@ -18,7 +30,7 @@ func InitZK(addrs []string, listenAddr string, rootName string) error {
 	if err != nil {
 		return err
 	}
-	zkRoot := "/" + rootName
+	zkRoot = "/" + rootName
 	zk.Create(conn, zkRoot)
 	glog.Infof("Connect zk[%v] on msgbus root [%s] OK!", addrs, rootName)
 	createErr := zk.CreateTempW(conn, zkRoot, listenAddr, watchZK)
@@ -26,6 +38,7 @@ func InitZK(addrs []string, listenAddr string, rootName string) error {
 		return createErr
 	}
 	zkConn = conn
+	zkListenAddr = listenAddr
 	return nil
 }
 
