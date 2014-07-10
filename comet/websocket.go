@@ -217,7 +217,7 @@ func WsHandler(ws *websocket.Conn) {
 	if timeout <= 0 {
 		timeout = TIME_OUT
 	}
-	ws.ReadTimeout = (time.Duration(timeout) + 1) * time.Second
+	ws.ReadTimeout = (time.Duration(timeout) + 30) * time.Second
 	//start := time.Now().UnixNano()
 	//end := int64(start + int64(time.Second))
 	for {
