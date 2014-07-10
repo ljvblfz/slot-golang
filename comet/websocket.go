@@ -10,7 +10,7 @@ import (
 	"github.com/golang/glog"
 	"html/template"
 	"io"
-	"net"
+	//"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -38,7 +38,7 @@ const (
 	READ_TIMEOUT      = 10
 	PING_MSG          = "p"
 	PONG_MSG          = "P"
-	TIME_OUT          = 3 * 60         // 3 mins
+	TIME_OUT          = 150
 	EXPIRE_TIME       = int64(1 * 60) // 1 mins
 
 	kLoginKey = "BlackCrystalWb14527" // 和http服务器约定好的私有盐
@@ -144,7 +144,7 @@ func isAuth(id int64, timestamp uint64, timeout uint64, md5Str string) error {
 	return nil
 }
 
-func setReadTimeout(conn net.Conn, delaySec int) error {
+func setReadTimeout(conn *websocket.Conn, delaySec int) error {
 	return conn.SetReadDeadline(time.Now().Add(time.Second * time.Duration(delaySec)))
 }
 
@@ -217,17 +217,18 @@ func WsHandler(ws *websocket.Conn) {
 	if timeout <= 0 {
 		timeout = TIME_OUT
 	}
-	start := time.Now().UnixNano()
-	end := int64(start + int64(time.Second))
+	ws.ReadTimeout = (time.Duration(timeout) + 1) * time.Second
+	//start := time.Now().UnixNano()
+	//end := int64(start + int64(time.Second))
 	for {
 		// more than 1 sec, reset the timer
-		if end-start >= int64(time.Second) {
-			if err = setReadTimeout(ws, TIME_OUT); err != nil {
-				glog.Errorf("<%s> user_id:\"%d\" websocket.SetReadDeadline() error(%s)\n", addr, id, err)
-				break
-			}
-			start = end
-		}
+		//if end-start >= int64(time.Second) {
+		//	if err = setReadTimeout(ws, timeout + 30); err != nil {
+		//		glog.Errorf("<%s> user_id:\"%d\" websocket.SetReadDeadline() error(%s)\n", addr, id, err)
+		//		break
+		//	}
+		//	start = end
+		//}
 
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
 			if err == io.EOF {
@@ -274,7 +275,7 @@ func WsHandler(ws *websocket.Conn) {
 			// glog.Infof("%v Recv %v [%#T] [%#T] [%v] [%v] [%v]", s.Uid, reply, reply, PING_MSG,
 			//  reply == PING_MSG, []byte(reply), []byte(PING_MSG))
 		}
-		end = time.Now().UnixNano()
+		//end = time.Now().UnixNano()
 	}
 	err = SetUserOffline(id, gLocalAddr)
 	if err != nil {
