@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/cuixin/cloud/zk"
+	"github.com/cuixin/atomic"
 	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
 	"time"
@@ -11,10 +12,15 @@ var (
 	zkConn			*zookeeper.Conn
 	zkRoot			string
 	zkListenAddr	string
+
+	zkOk atomic.AtomicBoolean
 )
 
-func watchZK(existed bool, event zookeeper.Event) {
-	glog.Infof("Existed [%v], event [%v]", existed, event)
+func init() {
+	zkOk.Set(false)
+}
+
+func watchEvent(event zookeeper.Event) {
 	if event.State == zookeeper.StateHasSession {
 		err := zk.CreateTempW(zkConn, zkRoot, zkListenAddr, watchZK)
 		if err == nil {
@@ -25,20 +31,29 @@ func watchZK(existed bool, event zookeeper.Event) {
 	}
 }
 
+func watchZK(existed bool, event zookeeper.Event) {
+	glog.Infof("Existed [%v], event [%v]", existed, event)
+	if zkOk.Get() {
+		watchEvent(event)
+	}
+}
+
 func InitZK(addrs []string, listenAddr string, rootName string) error {
-	conn, err := zk.Connect(addrs, 60 * time.Second)
+	conn, err := zk.Connect(addrs, 60 * time.Second, watchEvent)
 	if err != nil {
 		return err
 	}
 	zkRoot = "/" + rootName
+	zkConn = conn
+	zkListenAddr = listenAddr
+
 	zk.Create(conn, zkRoot)
 	glog.Infof("Connect zk[%v] on msgbus root [%s] OK!", addrs, rootName)
 	createErr := zk.CreateTempW(conn, zkRoot, listenAddr, watchZK)
+	zkOk.Set(true)
 	if createErr != nil {
 		return createErr
 	}
-	zkConn = conn
-	zkListenAddr = listenAddr
 	return nil
 }
 
