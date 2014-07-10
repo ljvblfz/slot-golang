@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/json"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	//"github.com/gorilla/websocket"
@@ -111,8 +112,10 @@ func packData(id int64, data []byte) []byte {
 }
 
 func sendLogin(c *Connection, id int64, timestamp uint32, timeout uint32) {
-	md5Value := fmt.Sprintf("%x", md5.Sum([]byte(fmt.Sprintf("%d|%d|%d|BlackCrystal", id, timestamp, timeout))))
+	bs := md5.Sum([]byte(fmt.Sprintf("%d|%d|%d|BlackCrystalWb14527", id, timestamp, timeout)))
+	md5Value := base64.StdEncoding.EncodeToString(bs[0:])
 	buf := fmt.Sprintf("%d|%d|%d|%s", id, timestamp, timeout, md5Value)
+	glog.Infof("[login] uid [%d] login: %s", id, buf)
 	c.conn.Write([]byte(buf))
 }
 
