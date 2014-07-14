@@ -21,6 +21,9 @@ func init() {
 }
 
 func watchEvent(event zookeeper.Event) {
+	if !zkOk.Get() {
+		return
+	}
 	if event.State == zookeeper.StateHasSession {
 		err := zk.CreateTempW(zkConn, zkRoot, zkListenAddr, watchZK)
 		if err == nil {
@@ -33,9 +36,7 @@ func watchEvent(event zookeeper.Event) {
 
 func watchZK(existed bool, event zookeeper.Event) {
 	glog.Infof("Existed [%v], event [%v]", existed, event)
-	if zkOk.Get() {
-		watchEvent(event)
-	}
+	watchEvent(event)
 }
 
 func InitZK(addrs []string, listenAddr string, rootName string) error {
