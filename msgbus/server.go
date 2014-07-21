@@ -5,13 +5,15 @@ import (
 	"encoding/binary"
 	"github.com/golang/glog"
 	"io"
+	"io/ioutil"
 	"net"
 	"sync"
 )
 
 const (
 	HEADER_SIZE = 4
-	PAYLOAD_MAX = 1024
+	INIT_MAX = 1024
+	PAYLOAD_MAX = 32 * 1024
 )
 
 type Server struct {
@@ -54,7 +56,8 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 	GComets.AddServer(addr.IP.String(), conn)
 	glog.Infof("New comet [%s]", addr.IP.String())
 	header := make([]byte, HEADER_SIZE)
-	buf := make([]byte, PAYLOAD_MAX)
+	var bufLen uint32 = INIT_MAX
+	buf := make([]byte, bufLen)
 	for {
 		// TODO 这里有一个可优化的空间，在接受数据之前创建一个buffer，前四字节是长度，后面
 		// 该长度的字节是内容，然后将这个buffer整体传给后续的处理程序，后续的转发就可以直接
@@ -72,13 +75,24 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 
 		// read payload, the size of the payload is given by header
 		size := binary.LittleEndian.Uint32(header)
-		if size > PAYLOAD_MAX {
+		if size > bufLen {
+			if size > PAYLOAD_MAX {
+				// 数据意外的过长，扔掉本次消息
+				glog.Errorf("[msg] discard this message from comet [%v] too long, %d bytes",
+					conn.RemoteAddr(), size)
+				_, err = io.CopyN(ioutil.Discard, conn, int64(size))
+				if err != nil {
+					break
+				}
+				continue
+			}
+			bufLen = size
+			buf = make([]byte, bufLen)
 			// log
-			glog.Error("Overflow the max size", size, PAYLOAD_MAX)
+			//glog.Error("Overflow the max size", size, bufLen)
 			// 超过最大长度不应该出现这样的问题，一旦出现只能关闭服务器，或者忽略这个消息内容
 			// 如果忽略消息内容，应该将内容读取完毕再break
-
-			break
+			//break
 		}
 
 		data := buf[:size]

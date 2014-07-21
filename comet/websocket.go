@@ -39,7 +39,7 @@ const (
 	PING_MSG          = "p"
 	PONG_MSG          = "P"
 	TIME_OUT          = 150
-	EXPIRE_TIME       = int64(1 * 60) // 1 mins
+	EXPIRE_TIME       = uint64(1 * 60) // 1 mins
 
 	kLoginKey = "BlackCrystalWb14527" // 和http服务器约定好的私有盐
 )
@@ -128,7 +128,7 @@ func getLoginParams(req string) (id int64, timestamp, timeout uint64, md5Str str
 }
 
 func isAuth(id int64, timestamp uint64, timeout uint64, md5Str string) error {
-	if timestamp > 0 && time.Now().Unix() - int64(timestamp) >= EXPIRE_TIME {
+	if timestamp > 0 && uint64(time.Now().Unix()) - timestamp >= EXPIRE_TIME {
 		return fmt.Errorf("login timeout, %d - %d >= %d", uint64(time.Now().Unix()), timestamp, EXPIRE_TIME)
 		// return false
 	}
@@ -187,6 +187,10 @@ func WsHandler(ws *websocket.Conn) {
 	}
 	if err != nil {
 		glog.Errorf("[getIds] id [%d] get ids error: %v, ids: %v", id, err, bindedIds)
+	} else {
+		if glog.V(2) {
+			glog.Infof("[getIds] get ids for id [%d]: count(%d)%v", id, len(bindedIds), bindedIds)
+		}
 	}
 
 	statIncConnTotal()
@@ -208,7 +212,7 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	if glog.V(2) {
-		glog.Infof("[online] user %d on %s", id, gLocalAddr)
+		glog.Infof("[online] id %d on %s", id, gLocalAddr)
 	}
 
 	s := NewSession(id, bindedIds, ws)
@@ -240,6 +244,7 @@ func WsHandler(ws *websocket.Conn) {
 			}
 			break
 		}
+		s.UpdateBindedIds()
 		if len(reply) == 1 && string(reply) == PING_MSG {
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
 				glog.Errorf("<%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
@@ -260,7 +265,9 @@ func WsHandler(ws *websocket.Conn) {
 			toId := int64(binary.LittleEndian.Uint64(msg[4:12]))
 
 			if glog.V(2) {
-				glog.Infof("[msg in] %d <- %d, binded(%v)", toId, id, s.BindedIds)
+				glog.Infof("[msg in] %d <- %d, binded(%v), data: (len: %d)%v...", toId, id, s.BindedIds, len(msg), msg[0:3])
+			} else if glog.V(3) {
+				glog.Infof("[msg in] %d <- %d, binded(%v), data: (len: %d)%v...", toId, id, s.BindedIds, len(msg), msg)
 			}
 			if toId != 0 {
 				if !s.IsBinded(int64(toId)) {
@@ -282,7 +289,7 @@ func WsHandler(ws *websocket.Conn) {
 		glog.Errorf("[offline error] uid %d, error: %v", id, err)
 	}
 	if glog.V(2) {
-		glog.Infof("[offline] user %d on %s", id, gLocalAddr)
+		glog.Infof("[offline] id %d on %s", id, gLocalAddr)
 	}
 	gSessionList.RemoveSession(selement)
 	return

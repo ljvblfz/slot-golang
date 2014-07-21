@@ -5,6 +5,8 @@ import (
 	"github.com/cuixin/cloud/hlist"
 	"github.com/golang/glog"
 	"sync"
+	"strings"
+	"strconv"
 )
 
 var (
@@ -24,10 +26,11 @@ type Session struct {
 	Uid       int64
 	BindedIds []int64
 	Conn      *websocket.Conn
+	TaskChan  chan string
 }
 
 func NewSession(uid int64, bindedIds []int64, conn *websocket.Conn) *Session {
-	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn}
+	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn, TaskChan: make(chan string)}
 }
 
 func (this *Session) Close() {
@@ -41,6 +44,40 @@ func (this *Session) IsBinded(id int64) bool {
 		}
 	}
 	return false
+}
+
+// 检查是否有已发生的设备列表变动，有的话一次性全部读取，但只保留最后一个最新的
+func (this *Session) UpdateBindedIds() {
+	newIds := ""
+	idsChanged := false
+	for {
+		done := false
+		select {
+		case s := <-this.TaskChan:
+			newIds = s
+			idsChanged = true
+		default:
+			done = true
+			break
+		}
+		if done {
+			break
+		}
+	}
+	if idsChanged {
+		ids := strings.Split(newIds, ",")
+		this.BindedIds = make([]int64, len(ids))
+		for i, _ := range ids {
+			if len(ids[i]) > 0 {
+				n, err := strconv.ParseInt(ids[i], 10, 64)
+				if err != nil {
+					glog.Errorf("[binded ids] id [%d] receive non-int id updated message [%s], error: %v", this.Uid, newIds, err)
+					continue
+				}
+				this.BindedIds[i] = n
+			}
+		}
+	}
 }
 
 type SessionList struct {
@@ -85,6 +122,7 @@ func (this *SessionList) RemoveSession(e *hlist.Element) {
 		s.Close()
 	}
 	this.mu[blockId].Lock()
+	close(s.TaskChan)
 	list, ok := this.kv[blockId][s.Uid]
 	if ok {
 		list.Remove(e)
@@ -93,6 +131,31 @@ func (this *SessionList) RemoveSession(e *hlist.Element) {
 		}
 	}
 	this.mu[blockId].Unlock()
+}
+
+func (this *SessionList) UpdateIds(id int64, ids string) {
+	blockId := getBlockID(id)
+
+	lock := this.mu[blockId]
+	lock.Lock()
+	defer lock.Unlock()
+
+	if list, ok := this.kv[blockId][id]; ok {
+		for e := list.Front(); e != nil; e = e.Next() {
+			if session, ok := e.Value.(*Session); !ok {
+				return
+			} else {
+				go func(ch chan string) {
+					defer func() {
+						if err := recover(); err != nil {
+							glog.Warning("[panic] panic on handle update id task, error: %v", err)
+						}
+					}()
+					ch <- ids
+				}(session.TaskChan)
+			}
+		}
+	}
 }
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {
@@ -116,6 +179,9 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 					if glog.V(1) {
 						glog.Infof("[push failed] uid: %d, error: %v", session.Uid, err)
 					}
+				} else {
+					statIncDownStreamOut()
+					glog.Infof("[msg|down] to id: %d, data: (len %d)%v", session.Uid, len(data), data[:3])
 				}
 			}
 		}

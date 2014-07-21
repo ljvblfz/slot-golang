@@ -1,6 +1,7 @@
 package status
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"github.com/cuixin/atomic"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/user"
 	"runtime"
+	"runtime/pprof"
 	"time"
 )
 
@@ -134,6 +136,14 @@ func goStats() []byte {
 	return jsonRes(res)
 }
 
+func goroutineStats() []byte {
+	buf := new(bytes.Buffer)
+	if err := pprof.Lookup("goroutine").WriteTo(buf, 2); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
 // server stats
 func serverStats() []byte {
 	res := map[string]interface{}{}
@@ -196,6 +206,7 @@ func statHandle(w http.ResponseWriter, r *http.Request) {
 			<li><a href="/stat?type=memory">memory</a></li>
 			<li><a href="/stat?type=server">server</a></li>
 			<li><a href="/stat?type=golang">golang</a></li>
+			<li><a href="/stat?type=goroutines">goroutines</a></li>
 			<li><a href="/stat?type=config">config</a></li>
 			<li><a href="/stat?type=app">online</a></li>
 			<li><a href="/stat?type=app&refresh=auto">online(auto refresh)</a></li>
@@ -206,6 +217,9 @@ func statHandle(w http.ResponseWriter, r *http.Request) {
 		res = serverStats()
 	case "golang":
 		res = goStats()
+	case "goroutines":
+		htmlRes = false
+		res = goroutineStats()
 	case "config":
 		res = configInfo()
 	case "app":

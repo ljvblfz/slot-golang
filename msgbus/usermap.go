@@ -93,9 +93,36 @@ func (this *UserMap) Offline(uid int64, host string) {
 	// TODO check err is equals 0
 	if err != 1 {
 		// LOG
-		glog.Errorln(uid, "canot find in host", host)
+		glog.Errorln("id", uid, "can't be found in host", host)
 	}
 	this.mu[bn].Unlock()
+}
+
+func (this *UserMap) OfflineHost(host string) {
+	for bn := int64(0); bn < BlockSize; bn++ {
+		this.mu[bn].Lock()
+		for uid, hostlist := range this.kv[bn] {
+			if hostlist == nil {
+				continue
+			}
+			err := 0
+			for e := hostlist.Front(); e != nil; e = e.Next() {
+				_host, ok := e.Value.(string)
+				if !ok {
+					glog.Fatal("Fatal error")
+					continue
+				}
+				if _host == host {
+					err++
+					hostlist.Remove(e)
+				}
+			}
+			if err != 1 {
+				glog.Errorf("[offline] id %d: count %d with host %s", uid, err, host)
+			}
+		}
+		this.mu[bn].Unlock()
+	}
 }
 
 func (this *UserMap) GetUserComet(uid int64) (*hlist.Hlist, error) {
@@ -137,6 +164,11 @@ func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 			return fmt.Errorf("wrong type error [%v] uid[%d]", e.Value, uid)
 		} else {
 			err = GComets.PushMsg(msg, h)
+			if err != nil {
+				glog.Infof("[msg|down] to: (%d)%v", 1, h)
+			} else {
+				glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
+			}
 		}
 	}
 	this.mu[bn].Unlock()

@@ -7,14 +7,16 @@ import (
 )
 
 func MainHandle(msg []byte) {
-	if glog.V(2) {
-		glog.Infof("[msg] %s", string(msg))
-	}
 	statIncUpStreamIn()
 
 	idsSize := binary.LittleEndian.Uint16(msg[:2])
 	toIds := msg[2 : 2+idsSize*8]
 	data := msg[2+idsSize*8:]
+
+	if glog.V(2) {
+		glog.Infof("[msg|in] ids count: %d, to ids: %v, total len: %d, data: %v...", idsSize, toIds, len(msg), msg[:3])
+	}
+
 	if idsSize == 1 {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
 		err := GUserMap.PushToComet(uid, msg)
@@ -27,12 +29,13 @@ func MainHandle(msg []byte) {
 		return
 	}
 	smap := make(map[string]*hlist.Hlist, idsSize)
+	//mapInfo := make(map[int32] []string)
 
 	for i := uint16(0); i < idsSize; i++ {
 		uid := int64(binary.LittleEndian.Uint64(toIds[i*8 : i*8+8]))
 		cometHosts, err := GUserMap.GetUserComet(uid)
 		if err != nil {
-			glog.Errorf("%d %v", uid, err)
+			glog.Errorf("id: %d, error: %v", uid, err)
 			continue
 		}
 		for e := cometHosts.Front(); e != nil; e = e.Next() {
@@ -42,13 +45,12 @@ func MainHandle(msg []byte) {
 				hl = hlist.New()
 				smap[haddr] = hl
 			}
-			glog.Info(haddr, "<<<", uid)
 			hl.PushFront(uid)
+			//mapInfo[uid] = append(mapInfo[uid], haddr)
 		}
 	}
-	glog.Infof("ToMap (%d)%v", smap, len(smap))
+	//glog.Infof("[msg|down] to: (%d)%v", len(mapInfo), mapInfo)
 	for k, v := range smap {
-		glog.Info(k, ">>>>> ", v)
 		vSize := uint16(v.Len())
 		pushData := make([]byte, 2+vSize*8+uint16(len(data)))
 		binary.LittleEndian.PutUint16(pushData[:2], vSize)

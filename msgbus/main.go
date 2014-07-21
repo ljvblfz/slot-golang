@@ -19,11 +19,9 @@ func main() {
 	InitStat(*statusAddr)
 
 	InitUserMap()
-	err := InitModel(*rh)
-	if err != nil {
-		glog.Fatal(err)
-	}
+	InitModel(*rh)
 
+	// 先sub用户登录信息,再载入已有的用户列表,避免在载入和sub之间的空隙遗漏信息
 	if notifyUserState, err := SubUserState(); err != nil {
 		glog.Fatal(err)
 	} else {
@@ -40,13 +38,21 @@ func main() {
 						glog.Infof("[online] user %d on %s", uid, host)
 					}
 				} else {
-					GUserMap.Offline(uid, host)
+					if uid == 0 {
+						GUserMap.OfflineHost(host)
+					} else {
+						GUserMap.Offline(uid, host)
+					}
 					if glog.V(1) {
 						glog.Infof("[offline] user %d on %s", uid, host)
 					}
 				}
 			}
 		}()
+	}
+	err := LoadUsers()
+	if err != nil {
+		glog.Fatal(err)
 	}
 
 	local := NewServer(*lhost)

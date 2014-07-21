@@ -16,7 +16,7 @@ const (
 const (
 	_GetAllHosts = iota
 	_GetAllUsers
-	_SubKey
+	_SubLoginState
 	_Max
 )
 
@@ -53,8 +53,11 @@ func newPool(server, password string) *redis.Pool {
 	}
 }
 
-func InitModel(addr string) error {
+func InitModel(addr string) {
 	initRedix(addr)
+}
+
+func LoadUsers() error {
 	hosts, err := GetAllHosts()
 	if err != nil {
 		return err
@@ -104,7 +107,7 @@ func GetAllUsers(hosts []string) error {
 }
 
 func SubUserState() (<-chan []byte, error) {
-	r := Redix[_SubKey].Get()
+	r := Redix[_SubLoginState].Get()
 
 	psc := redis.PubSubConn{Conn: r}
 	psc.Subscribe(SubKey)
@@ -116,9 +119,9 @@ func SubUserState() (<-chan []byte, error) {
 			switch n := data.(type) {
 			case redis.Message:
 				ch <- n.Data
-				if glog.V(1) {
-					glog.Infof("Message: %s %s\n", n.Channel, n.Data)
-				}
+				//if glog.V(1) {
+				//	glog.Infof("Message: %s %s\n", n.Channel, n.Data)
+				//}
 			// case redis.PMessage:
 			// 	fmt.Printf("PMessage: %s %s %s\n", n.Pattern, n.Channel, n.Data)
 			case redis.Subscription:
