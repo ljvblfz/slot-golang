@@ -10,10 +10,11 @@ import (
 	"github.com/golang/glog"
 	"html/template"
 	"io"
-	//"net"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -58,11 +59,23 @@ var (
 	AckWrongMD5            = []byte{byte(6)} // 错误的md5
 	AckOtherglogoned       = []byte{byte(7)} // 您已在别处登陆
 	AckWrongLoginTimeout   = []byte{byte(8)} // 超时解析错误
+
+	websocketUrl	[]string
+	urlLock			sync.Mutex
 )
 
 type ErrorCode struct {
 	ErrorId   int
 	ErrorDesc string
+}
+
+// 获取本comet可接受websocket连接的所有地址
+func GetCometUrl() []string {
+	urlLock.Lock()
+	urls := make([]string, len(websocketUrl))
+	copy(urls, websocketUrl)
+	urlLock.Unlock()
+	return urls
 }
 
 // StartHttp start http listen.
@@ -82,17 +95,45 @@ func websocketListen(bindAddr string) {
 		Handler: WsHandler,
 		MustMask: false,
 	}
-	httpServeMux.Handle("/ws", wsHandler)
+	path := "ws"
+	httpServeMux.Handle("/" + path, wsHandler)
+
+	addr, err := net.ResolveTCPAddr("tcp", bindAddr)
+	if err != nil {
+		glog.Errorf("[listen] net.ResolveTCPAddr %s failed: %v", bindAddr, err)
+		return
+	}
+	bindAddr = fmt.Sprintf("%s:%d", gLocalAddr, addr.Port)
+
 	server := &http.Server{
 		Addr:        bindAddr,
 		Handler:     httpServeMux,
 		ReadTimeout: READ_TIMEOUT * time.Second,
 	}
-	err := server.ListenAndServe()
+
+	urlServer := fmt.Sprintf("ws://%s/%s", bindAddr, path)
+
+	urlLock.Lock()
+	websocketUrl = append(websocketUrl, urlServer)
+	urlLock.Unlock()
+
+	err = server.ListenAndServe()
 	if err != nil {
 		glog.Errorf("server.Serve(\"%s\") error(%v)", bindAddr, err)
 		panic(err)
 	}
+	urlLock.Lock()
+	for i, v := range websocketUrl {
+		if v != urlServer {
+			continue
+		}
+		newUrl := make([]string, len(websocketUrl)-1)
+		copy(newUrl[:i], websocketUrl[:i])
+		copy(newUrl[i:], websocketUrl[i+1:])
+		websocketUrl = newUrl
+		break
+	}
+	urlLock.Unlock()
 }
 
 func getLoginParams(req string) (id int64, timestamp, timeout uint64, md5Str string, err error) {

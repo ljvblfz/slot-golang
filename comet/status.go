@@ -40,7 +40,7 @@ func InitStat(addr string) {
 
 	go statUpdatePerSecond()
 
-	status.InitStat(addr)
+	status.InitStat(addr, nil)
 }
 
 func statIncConnTotal() {
@@ -53,6 +53,10 @@ func statIncConnOnline() {
 
 func statDecConnOnline() {
 	status.AppStat.Dec(kConnOnline)
+}
+
+func statGetConnOnline() uint64 {
+	return status.AppStat.Get(kConnOnline)
 }
 
 func statIncUpStreamIn() {

@@ -10,7 +10,8 @@ var (
 	gSessionList *SessionList
 	gLocalAddr   string
 	gStatusAddr  string
-	gZkRoot      string
+	gMsgbusRoot  string
+	gCometRoot   string
 )
 
 func main() {
@@ -19,7 +20,8 @@ func main() {
 	zkHosts := flag.String("zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK的地址,多个地址用逗号分割")
 	flag.StringVar(&gLocalAddr, "lip", "", "comet服务器本地地址")
 	flag.StringVar(&gStatusAddr, "sh", ":29999", "程序状态http服务端口")
-	flag.StringVar(&gZkRoot, "zkroot", "MsgBusServers", "zookeeper服务中msgbus所在的根节点名")
+	flag.StringVar(&gMsgbusRoot, "zkroot", "MsgBusServers", "zookeeper服务中msgbus所在的根节点名")
+	flag.StringVar(&gCometRoot, "zkrootc", "CometServers", "zookeeper服务中comet所在的根节点名")
 	flag.Parse()
 
 	InitStat(gStatusAddr)
@@ -29,7 +31,8 @@ func main() {
 	}
 
 	initRedix(*rh)
-	go InitZK(strings.Split(*zkHosts, ","), gZkRoot)
+
+	go InitZK(strings.Split(*zkHosts, ","), gMsgbusRoot, gCometRoot)
 
 	gSessionList = InitSessionList()
 	StartHttp(strings.Split(*lHost, ","))
