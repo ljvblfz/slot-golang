@@ -1,7 +1,8 @@
 #!/bin/bash
 
-for x in {15,16,17,18}
+for x in {14..14}
 do
-	scp comet root@192.168.2.$x:/root/bin_gl/cometgl_update
-	ssh root@192.168.2.$x killall cometgl
+	scp comet_conf root@192.168.2.$x:/root/bin
+	scp comet root@192.168.2.$x:/root/bin/comet_update
+	ssh root@192.168.2.$x killall comet
 done
