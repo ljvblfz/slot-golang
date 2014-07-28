@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"github.com/golang/glog"
 	"strings"
 )
@@ -23,6 +24,8 @@ func main() {
 	flag.StringVar(&gMsgbusRoot, "zkroot", "MsgBusServers", "zookeeper服务中msgbus所在的根节点名")
 	flag.StringVar(&gCometRoot, "zkrootc", "CometServers", "zookeeper服务中comet所在的根节点名")
 	flag.Parse()
+
+	log.SetFlags(log.Flags() | log.Llongfile)
 
 	InitStat(gStatusAddr)
 

@@ -83,9 +83,9 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 		} else {
 			this.curr = this.head
 		}
+		this.mu.Unlock()
 	} else {
 		glog.Errorf("[msgbus] curr == nil, list: %v", this.list)
 	}
-	this.mu.Unlock()
 	statIncUpStreamOut()
 }
