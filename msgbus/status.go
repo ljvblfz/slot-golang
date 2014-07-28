@@ -33,7 +33,7 @@ func InitStat(addr string) {
 
 	go statUpdatePerSecond()
 
-	status.InitStat(addr)
+	status.InitStat(addr, nil)
 }
 
 func statIncUpStreamIn() {

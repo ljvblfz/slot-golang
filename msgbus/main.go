@@ -25,30 +25,7 @@ func main() {
 	if notifyUserState, err := SubUserState(); err != nil {
 		glog.Fatal(err)
 	} else {
-		go func() {
-			for bytes := range notifyUserState {
-				user_ori := string(bytes)
-				users_def := strings.Split(user_ori, "|")
-				uid, _ := strconv.ParseInt(users_def[0], 10, 64)
-				host := users_def[1]
-				isOnline := users_def[2]
-				if isOnline == "1" {
-					GUserMap.Online(uid, host)
-					if glog.V(1) {
-						glog.Infof("[online] user %d on %s", uid, host)
-					}
-				} else {
-					if uid == 0 {
-						GUserMap.OfflineHost(host)
-					} else {
-						GUserMap.Offline(uid, host)
-					}
-					if glog.V(1) {
-						glog.Infof("[offline] user %d on %s", uid, host)
-					}
-				}
-			}
-		}()
+		go handleOnlineEvent(notifyUserState)
 	}
 	err := LoadUsers()
 	if err != nil {
@@ -67,4 +44,29 @@ func main() {
 		glog.Info("Closed Server")
 		local.Stop()
 	})
+}
+
+func handleOnlineEvent(notifyUserState <-chan []byte) {
+	for bytes := range notifyUserState {
+		user_ori := string(bytes)
+		users_def := strings.Split(user_ori, "|")
+		uid, _ := strconv.ParseInt(users_def[0], 10, 64)
+		host := users_def[1]
+		isOnline := users_def[2]
+		if isOnline == "1" {
+			GUserMap.Online(uid, host)
+			if glog.V(1) {
+				glog.Infof("[online] user %d on %s", uid, host)
+			}
+		} else {
+			if uid == 0 {
+				GUserMap.OfflineHost(host)
+			} else {
+				GUserMap.Offline(uid, host)
+			}
+			if glog.V(1) {
+				glog.Infof("[offline] user %d on %s", uid, host)
+			}
+		}
+	}
 }
