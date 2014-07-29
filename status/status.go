@@ -68,15 +68,17 @@ func (a *appStat) JsonBytes() []byte {
 	return jsonRes(res)
 }
 
-func InitStat(addr string) {
+func InitStat(addr string, mux *http.ServeMux) {
 	startTime = time.Now().UnixNano()
 	glog.Infof("Start status server on addr:\"%s\"\n", addr)
 	go func() {
-		httpServeMux := http.NewServeMux()
-		httpServeMux.HandleFunc("/stat", statHandle)
+		if mux == nil {
+			mux = http.NewServeMux()
+		}
+		mux.HandleFunc("/stat", statHandle)
 		running.Set(true)
 		defer running.Set(false)
-		if err := http.ListenAndServe(addr, httpServeMux); err != nil {
+		if err := http.ListenAndServe(addr, mux); err != nil {
 			glog.Errorf("http.ListenAdServe(\"%s\") error(%v)\n", addr, err)
 			panic(err)
 		}
@@ -244,11 +246,27 @@ func statHandle(w http.ResponseWriter, r *http.Request) {
 var autoHtml = `
 <html>
 <body>
-<pre>
+<pre id='output'>
 {{.}}
 </pre>
 <script type="text/javascript">
-setInterval("window.location.reload()", 2000);
+setInterval("refresh()", 2000);
+refresh = function() {
+	if (window.XMLHttpRequest) {
+		var ajax = new XMLHttpRequest();
+		var url = window.location.href.replace("refresh=auto", "refresh=");
+		ajax.open("get", url, true)
+		ajax.onload = function() {
+			var output = document.getElementById('output');
+			if (!output)
+				return;
+			output.innerText = this.responseText;
+		};
+		ajax.send()
+	} else {
+		window.location.reload();
+	}
+}
 </script>
 </body>
 </html>
