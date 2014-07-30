@@ -91,7 +91,12 @@ func websocketListen(bindAddr string) {
 	httpServeMux.HandleFunc("/", homeHandle)
 
 	wsHandler := websocket.Server{
-		Handshake: nil,
+		Handshake: func(config *websocket.Config, r *http.Request) error {
+			if len(config.Protocol) > 0 {
+				config.Protocol = config.Protocol[:1]
+			}
+			return nil
+		},
 		Handler: WsHandler,
 		MustMask: false,
 	}
@@ -197,7 +202,7 @@ func WsHandler(ws *websocket.Conn) {
 		ws.Close()
 		return
 	}
-	reply := make([]byte, 0, 1024)
+	reply := make([]byte, 0, 256)
 	if err = websocket.Message.Receive(ws, &reply); err != nil {
 		glog.Errorf("[%s] websocket.Message.Receive() error(%s)\n", addr, err)
 		ws.Close()
