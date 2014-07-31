@@ -250,23 +250,7 @@ var autoHtml = `
 {{.}}
 </pre>
 <script type="text/javascript">
-setInterval("refresh()", 2000);
-refresh = function() {
-	if (window.XMLHttpRequest) {
-		var ajax = new XMLHttpRequest();
-		var url = window.location.href.replace("refresh=auto", "refresh=");
-		ajax.open("get", url, true)
-		ajax.onload = function() {
-			var output = document.getElementById('output');
-			if (!output)
-				return;
-			output.innerText = this.responseText;
-		};
-		ajax.send()
-	} else {
-		window.location.reload();
-	}
-}
+setInterval("window.location.reload()", 2000);
 </script>
 </body>
 </html>
