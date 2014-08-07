@@ -155,18 +155,17 @@ func ReportUsage() {
 	for {
 		select {
 		case event := <-zkReportCh:
-			//glog.Infof("[stat|log] get zk event: %v", event)
+			glog.Infof("[stat|log] get zk event: %v", event)
 			if event.Type != zookeeper.EventSession {
 				break
+			}
+			if !zkConnOk.Get() {
+				continue
 			}
 			switch event.State {
 			case zookeeper.StateHasSession:
 				urls := GetCometUrl()
 				for _, u := range urls {
-					if !zkConnOk.Get() {
-						glog.Warning("[zk] write zk but conn was broken")
-						continue
-					}
 					data := calcZkData(u, 0.0, 0, 0, 0)
 					tpath, err := zkConn.Create(zkCometRoot + "/", []byte(data),
 						zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
@@ -178,7 +177,7 @@ func ReportUsage() {
 						glog.Errorf("[zk|comet] create empty comet node %s with data %s", zkCometRoot, data)
 						break
 					}
-					cometPath[event.Path] = cometStat{Ok: true, Url: u, Path: event.Path}
+					cometPath[tpath] = cometStat{Ok: true, Url: u, Path: tpath}
 				}
 
 			case zookeeper.StateDisconnected:
