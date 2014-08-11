@@ -10,7 +10,6 @@ import (
 type MsgBusManager struct {
 	list *hlist.Hlist
 	curr *hlist.Element
-	head *hlist.Element
 	mu   *sync.Mutex
 }
 
@@ -40,7 +39,7 @@ func (this *MsgBusManager) Online(remoteAddr string) {
 		go g.Reciver(onMsgBusCloseEvent)
 	}
 	e := this.list.PushFront(g)
-	this.head = this.list.Front()
+	//this.head = this.list.Front() 有必要缓存一个head元素？
 	this.curr = e
 	this.mu.Unlock()
 }
@@ -81,7 +80,7 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 		if next != nil {
 			this.curr = next
 		} else {
-			this.curr = this.head
+			this.curr = this.list.Front()
 		}
 		this.mu.Unlock()
 	} else {

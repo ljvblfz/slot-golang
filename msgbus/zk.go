@@ -1,11 +1,13 @@
 package main
 
 import (
+	"strings"
+	"time"
+
 	"github.com/cuixin/cloud/zk"
 	"github.com/cuixin/atomic"
 	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
-	"time"
 )
 
 var (
@@ -55,7 +57,46 @@ func InitZK(addrs []string, listenAddr string, rootName string) error {
 	if createErr != nil {
 		return createErr
 	}
+
+	go WatchRmq()
 	return nil
+}
+
+func WatchRmq() {
+	zkRmqRoot := "/" + "Rabbitmq"
+	glog.Infof("Watching rabbitmq root [%s] OK!", zkRmqRoot)
+	for {
+		nodes, watch, err := zk.GetNodesW(zkConn, zkRmqRoot)
+		if err == zookeeper.ErrNoNode || err == zookeeper.ErrNoChildrenForEphemerals {
+			glog.Errorln(err)
+			time.Sleep(time.Second)
+			continue
+		} else if err != nil {
+			glog.Errorln(err)
+			time.Sleep(time.Second)
+			continue
+		}
+		var addrs []string = make([]string, 0, len(nodes))
+		for _, n := range nodes {
+			addr, err := zk.GetNodeData(zkConn, zkRmqRoot + "/" + n)
+			if err != nil {
+				glog.Errorf("[%s] cannot get", addr)
+				continue
+			}
+			addrs = append(addrs, addr)
+		}
+		for _, addr := range addrs {
+			confs := strings.SplitN(addr, ",", 2)
+			if len(confs) != 2 {
+				glog.Errorf("[rmq] data in zk is not valid format(eg: url,queuename): %s", confs)
+				continue
+			}
+			glog.Infof("[rmq] online %s", addr)
+			GRmqs.Add(confs[0], confs[1])
+		}
+		e := <-watch
+		glog.Infof("zk receive an event %v", e)
+	}
 }
 
 func CloseZK() {

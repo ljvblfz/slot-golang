@@ -17,6 +17,12 @@ func MainHandle(msg []byte) {
 		glog.Infof("[msg|in] ids count: %d, to ids: %v, total len: %d, data: %v...", idsSize, toIds, len(msg), msg[:3])
 	}
 
+	// Write into rabbitmq
+	if glog.V(2) {
+		glog.Infof("[rmq] write %s", data)
+	}
+	GRmqs.Push(data)
+
 	if idsSize == 1 {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
 		err := GUserMap.PushToComet(uid, msg)
