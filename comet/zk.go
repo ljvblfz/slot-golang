@@ -159,11 +159,11 @@ func ReportUsage() {
 			if event.Type != zookeeper.EventSession {
 				break
 			}
-			if !zkConnOk.Get() {
-				continue
-			}
 			switch event.State {
 			case zookeeper.StateHasSession:
+				if !zkConnOk.Get() {
+					break
+				}
 				urls := GetCometUrl()
 				for _, u := range urls {
 					data := calcZkData(u, 0.0, 0, 0, 0)
