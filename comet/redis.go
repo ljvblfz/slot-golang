@@ -30,39 +30,10 @@ var (
 )
 var redisAddr string
 
-func newPool(server, password string) *redis.Pool {
-	return &redis.Pool{
-		MaxIdle:     100,
-		MaxActive:   100,
-		IdleTimeout: 10 * time.Second,
-		Dial: func() (redis.Conn, error) {
-			c, err := redis.Dial("tcp", server)
-			if err != nil {
-				return nil, err
-			}
-			if password != "" {
-				if _, err := c.Do("AUTH", password); err != nil {
-					c.Close()
-					return nil, err
-				}
-			}
-			return c, err
-		},
-		TestOnBorrow: func(c redis.Conn, t time.Time) error {
-			_, err := c.Do("PING")
-			if err != nil {
-				glog.Error(err)
-			}
-			return err
-		},
-	}
-}
-
 func initRedix(addr string) {
 	Redix = make([]redis.Conn, _Max)
 	RedixMu = make([]*sync.Mutex, _Max)
 
-	// redisAddr = addr
 	var err error
 	for i := 0; i < _Max; i++ {
 		Redix[i], err = redis.Dial("tcp", addr)
@@ -70,7 +41,6 @@ func initRedix(addr string) {
 			panic(err)
 		}
 		RedixMu[i] = &sync.Mutex{}
-		// Redix[i] = newPool(redisAddr, "")
 		glog.Infof("RedisPool[%d] Init OK on %s\n", i, addr)
 	}
 }
@@ -92,12 +62,10 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 			return false, err
 		}
 	}
-	// r.Close()
 	return ret == 1, err
 }
 
 func SetUserOffline(uid int64, host string) error {
-	// r := Redix[_SetUserOffline].Get()
 	r := Redix[_SetUserOffline]
 	RedixMu[_SetUserOffline].Lock()
 	defer RedixMu[_SetUserOffline].Unlock()
@@ -110,7 +78,6 @@ func SetUserOffline(uid int64, host string) error {
 		r.Close()
 		return err
 	}
-	// TODO 增加脚本保证事务全部执行
 	if ret <= 0 {
 		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 0))
 		if err != nil {
@@ -123,7 +90,6 @@ func SetUserOffline(uid int64, host string) error {
 			return err
 		}
 	}
-	// r.Close()
 	return err
 }
 

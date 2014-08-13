@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"strconv"
 	"sync"
 
 	"cloud/hlist"
@@ -23,7 +25,7 @@ type Rmqs struct {
 	mu		sync.Mutex
 }
 
-func (this *Rmqs) Add(addr string, queueName string) {
+func (this *Rmqs) Add(addr string, exchangeName string) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
@@ -35,7 +37,8 @@ func (this *Rmqs) Add(addr string, queueName string) {
 		}
 	}
 
-	conn, err := amqp.Dial(addr)
+	url := fmt.Sprintf("amqp://%s/", addr)
+	conn, err := amqp.Dial(url)
 	if err != nil {
 		glog.Errorf("[rmq] dial to server %s failed: %v", addr, err)
 		return
@@ -47,17 +50,17 @@ func (this *Rmqs) Add(addr string, queueName string) {
 		return
 	}
 
-	// pre declare
-	_, err = channel.QueueDeclare(
-		queueName,
-		false,
+	err = channel.ExchangeDeclare(
+		exchangeName,
+		"topic",
+		true,
 		false,
 		false,
 		false,
 		nil,
 	)
 	if err != nil {
-		glog.Errorf("[rmq] declare queue %s failed from rabbitmq server %s failed: %v", queueName, addr, err)
+		glog.Errorf("[rmq] declare exchange %s failed from rabbitmq server %s failed: %v", exchangeName, addr, err)
 		channel.Close()
 		conn.Close()
 		return
@@ -67,7 +70,7 @@ func (this *Rmqs) Add(addr string, queueName string) {
 		conn: conn,
 		channel: channel,
 		addr: addr,
-		queueName: queueName,
+		exchangeName: exchangeName,
 	})
 
 	if this.curr == nil {
@@ -94,15 +97,15 @@ func (this *Rmqs) Remove(s *rmqServer) {
 	}
 }
 
-func (this *Rmqs) Push(msg []byte) {
+func (this *Rmqs) Push(msg []byte, serviceId int) {
 	this.mu.Lock()
 	defer this.mu.Unlock()
 
 	if this.curr != nil {
 		c := this.curr.Value.(*rmqServer)
-		c.channel.Publish(
-			"",
-			c.queueName,
+		err := c.channel.Publish(
+			c.exchangeName,
+			strconv.Itoa(serviceId),
 			false,
 			false,
 			amqp.Publishing{
@@ -110,6 +113,17 @@ func (this *Rmqs) Push(msg []byte) {
 				Body:			msg,
 			},
 		)
+		if err != nil {
+			glog.Errorf("[rmq|publish] error on publish msg, error: %v, msg: (%v)", err, msg)
+			// 试验性的错误处理，还不确认这个能正确处理服务器关闭的情况
+			if err == amqp.ErrClosed {
+				go func(server *rmqServer) {
+					this.Remove(server)
+					server.Close()
+					glog.Errorf("[rmq|close] close server %v on error: %v", server, err)
+				}(c)
+			}
+		}
 		next := this.curr.Next()
 		if next != nil {
 			this.curr = next
@@ -122,10 +136,10 @@ func (this *Rmqs) Push(msg []byte) {
 }
 
 type rmqServer struct {
-	conn		*amqp.Connection
-	channel		*amqp.Channel
-	addr		string
-	queueName	string
+	conn			*amqp.Connection
+	channel			*amqp.Channel
+	addr			string
+	exchangeName	string
 }
 
 func (s *rmqServer) Close() {

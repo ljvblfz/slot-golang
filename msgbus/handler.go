@@ -18,10 +18,18 @@ func MainHandle(msg []byte) {
 	}
 
 	// Write into rabbitmq
-	if glog.V(2) {
-		glog.Infof("[rmq] write %s", data)
+	if len(data) >= 32 {
+		msgId := int(binary.LittleEndian.Uint16(data[30:32]))
+		if glog.V(2) {
+			glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data[0:3])
+		} else if glog.V(3) {
+			glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data)
+		}
+		GRmqs.Push(data, msgId)
+	} else {
+		// 24 byte for device heartbeat
+		//glog.Warningf("[rmq|invalid] msg length less than 32, data: %v", data)
 	}
-	GRmqs.Push(data)
 
 	if idsSize == 1 {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
