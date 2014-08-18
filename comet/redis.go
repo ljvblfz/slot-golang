@@ -6,7 +6,6 @@ import (
 	"github.com/golang/glog"
 	"strconv"
 	"sync"
-	"time"
 )
 
 const (

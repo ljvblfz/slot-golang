@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cuixin/atomic"
+	"cloud/atomic"
 	"github.com/golang/glog"
-	"github.com/cuixin/cloud/zk"
+	"cloud/zk"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
 )
 

@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/cuixin/cloud/hlist"
+	"cloud/hlist"
 	"github.com/golang/glog"
 	"strconv"
 	"sync"

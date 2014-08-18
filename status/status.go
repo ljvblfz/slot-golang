@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
-	"github.com/cuixin/atomic"
+	"cloud/atomic"
 	glog "github.com/golang/glog"
 	"net/http"
 	"html/template"

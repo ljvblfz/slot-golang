@@ -2,7 +2,7 @@ package main
 
 import (
 	"encoding/binary"
-	"github.com/cuixin/cloud/hlist"
+	"cloud/hlist"
 	"github.com/golang/glog"
 )
 
