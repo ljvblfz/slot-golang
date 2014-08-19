@@ -42,6 +42,7 @@ func (this *MsgBusManager) Online(remoteAddr string) {
 	//this.head = this.list.Front() 有必要缓存一个head元素？
 	this.curr = e
 	this.mu.Unlock()
+	statIncMsgbusConns()
 }
 
 func (this *MsgBusManager) Offline(s *MsgBusServer) {
@@ -55,6 +56,7 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 			if srv == s {
 				glog.Infof("[%s] removed ok", s.conn.RemoteAddr())
 				this.list.Remove(e)
+				statDecMsgbusConns()
 				break
 			}
 		}

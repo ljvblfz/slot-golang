@@ -56,6 +56,7 @@ func (this *Comets) AddServer(host string, conn *net.TCPConn) {
 	this.mu.Lock()
 	this.Servers[host] = &CometServer{mu: &sync.Mutex{}, kv: make(map[int64]struct{}, 10240), conn: conn}
 	this.mu.Unlock()
+	statIncCometConns()
 }
 
 // addr传入的是ip
@@ -63,6 +64,7 @@ func (this *Comets) RemoveServer(host string) {
 	this.mu.Lock()
 	if _, ok := this.Servers[host]; ok {
 		delete(this.Servers, host)
+		statDecCometConns()
 	} else {
 		// TODO add error log
 		glog.Errorf("[%s] Removed", host)

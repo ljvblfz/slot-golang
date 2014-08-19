@@ -16,6 +16,8 @@ const (
 	kDownStreamOutPS1s	= "DownStreamOutPerSecond1s"
 	kDownStreamOutPS1m	= "DownStreamOutPerSecond1m"
 	kDownStreamOutPS5m	= "DownStreamOutPerSecond5m"
+
+	kCometCount = "CometCount"
 )
 
 func InitStat(addr string) {
@@ -30,6 +32,8 @@ func InitStat(addr string) {
 	status.AppStat.Add(kDownStreamOutPS1s)
 	status.AppStat.Add(kDownStreamOutPS1m)
 	status.AppStat.Add(kDownStreamOutPS5m)
+
+	status.AppStat.Add(kCometCount)
 
 	go statUpdatePerSecond()
 
@@ -46,6 +50,14 @@ func statIncDownStreamOut() {
 
 func statIncDownStreamOutBad() {
 	status.AppStat.Inc(kDownStreamOutBad)
+}
+
+func statIncCometConns() {
+	status.AppStat.Inc(kCometCount)
+}
+
+func statDecCometConns() {
+	status.AppStat.Dec(kCometCount)
 }
 
 func statUpdatePerSecond() {

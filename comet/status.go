@@ -20,6 +20,8 @@ const (
 	kDownStreamOutPS1s	= "DownStreamOutPerSecond1s"
 	kDownStreamOutPS1m	= "DownStreamOutPerSecond1m"
 	kDownStreamOutPS5m	= "DownStreamOutPerSecond5m"
+
+	kMsgbusCount = "MsgbusConns"
 )
 
 func InitStat(addr string) {
@@ -37,6 +39,8 @@ func InitStat(addr string) {
 	status.AppStat.Add(kDownStreamOutPS1s)
 	status.AppStat.Add(kDownStreamOutPS1m)
 	status.AppStat.Add(kDownStreamOutPS5m)
+
+	status.AppStat.Add(kMsgbusCount)
 
 	go statUpdatePerSecond()
 
@@ -73,6 +77,14 @@ func statIncDownStreamIn() {
 
 func statIncDownStreamOut() {
 	status.AppStat.Inc(kDownStreamOut)
+}
+
+func statIncMsgbusConns() {
+	status.AppStat.Inc(kMsgbusCount)
+}
+
+func statDecMsgbusConns() {
+	status.AppStat.Dec(kMsgbusCount)
 }
 
 func statUpdatePerSecond() {
