@@ -104,7 +104,7 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 		}
 		MainHandle(data)
 	}
-	HandleClose(conn.RemoteAddr().String()) // 释放服务器所有用户的信息
+	HandleClose(addr.IP.String()) // 释放服务器所有用户的信息
 }
 
 func (self *Server) Stop() {
