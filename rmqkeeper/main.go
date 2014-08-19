@@ -30,6 +30,8 @@ func main() {
 
 	flag.Parse()
 
+	defer glog.Flush()
+
 	cmd := exec.Command("/bin/sh", "-c", "ulimit -S -c 0 >/dev/null 2>&1 ; /usr/sbin/rabbitmq-server")
 
 	cmd.Env = append(os.Environ(),

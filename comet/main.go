@@ -25,6 +25,8 @@ func main() {
 	flag.StringVar(&gCometRoot, "zkrootc", "CometServers", "zookeeper服务中comet所在的根节点名")
 	flag.Parse()
 
+	defer glog.Flush()
+
 	log.SetFlags(log.Flags() | log.Llongfile)
 
 	InitStat(gStatusAddr)

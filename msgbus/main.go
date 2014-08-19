@@ -16,6 +16,8 @@ func main() {
 	statusAddr := flag.String("sh", ":29998", "程序状态http服务端口")
 	flag.Parse()
 
+	defer glog.Flush()
+
 	InitStat(*statusAddr)
 
 	InitUserMap()
