@@ -14,13 +14,27 @@ const (
 
     RedisDeviceUsers = "bind:device"
 	RedisUserDevices = "bind:user"
+
+	// 用户正在使用的手机id
+	RedisUserMobiles = "user:mobileid"
 )
 const (
 	_SetUserOnline = iota
 	_SetUserOffline
 	_GetDeviceUsers
 	_GetUserDevices
+	_SelectMobileId
 	_Max
+
+	// 为用户挑选一个[1,15]中未使用的手机id
+	_scriptSelectMobileId = `
+for mid=1,15,1 do
+	if 1 == redis.call('sadd', KEYS[1], mid) then
+		return mid
+	end
+end
+return 0
+`
 )
 
 var (
@@ -136,4 +150,13 @@ func GetUserDevices(userId int64) ([]int64, error) {
 		err = nil
 	}
 	return bindedIds, err
+}
+
+// 为用户uid挑选一个1到15内的未使用的手机子id
+func SelectMobileId(uid int64) (int, error) {
+	r := Redix[_SelectMobileId]
+	RedixMu[_SelectMobileId].Lock()
+	defer RedixMu[_SelectMobileId].Unlock()
+
+	return redis.Int(r.Do("eval", 1, fmt.Sprintf("%s:%d", RedisUserMobiles, uid)))
 }
