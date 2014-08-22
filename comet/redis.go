@@ -24,6 +24,7 @@ const (
 	_GetDeviceUsers
 	_GetUserDevices
 	_SelectMobileId
+	_ReturnMobileId
 	_Max
 
 	// 为用户挑选一个[1,15]中未使用的手机id
@@ -158,5 +159,15 @@ func SelectMobileId(uid int64) (int, error) {
 	RedixMu[_SelectMobileId].Lock()
 	defer RedixMu[_SelectMobileId].Unlock()
 
-	return redis.Int(r.Do("eval", 1, fmt.Sprintf("%s:%d", RedisUserMobiles, uid)))
+	return redis.Int(r.Do("eval", _scriptSelectMobileId, 1, fmt.Sprintf("%s:%d", RedisUserMobiles, uid)))
+}
+
+func ReturnMobileId(userId int64, mid byte) error {
+	r := Redix[_ReturnMobileId]
+	RedixMu[_ReturnMobileId].Lock()
+	defer RedixMu[_ReturnMobileId].Unlock()
+
+	_, err := r.Do("srem", fmt.Sprintf("%s:%d", RedisUserMobiles, userId), mid)
+
+	return err
 }
