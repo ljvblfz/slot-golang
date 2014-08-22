@@ -369,9 +369,9 @@ func main() {
 			timestamp := uint32(time.Now().Unix())
 
 			toId := _SpecifyTo
-			if id < 0 {
-				toId = 0
-			}
+			//if id < 0 {
+			//	toId = 0
+			//}
 
 			sendLogin(c, id, timestamp, 10)
 

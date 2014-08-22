@@ -24,7 +24,7 @@ func getBlockID(uid int64) int64 {
 
 type Session struct {
 	Uid       int64
-	BindedIds []int64
+	BindedIds []int64	// Uid为手机:包含所有已绑定的板子id;Uid为板子时，包含所有已绑定的用户id
 	Conn      *websocket.Conn
 	TaskChan  chan string
 }
@@ -38,12 +38,46 @@ func (this *Session) Close() {
 }
 
 func (this *Session) IsBinded(id int64) bool {
+	if this.Uid < 0 {
+		// 当this代表板子时，检查id是否属于已绑定用户下的手机
+		id = id - id % int64(kUseridUnit)
+	}
 	for _, v := range this.BindedIds {
 		if v == id {
 			return true
 		}
 	}
 	return false
+}
+
+func (this *Session) CalcDestIds(toId int64) []int64 {
+	var destIds []int64
+	if toId == 0 {
+		if this.Uid > 0 {
+			destIds = this.BindedIds
+		} else {
+			for i, ci := 0, len(this.BindedIds); i < ci; i++ {
+				for j := int64(1); j < int64(kUseridUnit); j++ {
+					destIds = append(destIds, this.BindedIds[i] + j)
+				}
+			}
+		}
+
+	} else {
+		if !this.IsBinded(int64(toId)) {
+			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", this.Uid, toId, this.BindedIds)
+			return nil
+		}
+		if this.Uid < 0 && toId % int64(kUseridUnit) == 0 {
+			destIds = make([]int64, kUseridUnit - 1)
+			for i, c := 0, int(kUseridUnit - 1); i < c; i++ {
+				toId++
+				destIds[i] = toId
+			}
+		}
+		destIds = append(destIds, toId)
+	}
+	return destIds
 }
 
 // 检查是否有已发生的设备列表变动，有的话一次性全部读取，但只保留最后一个最新的
@@ -170,8 +204,8 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 				lock.Unlock()
 				return
 			} else {
-				if len(data) <= 24 {
-					glog.Errorf("[invalid data] [uid: %d] length less than 25 (%d)%v", uid, len(data), data)
+				if len(data) < 24 {
+					glog.Errorf("[invalid data] [uid: %d] length less than 24 (%d)%v", uid, len(data), data)
 				}
 				err := websocket.Message.Send(session.Conn, data)
 				if err != nil {

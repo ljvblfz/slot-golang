@@ -43,6 +43,9 @@ const (
 	EXPIRE_TIME       = uint64(1 * 60) // 1 mins
 
 	kLoginKey = "BlackCrystalWb14527" // 和http服务器约定好的私有盐
+
+	// 用户id的间隔，这个间隔内可用的取值数量，就是该用户可同时登录的手机数量
+	kUseridUnit uint = 16
 )
 
 var (
@@ -59,6 +62,7 @@ var (
 	AckWrongMD5            = []byte{byte(6)} // 错误的md5
 	AckOtherglogoned       = []byte{byte(7)} // 您已在别处登陆
 	AckWrongLoginTimeout   = []byte{byte(8)} // 超时解析错误
+	AckServerError		   = []byte{byte(9)} // 服务器错误
 
 	websocketUrl	[]string
 	urlLock			sync.Mutex
@@ -209,7 +213,7 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 
-	glog.Infof("Recv login %s\n", string(reply))
+	//glog.Infof("Recv login %s\n", string(reply))
 	// parse login params
 	id, timestamp, timeout, encryShadow, loginErr := getLoginParams(string(reply))
 	if loginErr != nil {
@@ -226,8 +230,37 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	var bindedIds []int64
+	var mid byte
 	if id > 0 {
+		// 用户登录，检查其id是否为16整数倍，并为其分配一个1到15内的未使用的手机子id，相加后作为手机
+		// id，用于本session
+		if id % int64(kUseridUnit) != 0 {
+			glog.Warningf("[login] invalid user id %d, low byte is not zero", id)
+			err = websocket.Message.Send(ws, AckWrongLoginDevice)
+			ws.Close()
+			return
+		}
+		mobileid, err := SelectMobileId(id)
+		if err != nil {
+			glog.Warningf("[login|mobileid] select mobile id for user %d failed: %v", id, err)
+			err = websocket.Message.Send(ws, AckServerError)
+			ws.Close()
+			return
+		}
+		if mobileid <= 0 {
+			glog.Warningf("[login|mobileid] no valid mobile id for user %d, the user may have 15 clients now.", id)
+			err = websocket.Message.Send(ws, AckWrongLoginDevice)
+			ws.Close()
+			return
+		}
+		newId := id + int64(mobileid % int(kUseridUnit))
+		if id > newId {
+			glog.Errorf("[login|id] user id overflow, origin id: %d, newId %d with mid %d", id, newId, mobileid)
+		}
+		mid = byte(mobileid)
+		// 先用原始的用户id获取设备列表
 		bindedIds, err = GetUserDevices(id)
+		id = newId // 防止错误的手机id溢出可用的范围
 	} else if id < 0 {
 		bindedIds, err = GetDeviceUsers(id)
 	}
@@ -243,8 +276,12 @@ func WsHandler(ws *websocket.Conn) {
 	statIncConnOnline()
 	defer statDecConnOnline()
 
-	// 旧程序需要成功登陆后的一次回复
-	err = websocket.Message.Send(ws, []byte{0})
+	// 成功登陆后的一次回复
+	if id > 0 {
+		err = websocket.Message.Send(ws, []byte{0, mid})
+	} else {
+		err = websocket.Message.Send(ws, []byte{0})
+	}
 	if err != nil {
 		glog.Errorf("[%s] [uid: %d] sent login-ack error (%v)\n", addr, id, err)
 		ws.Close()
@@ -258,7 +295,7 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	if glog.V(2) {
-		glog.Infof("[online] id %d on %s", id, gLocalAddr)
+		glog.Infof("[online] id %d on %s, param: %s", id, gLocalAddr, reply)
 	}
 
 	s := NewSession(id, bindedIds, ws)
@@ -310,23 +347,18 @@ func WsHandler(ws *websocket.Conn) {
 			// 提取消息中的目标id
 			toId := int64(binary.LittleEndian.Uint64(msg[4:12]))
 
-			if glog.V(2) {
-				glog.Infof("[msg in] %d <- %d, binded(%v), data: (len: %d)%v...", toId, id, s.BindedIds, len(msg), msg[0:3])
-			} else if glog.V(3) {
-				glog.Infof("[msg in] %d <- %d, binded(%v), data: (len: %d)%v...", toId, id, s.BindedIds, len(msg), msg)
+			if glog.V(3) {
+				glog.Infof("[msg|in] %d <- %d, binded(%v), data: (len: %d)%v...", toId, id, s.BindedIds, len(msg), msg)
+			} else if glog.V(2) {
+				glog.Infof("[msg|in] %d <- %d, binded(%v), data: (len: %d)%v...", toId, id, s.BindedIds, len(msg), msg[0:3])
 			}
-			if toId != 0 {
-				if !s.IsBinded(int64(toId)) {
-					glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", id, toId, s.BindedIds)
-					// TODO: 初期测试时不需要校验，但实际插座逻辑需要校验
-					//continue
-				}
-				GMsgBusManager.Push2Backend([]int64{int64(toId)}, msg)
-			} else {
-				GMsgBusManager.Push2Backend(s.BindedIds, msg)
+
+			destIds := s.CalcDestIds(toId)
+			if destIds == nil {
+				continue
 			}
-			// glog.Infof("%v Recv %v [%#T] [%#T] [%v] [%v] [%v]", s.Uid, reply, reply, PING_MSG,
-			//  reply == PING_MSG, []byte(reply), []byte(PING_MSG))
+			glog.Infof("[msg|in|calcid] %d -> %v", id, destIds)
+			GMsgBusManager.Push2Backend(destIds, msg)
 		}
 		//end = time.Now().UnixNano()
 	}
@@ -336,6 +368,13 @@ func WsHandler(ws *websocket.Conn) {
 	}
 	if glog.V(2) {
 		glog.Infof("[offline] id %d on %s", id, gLocalAddr)
+	}
+	if id > 0 && mid > 0 {
+		id -= int64(mid)
+		err = ReturnMobileId(id, mid)
+		if err != nil {
+			glog.Errorf("[mid|return] return mid %d for user %d failed, error: %v", mid, id, err)
+		}
 	}
 	gSessionList.RemoveSession(selement)
 	return
