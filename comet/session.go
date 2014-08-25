@@ -74,8 +74,9 @@ func (this *Session) CalcDestIds(toId int64) []int64 {
 				toId++
 				destIds[i] = toId
 			}
+		} else {
+			destIds = append(destIds, toId)
 		}
-		destIds = append(destIds, toId)
 	}
 	return destIds
 }
