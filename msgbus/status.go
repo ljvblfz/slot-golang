@@ -3,6 +3,8 @@ package main
 import (
 	"cloud/status"
 	"time"
+	"encoding/json"
+	"net/http"
 )
 
 const (
@@ -37,7 +39,20 @@ func InitStat(addr string) {
 
 	go statUpdatePerSecond()
 
+	mux := http.NewServeMux()
+	mux.HandleFunc("/usermap", handleUsermap)
 	status.InitStat(addr, nil)
+}
+
+func handleUsermap(resp http.ResponseWriter, req *http.Request) {
+	usermap := GUserMap.GetAll()
+	data, err := json.MarshalIndent(usermap, "", "\t")
+	if err != nil {
+		resp.WriteHeader(500)
+		return
+	}
+	resp.Header().Add("Content-Type", "application/json")
+	resp.Write(data)
 }
 
 func statIncUpStreamIn() {

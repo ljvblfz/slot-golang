@@ -174,3 +174,26 @@ func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 	this.mu[bn].Unlock()
 	return err
 }
+
+func (this *UserMap) GetAll() map[string][]string {
+	usermap := make(map[string][]string)
+	for block := 0; block < len(this.kv); block++ {
+		this.mu[block].Lock()
+		for k, v := range this.kv[block] {
+			if v == nil {
+				continue
+			}
+			for p := v.Front(); p != nil; p = p.Next() {
+				h, ok := p.Value.(string)
+				if !ok {
+					glog.Errorf("Type error, [%v] should be string of ip", p.Value)
+					continue
+				}
+				id := strconv.FormatInt(k, 10)
+				usermap[id] = append(usermap[id], h)
+			}
+		}
+		this.mu[block].Unlock()
+	}
+	return usermap
+}
