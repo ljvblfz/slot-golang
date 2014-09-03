@@ -110,14 +110,20 @@ func InitZK(zkAddrs []string, msgbusName string, cometName string) {
 
 	zkMsgBusRoot := "/" + msgbusName
 	glog.Infof("Connect zk[%v] with msgbus root [%s] OK!", zkAddrs, zkMsgBusRoot)
+
+	var lastErr error
 	for {
 		nodes, watch, err = zk.GetNodesW(conn, zkMsgBusRoot)
+		if err != lastErr {
+			if err != nil {
+				glog.Errorln(err)
+			}
+			lastErr = err
+		}
 		if err == zookeeper.ErrNoNode || err == zookeeper.ErrNoChildrenForEphemerals {
-			glog.Errorln(err)
 			time.Sleep(time.Second)
 			continue
 		} else if err != nil {
-			glog.Errorln(err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -127,7 +133,6 @@ func InitZK(zkAddrs []string, msgbusName string, cometName string) {
 			if err != nil {
 				glog.Errorf("[%s] cannot get", addr)
 				continue
-				// glog.Fatal(err)
 			}
 			addrs = append(addrs, addr)
 		}
@@ -136,6 +141,7 @@ func InitZK(zkAddrs []string, msgbusName string, cometName string) {
 		}
 		e := <-watch
 		glog.Infof("zk receive an event %v", e)
+		time.Sleep(time.Second)
 	}
 }
 
