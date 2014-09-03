@@ -347,17 +347,16 @@ func WsHandler(ws *websocket.Conn) {
 			// 提取消息中的目标id
 			toId := int64(binary.LittleEndian.Uint64(msg[4:12]))
 
-			if glog.V(3) {
-				glog.Infof("[msg|in] %d <- %d, binded(%v), data: (len: %d)%v...", toId, id, s.BindedIds, len(msg), msg)
-			} else if glog.V(2) {
-				glog.Infof("[msg|in] %d <- %d, binded(%v), data: (len: %d)%v...", toId, id, s.BindedIds, len(msg), msg[0:3])
-			}
-
 			destIds := s.CalcDestIds(toId)
 			if destIds == nil {
 				continue
 			}
-			glog.Infof("[msg|in|calcid] %d -> %v", id, destIds)
+
+			if glog.V(3) {
+				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg)
+			} else if glog.V(2) {
+				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg[0:3])
+			}
 			GMsgBusManager.Push2Backend(destIds, msg)
 		}
 		//end = time.Now().UnixNano()
