@@ -63,7 +63,22 @@ func (this *UserMap) Online(uid int64, host string) {
 		hostlist = hlist.New()
 		this.kv[bn][uid] = hostlist
 	}
-	hostlist.PushFront(host)
+	doAdd := true
+	if hostlist.Len() > 0 {
+		for e := hostlist.Front(); e != nil; e = e.Next() {
+			if _host, ok := e.Value.(string); ok {
+				if _host == host {
+					doAdd = false
+					break
+				}
+			}
+		}
+	}
+	if doAdd {
+		hostlist.PushFront(host)
+	} else {
+		glog.Warningf("[online|repeat] id %d online repeatly on host %v which could be a mistake between LoadAllUser and SubOnlineUser", uid, host)
+	}
 	this.mu[bn].Unlock()
 }
 
@@ -142,11 +157,6 @@ func (this *UserMap) GetUserComet(uid int64) (*hlist.Hlist, error) {
 	return newList, nil
 }
 
-func (this *UserMap) BroadToComet(addr string, msg []byte) error {
-	err := GComets.PushMsg(msg, addr)
-	return err
-}
-
 func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 	bn := getBlockID(uid)
 	this.mu[bn].Lock()
@@ -167,6 +177,7 @@ func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 			if err != nil {
 				glog.Infof("[msg|down] to: (%d)%v", 1, h)
 			} else {
+				statIncDownStreamOut()
 				glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
 			}
 		}

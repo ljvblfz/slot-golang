@@ -41,7 +41,7 @@ func InitStat(addr string) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/usermap", handleUsermap)
-	status.InitStat(addr, nil)
+	status.InitStat(addr, mux)
 }
 
 func handleUsermap(resp http.ResponseWriter, req *http.Request) {

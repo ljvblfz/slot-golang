@@ -37,8 +37,6 @@ func MainHandle(msg []byte) {
 		if err != nil {
 			statIncDownStreamOutBad()
 			glog.Errorf("Push to comet failed, [%d] %v", uid, err)
-		} else {
-			statIncDownStreamOut()
 		}
 		return
 	}
@@ -75,11 +73,10 @@ func MainHandle(msg []byte) {
 			i++
 		}
 		copy(pushData[2+vSize*8:], data)
-		err := GUserMap.BroadToComet(k, pushData)
+		err := GComets.PushMsg(pushData, k)
 		if err != nil {
 			glog.Errorf("Broadcast to comet failed, [%s] %v", k, err)
 		}
-		statIncDownStreamOut()
 	}
 }
 
