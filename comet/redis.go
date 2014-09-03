@@ -41,6 +41,8 @@ return 0
 var (
 	Redix   []redis.Conn
 	RedixMu []*sync.Mutex
+
+	ScriptSelectMobileId *redis.Script
 )
 var redisAddr string
 
@@ -57,6 +59,8 @@ func initRedix(addr string) {
 		RedixMu[i] = &sync.Mutex{}
 		glog.Infof("RedisPool[%d] Init OK on %s\n", i, addr)
 	}
+	ScriptSelectMobileId = redis.NewScript(1, _scriptSelectMobileId)
+	ScriptSelectMobileId.Load(Redix[_SelectMobileId])
 }
 
 func SetUserOnline(uid int64, host string) (bool, error) {
@@ -159,7 +163,7 @@ func SelectMobileId(uid int64) (int, error) {
 	RedixMu[_SelectMobileId].Lock()
 	defer RedixMu[_SelectMobileId].Unlock()
 
-	return redis.Int(r.Do("eval", _scriptSelectMobileId, 1, fmt.Sprintf("%s:%d", RedisUserMobiles, uid)))
+	return redis.Int(ScriptSelectMobileId.Do(r, fmt.Sprintf("%s:%d", RedisUserMobiles, uid)))
 }
 
 func ReturnMobileId(userId int64, mid byte) error {
