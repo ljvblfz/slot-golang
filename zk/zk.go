@@ -14,7 +14,7 @@ var (
 	ErrNodeNotExist = errors.New("zk: node not exist")
 )
 
-func Connect(addr []string, timeout time.Duration) (*zk.Conn, error) {
+func Connect(addr []string, timeout time.Duration, watchFunc func(zk.Event)) (*zk.Conn, error) {
 	conn, session, err := zk.Connect(addr, timeout)
 	if err != nil {
 		glog.Errorf("zk.Connect(\"%v\", %d) error(%v)", addr, timeout, err)
@@ -24,6 +24,9 @@ func Connect(addr []string, timeout time.Duration) (*zk.Conn, error) {
 		for {
 			event := <-session
 			glog.Infof("zookeeper get a event: %s", event.State.String())
+			if watchFunc != nil {
+				watchFunc(event)
+			}
 		}
 	}()
 	return conn, nil
