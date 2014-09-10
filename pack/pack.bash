@@ -34,14 +34,15 @@ git checkout $GitBranch
 # modify version
 mkdir -p $Pwd/src/cloud/ver
 echo -e "package ver\n\nvar Version = \"$Ver\"" > $Pwd/src/cloud/ver/ver.go
-#git add $Pwd/src/cloud/ver/ver.go
-#git commit -m "modify version to $Ver"
+git add $Pwd/src/cloud/ver/ver.go
+git commit -m "modify version to $Ver"
 
 echo "Packing branch $GitBranch"
 
 echo "Type in log for v$Ver:"
-#git tag -a socket-v$Ver
-#git push
+TagName=socket-v$Ver
+git tag -a $TagName
+git push origin $TagName
 
 for((i=0;i<DirSize;i++))
 do
