@@ -7,7 +7,6 @@ fi
 
 Pwd=$(cd "$(dirname "$0")";pwd)
 Ver=$1
-BinDir=$Pwd/$Ver
 PackDir=(comet msgbus rmqkeeper)
 DirSize=${#PackDir[@]}
 GitBranch=master
@@ -25,11 +24,8 @@ else
 	cd cloud
 fi
 
-[[ -d $BinDir ]] || mkdir $BinDir
-
 for((i=0;i<DirSize;i++))
 do
-	[[ -d $BinDir/${PackDir[i]} ]] || mkdir $BinDir/${PackDir[i]}
 	[[ -d $Pwd/${PackDir[i]} ]] || mkdir $Pwd/${PackDir[i]}
 done
 
@@ -38,21 +34,20 @@ git checkout $GitBranch
 # modify version
 mkdir -p $Pwd/src/cloud/ver
 echo -e "package ver\n\nvar Version = \"$Ver\"" > $Pwd/src/cloud/ver/ver.go
-git add $Pwd/src/cloud/ver/ver.go
-git commit -m "modify version to $Ver"
+#git add $Pwd/src/cloud/ver/ver.go
+#git commit -m "modify version to $Ver"
 
 echo "Packing branch $GitBranch"
 
 echo "Type in log for v$Ver:"
-git tag -a socket-v$Ver
-git push
+#git tag -a socket-v$Ver
+#git push
 
 for((i=0;i<DirSize;i++))
 do
 	echo "Building ${PackDir[i]} ..."
 	cd $Pwd/src/cloud/${PackDir[i]}
-	GOPATH=$Pwd:$GOPATH go build -a
-	#&& cp ${PackDir[i]} $BinDir/${PackDir[i]}
+	GOPATH=$Pwd:$GOPATH go build -a && cp ${PackDir[i]} $Pwd/${PackDir[i]}
 done
 
 echo "Zipping $Ver"
@@ -64,5 +59,5 @@ done
 
 cd $PwdDir
 [[ -d pack ]] || mkdir pack
-zip -r pack/powersocket-v"$Ver"-`date +%Y%m%d`.zip $AllDir
+zip -rq pack/powersocket-v"$Ver"-`date +%Y%m%d`.zip $AllDir
 
