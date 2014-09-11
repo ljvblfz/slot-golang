@@ -318,16 +318,12 @@ func WsHandler(ws *websocket.Conn) {
 		//}
 
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
-			if err == io.EOF {
-				if glog.V(1) {
-					glog.Errorf("[connection] user [%d] quit on EOF", id)
-				}
-			} else {
+			if err != io.EOF {
 				glog.Errorf("[connection] <%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
 			}
 			break
 		}
-		s.UpdateBindedIds()
+		gSessionList.GetBindedIds(s, &bindedIds)
 		if len(reply) == 1 && string(reply) == PING_MSG {
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
 				glog.Errorf("<%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
@@ -347,7 +343,7 @@ func WsHandler(ws *websocket.Conn) {
 			// 提取消息中的目标id
 			toId := int64(binary.LittleEndian.Uint64(msg[4:12]))
 
-			destIds := s.CalcDestIds(toId)
+			destIds := gSessionList.CalcDestIds(s, toId)
 			if destIds == nil {
 				continue
 			}

@@ -90,3 +90,29 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 	}
 	statIncUpStreamOut()
 }
+
+// TODO NOT IMPLEMENTED, 应用层不包含该协议码
+func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []int64, unbindIds []int64) {
+	//if glog.V(1) {
+	//	glog.Infof("[binded|notify] binded ids change for %d, new binded: %v, unbind ids: %v",
+	//		deviceId, newBindIds, unbindIds)
+	//}
+
+	//data := make([]byte, 24)
+	//data[5] = 0
+	//binary.LittleEndian.PutUint16(data[8:], 0)
+	//binary.LittleEndian.PutUint16(data[10:], 0)
+	//binary.LittleEndian.PutUint64(data[12:16], uint64(deviceId))
+
+	//data[4] = 47
+	//for _, toId := range newBindIds {
+	//	binary.LittleEndian.PutUint32(data[:4], uint32(toId))
+	//	GMsgBusManager.Push2Backend(0, []int32{int32(toId)}, data)
+	//}
+
+	//data[4] = 48
+	//for _, toId := range unbindIds {
+	//	binary.LittleEndian.PutUint32(data[:4], uint32(toId))
+	//	GMsgBusManager.Push2Backend(0, []int32{int32(toId)}, data)
+	//}
+}

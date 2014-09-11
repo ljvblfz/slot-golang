@@ -5,12 +5,14 @@ import (
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
 	"strconv"
+	"strings"
 	"sync"
 )
 
 const (
 	HostUsers = "Host:%s" // (1, 2, 3)
 	PubKey    = "PubKey"
+	SubDeviceUsersKey = "PubDeviceUsers"
 
     RedisDeviceUsers = "bind:device"
 	RedisUserDevices = "bind:user"
@@ -25,6 +27,7 @@ const (
 	_GetUserDevices
 	_SelectMobileId
 	_ReturnMobileId
+	_SubDeviceUsersKey
 	_Max
 
 	// 为用户挑选一个[1,15]中未使用的手机id
@@ -61,6 +64,11 @@ func initRedix(addr string) {
 	}
 	ScriptSelectMobileId = redis.NewScript(1, _scriptSelectMobileId)
 	ScriptSelectMobileId.Load(Redix[_SelectMobileId])
+
+	err = SubDeviceUsers()
+	if err != nil {
+		panic(err)
+	}
 }
 
 func SetUserOnline(uid int64, host string) (bool, error) {
@@ -155,6 +163,59 @@ func GetUserDevices(userId int64) ([]int64, error) {
 		err = nil
 	}
 	return bindedIds, err
+}
+
+func SubDeviceUsers() error {
+	r := Redix[_SubDeviceUsersKey]
+	RedixMu[_SubDeviceUsersKey].Lock()
+	defer RedixMu[_SubDeviceUsersKey].Unlock()
+
+	psc := redis.PubSubConn{Conn: r}
+	err := psc.Subscribe(SubDeviceUsersKey)
+	if err != nil {
+		return err
+	}
+	ch := make(chan []byte, 128)
+	go func() {
+		defer psc.Close()
+		for {
+			data := psc.Receive()
+			switch n := data.(type) {
+			case redis.Message:
+				ch <- n.Data
+			case redis.Subscription:
+				if n.Count == 0 {
+					glog.Fatalf("Subscription: %s %s %d, %v\n", n.Kind, n.Channel, n.Count, n)
+					return
+				}
+			case error:
+				glog.Errorf("[bind|redis] sub of error: %v\n", n)
+				return
+			}
+		}
+	}()
+	go HandleDeviceUsers(ch)
+	return nil
+}
+
+func HandleDeviceUsers(ch <-chan []byte) {
+	for buf := range ch {
+		if buf == nil {
+			continue
+		}
+
+		strs := strings.SplitN(string(buf), "|", 2)
+		if len(strs) != 2 || len(strs) == 0 {
+			glog.Errorf("[binded id] invalid pub-sub msg format: %s", string(buf))
+			continue
+		}
+		id, err := strconv.ParseInt(strs[0], 10, 64)
+		if err != nil {
+			glog.Errorf("[binded id] invalid id %s, error: %v", strs[0], err)
+			continue
+		}
+		go gSessionList.UpdateIds(id, strs[1])
+	}
 }
 
 // 为用户uid挑选一个1到15内的未使用的手机子id
