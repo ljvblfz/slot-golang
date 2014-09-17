@@ -20,7 +20,7 @@ func main() {
 	flag.Parse()
 
 	if *printVer {
-		fmt.Printf("Comet %s, 空调后台代理服务器.\n", ver.Version)
+		fmt.Printf("Comet %s, 插座后台代理服务器.\n", ver.Version)
 		return
 	}
 
