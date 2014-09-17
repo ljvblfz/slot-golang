@@ -1,7 +1,7 @@
 package main
 
 import (
-	"code.google.com/p/go.net/websocket"
+	"cloud-base/websocket"
 	"cloud-base/hlist"
 	"github.com/golang/glog"
 	"sync"

@@ -9,7 +9,7 @@ import (
 	"flag"
 	"fmt"
 	//"github.com/gorilla/websocket"
-	"code.google.com/p/go.net/websocket"
+	"cloud-base/websocket"
 	"github.com/golang/glog"
 	"io/ioutil"
 	"log"

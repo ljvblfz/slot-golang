@@ -1,7 +1,7 @@
 package main
 
 import (
-	"code.google.com/p/go.net/websocket"
+	"cloud-base/websocket"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/binary"
