@@ -2,7 +2,7 @@ package main
 
 import (
 	"code.google.com/p/go.net/websocket"
-	"cloud/hlist"
+	"cloud-base/hlist"
 	"github.com/golang/glog"
 	"sync"
 	"strings"

@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"github.com/golang/glog"
 	"strings"
+	"cloud-socket/ver"
 )
 
 var (
@@ -23,7 +25,13 @@ func main() {
 	flag.StringVar(&gStatusAddr, "sh", ":29999", "程序状态http服务端口")
 	flag.StringVar(&gMsgbusRoot, "zkroot", "MsgBusServers", "zookeeper服务中msgbus所在的根节点名")
 	flag.StringVar(&gCometRoot, "zkrootc", "CometServers", "zookeeper服务中comet所在的根节点名")
+	printVer := flag.Bool("ver", false, "Comet版本")
 	flag.Parse()
+
+	if *printVer {
+		fmt.Printf("Comet %s, 空调后台代理服务器.\n", ver.Version)
+		return
+	}
 
 	defer glog.Flush()
 

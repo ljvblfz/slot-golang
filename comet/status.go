@@ -1,7 +1,7 @@
 package main
 
 import (
-	"cloud/status"
+	"cloud-base/status"
 	"time"
 )
 

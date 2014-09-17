@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"cloud/zk"
-	"cloud/atomic"
+	"cloud-base/zk"
+	"cloud-base/atomic"
 	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
 )

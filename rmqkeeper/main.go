@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 
+	"cloud-socket/ver"
 	"github.com/golang/glog"
 )
 
@@ -27,8 +28,14 @@ func main() {
 	flag.IntVar(&gPort, "p", 5672, "rabbitmq的服务端口")
 	zks := flag.String("zks", "", "zookeeper地址, 可用\",\"分隔的多个ip")
 	zkRoot := flag.String("zkroot", "rabbitmq", "将rabbitmq注册到zookeeper的该节点下")
+	printVer := flag.Bool("ver", false, "Comet版本")
 
 	flag.Parse()
+
+	if *printVer {
+		fmt.Printf("Comet %s, 空调后台代理服务器.\n", ver.Version)
+		return
+	}
 
 	defer glog.Flush()
 

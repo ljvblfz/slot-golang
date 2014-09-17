@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"cloud/hlist"
+	"cloud-base/hlist"
 
 	"github.com/golang/glog"
 	"github.com/streadway/amqp"

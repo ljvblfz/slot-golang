@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/golang/glog"
 	"strconv"
 	"strings"
+	"cloud-socket/ver"
 )
 
 func main() {
@@ -14,7 +16,13 @@ func main() {
 	zks := flag.String("zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK服务器地址列表")
 	zkRootName := flag.String("zkroot", "MsgBusServers", "msgbus注册到zookeeper服务中的根节点名")
 	statusAddr := flag.String("sh", ":29998", "程序状态http服务端口")
+	printVer := flag.Bool("ver", false, "Comet版本")
 	flag.Parse()
+
+	if *printVer {
+		fmt.Printf("Comet %s, 空调后台代理服务器.\n", ver.Version)
+		return
+	}
 
 	defer glog.Flush()
 

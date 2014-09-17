@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"cloud/hlist"
+	"cloud-base/hlist"
 	"sync"
 	"testing"
 )
