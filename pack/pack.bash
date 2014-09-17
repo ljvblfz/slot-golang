@@ -10,18 +10,20 @@ Ver=$1
 PackDir=(comet msgbus rmqkeeper)
 DirSize=${#PackDir[@]}
 GitBranch=master
+ProjectName=cloud-socket
+Url=git@192.168.0.231:yangying/cloud-socket.git
 
 mkdir -p src
 cd src
 
-if [ -d cloud ]; then
+if [ -d $ProjectName ]; then
 	echo "Pull repository"
-	cd cloud
+	cd $ProjectName
 	git pull
 else
 	echo "Clone new repository"
-	git clone git@192.168.0.231:serverside/cloud.git
-	cd cloud
+	git clone $Url
+	cd $ProjectName
 fi
 
 for((i=0;i<DirSize;i++))
@@ -32,9 +34,9 @@ done
 git checkout $GitBranch
 
 # modify version
-mkdir -p $Pwd/src/cloud/ver
-echo -e "package ver\n\nvar Version = \"$Ver\"" > $Pwd/src/cloud/ver/ver.go
-git add $Pwd/src/cloud/ver/ver.go
+mkdir -p $Pwd/src/$ProjectName/ver
+echo -e "package ver\n\nconst Version = \"$Ver\"" > $Pwd/src/$ProjectName/ver/ver.go
+git add $Pwd/src/$ProjectName/ver/ver.go
 git commit -m "modify version to $Ver"
 
 echo "Packing branch $GitBranch"
@@ -47,7 +49,7 @@ git push origin $TagName
 for((i=0;i<DirSize;i++))
 do
 	echo "Building ${PackDir[i]} ..."
-	cd $Pwd/src/cloud/${PackDir[i]}
+	cd $Pwd/src/$ProjectName/${PackDir[i]}
 	GOPATH=$Pwd:$GOPATH go build -a && cp ${PackDir[i]} $Pwd/${PackDir[i]}
 done
 
@@ -58,7 +60,7 @@ do
 	AllDir="$AllDir ${PackDir[i]}"
 done
 
-cd $PwdDir
+cd $Pwd
 [[ -d pack ]] || mkdir pack
 zip -rq pack/powersocket-v"$Ver"-`date +%Y%m%d`.zip $AllDir
 
