@@ -112,6 +112,23 @@ func SubUserState() (<-chan []byte, error) {
 	psc := redis.PubSubConn{Conn: r}
 	psc.Subscribe(SubKey)
 	ch := make(chan []byte, 128)
+
+	// 单独处理Subscribe后的第一个消息（即返回值），用于保证在已监听到SubKey后，
+	// 本函数返回，主函数继续载入已有的设备在线列表。用于避免Msgbus和Comet都刚刚
+	// 启动时，Comet删除上次的旧设备列表和立刻登录的新设备之间的时间窗口中，Msgbus
+	// 由于异步监听SubKey，导致先载入了旧的列表，后监听到SubKey，导致遗漏了Comet
+	// 发出的删除旧列表通知。
+	data := psc.Receive()
+	switch n := data.(type) {
+	case redis.Subscription:
+		if n.Count == 0 {
+			glog.Fatalf("Subscription: %s %s %d, %v\n", n.Kind, n.Channel, n.Count, n)
+		}
+	case error:
+		glog.Errorf("subscribe on LoginState error: %v\n", n)
+		return nil, n
+	}
+
 	go func() {
 		defer psc.Close()
 		for {
@@ -122,13 +139,6 @@ func SubUserState() (<-chan []byte, error) {
 				//if glog.V(1) {
 				//	glog.Infof("Message: %s %s\n", n.Channel, n.Data)
 				//}
-			// case redis.PMessage:
-			// 	fmt.Printf("PMessage: %s %s %s\n", n.Pattern, n.Channel, n.Data)
-			case redis.Subscription:
-				if n.Count == 0 {
-					glog.Fatalf("Subscription: %s %s %d, %v\n", n.Kind, n.Channel, n.Count, n)
-					return
-				}
 			case error:
 				glog.Errorf("error: %v\n", n)
 				return
