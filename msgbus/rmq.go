@@ -101,7 +101,7 @@ func (this *Rmqs) listenClose(c chan *amqp.Error, s *rmqServer) {
 		glog.Infof("[amq|reconnecting] reconnecting %d ...", i + 1)
 		if nil == this.Add(addr, exchangeName) {
 			glog.Infof("[amq|reconnecting] reconnect successful on %d times", i + 1)
-			break
+			return
 		}
 	}
 	glog.Errorf("[amq|reconnecting] reconnect failed")
