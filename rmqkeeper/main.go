@@ -18,13 +18,15 @@ const (
 )
 
 var (
+	gZkIp		string
 	gIp		string
 	gPort	int
 )
 
 func main() {
 	// get config
-	flag.StringVar(&gIp, "h", "", "rabbitmq的服务ip")
+	flag.StringVar(&gZkIp, "zh", "", "rabbitmq注册到zookeeper中的ip")
+	flag.StringVar(&gIp, "h", "", "rabbitmq的监听ip")
 	flag.IntVar(&gPort, "p", 5672, "rabbitmq的服务端口")
 	zks := flag.String("zks", "", "zookeeper地址, 可用\",\"分隔的多个ip")
 	zkRoot := flag.String("zkroot", "rabbitmq", "将rabbitmq注册到zookeeper的该节点下")

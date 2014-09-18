@@ -64,7 +64,7 @@ func InitZK(zkAddrs []string, rootName string) {
 
 func handleEvent() {
 	glog.Infof("Loop started")
-	data := fmt.Sprintf("%s:%d,MsgTopic", gIp, gPort)
+	data := fmt.Sprintf("%s:%d,MsgTopic", gZkIp, gPort)
 
 	for event := range zkReportCh {
 		glog.Infof("Get zk event: %v", event)
