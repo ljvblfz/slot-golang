@@ -175,7 +175,7 @@ func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 		} else {
 			err = GComets.PushMsg(msg, h)
 			if err != nil {
-				glog.Infof("[msg|down] to: (%d)%v", 1, h)
+				glog.Errorf("[msg|down] to: (%d)%v", 1, h)
 			} else {
 				statIncDownStreamOut()
 				glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])

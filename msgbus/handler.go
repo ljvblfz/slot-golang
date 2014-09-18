@@ -14,21 +14,22 @@ func MainHandle(msg []byte) {
 	data := msg[2+idsSize*8:]
 
 	if glog.V(2) {
-		glog.Infof("[msg|in] ids count: %d, to ids: %v, total len: %d, data: %v...", idsSize, toIds, len(msg), msg[:3])
+		var ids []int64
+		for i := uint16(0); i < idsSize; i++ {
+			ids = append(ids, int64(binary.LittleEndian.Uint64(toIds[i*8 : i*8+8])))
+		}
+		glog.Infof("[msg|in] ids count: %d, to ids: %v, total len: %d, data: %v...", idsSize, ids, len(msg), msg[:3])
 	}
 
 	// Write into rabbitmq
 	if len(data) >= 32 {
 		msgId := int(binary.LittleEndian.Uint16(data[30:32]))
 		if glog.V(2) {
-			glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data[0:3])
+			glog.Infof("[rmq|write] write to msgid %d, msg: %s...", msgId, data[0:3])
 		} else if glog.V(3) {
 			glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data)
 		}
 		GRmqs.Push(data, msgId)
-	} else {
-		// 24 byte for device heartbeat
-		//glog.Warningf("[rmq|invalid] msg length less than 32, data: %v", data)
 	}
 
 	if idsSize == 1 {
@@ -41,7 +42,6 @@ func MainHandle(msg []byte) {
 		return
 	}
 	smap := make(map[string]*hlist.Hlist, idsSize)
-	//mapInfo := make(map[int32] []string)
 
 	for i := uint16(0); i < idsSize; i++ {
 		uid := int64(binary.LittleEndian.Uint64(toIds[i*8 : i*8+8]))
@@ -58,24 +58,30 @@ func MainHandle(msg []byte) {
 				smap[haddr] = hl
 			}
 			hl.PushFront(uid)
-			//mapInfo[uid] = append(mapInfo[uid], haddr)
 		}
 	}
-	//glog.Infof("[msg|down] to: (%d)%v", len(mapInfo), mapInfo)
 	for k, v := range smap {
 		vSize := uint16(v.Len())
 		pushData := make([]byte, 2+vSize*8+uint16(len(data)))
 		binary.LittleEndian.PutUint16(pushData[:2], vSize)
 		i := 0
+		var idsDebug []int64
 		for e := v.Front(); e != nil; e = e.Next() {
 			id, _ := e.Value.(int64)
 			binary.LittleEndian.PutUint64(pushData[2+i*8:2+i*8+8], uint64(id))
+			idsDebug = append(idsDebug, id)
 			i++
 		}
 		copy(pushData[2+vSize*8:], data)
 		err := GComets.PushMsg(pushData, k)
 		if err != nil {
-			glog.Errorf("Broadcast to comet failed, [%s] %v", k, err)
+			glog.Errorf("[msg|down] Broadcast to comet failed, comet: %s, ids: %s, err: %v", k, v, err)
+		} else {
+			if glog.V(3) {
+				glog.Infof("[msg|down] to comet: %s, ids: %s, data: (len: %d)%v", k, v, len(msg), pushData)
+			} else {
+				glog.Infof("[msg|down] to comet: %s, ids: %s, data: (len: %d)%v...", k, v, len(msg), pushData[:3])
+			}
 		}
 	}
 }
