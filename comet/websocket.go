@@ -46,6 +46,10 @@ const (
 
 	// 用户id的间隔，这个间隔内可用的取值数量，就是该用户可同时登录的手机数量
 	kUseridUnit uint = 16
+
+	kDstIdOffset = 0
+	kDstIdLen = 8
+	kDstIdEnd = kDstIdOffset + kDstIdLen
 )
 
 var (
@@ -341,7 +345,8 @@ func WsHandler(ws *websocket.Conn) {
 				break
 			}
 			// 提取消息中的目标id
-			toId := int64(binary.LittleEndian.Uint64(msg[4:12]))
+			// 根据手机与嵌入式协议，前20字节为转发帧，前8字节为目标ID
+			toId := int64(binary.LittleEndian.Uint64(msg[kDstIdOffset:kDstIdEnd]))
 
 			destIds := gSessionList.CalcDestIds(s, toId)
 			if destIds == nil {

@@ -6,6 +6,14 @@ import (
 	"github.com/golang/glog"
 )
 
+const (
+	// 消息ID偏移位置，根据手机与板子的协议，整个消息中，MsgId前包括20字节的转发头，
+	// 24字节的帧头，数据头中的4字节其他数据
+	kMsgIdOffset = 20+24+4
+	kMsgIdLen = 2
+	kMsgIdEnd = kMsgIdOffset + kMsgIdLen
+)
+
 func MainHandle(msg []byte) {
 	statIncUpStreamIn()
 
@@ -22,8 +30,8 @@ func MainHandle(msg []byte) {
 	}
 
 	// Write into rabbitmq
-	if len(data) >= 32 {
-		msgId := int(binary.LittleEndian.Uint16(data[30:32]))
+	if len(data) >= kMsgIdEnd {
+		msgId := int(binary.LittleEndian.Uint16(data[kMsgIdOffset:kMsgIdEnd]))
 		if glog.V(2) {
 			glog.Infof("[rmq|write] write to msgid %d, msg: %s...", msgId, data[0:3])
 		} else if glog.V(3) {
