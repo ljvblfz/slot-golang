@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang/glog"
-	"html/template"
 	"io"
 	"net"
 	"net/http"
