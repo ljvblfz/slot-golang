@@ -18,12 +18,6 @@ import (
 	"time"
 )
 
-var homeTempl = template.Must(template.ParseFiles("home.html"))
-
-func homeHandle(w http.ResponseWriter, r *http.Request) {
-	homeTempl.Execute(w, r.Host)
-}
-
 const (
 	killedByOtherDevice  = "Another device login %d"
 	wrongLoginParams     = "Wrong login params %s"
@@ -96,7 +90,6 @@ func StartHttp(bindAddrs []string) {
 
 func websocketListen(bindAddr string) {
 	httpServeMux := http.NewServeMux()
-	httpServeMux.HandleFunc("/", homeHandle)
 
 	wsHandler := websocket.Server{
 		Handshake: func(config *websocket.Config, r *http.Request) error {
