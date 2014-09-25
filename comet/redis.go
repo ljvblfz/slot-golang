@@ -71,6 +71,34 @@ func initRedix(addr string) {
 	}
 }
 
+func ClearRedis(ip string) error {
+	r := Redix[_SetUserOnline]
+	RedixMu[_SetUserOnline].Lock()
+	defer RedixMu[_SetUserOnline].Unlock()
+
+	err := r.Send("del", fmt.Sprintf("Host:%s", ip))
+	if err != nil {
+		return err
+	}
+	err = r.Send("publish", PubKey, fmt.Sprintf("0|%s|0", ip))
+	if err != nil {
+		return err
+	}
+	err = r.Flush()
+	if err != nil {
+		return err
+	}
+	_, err = r.Receive()
+	if err != nil {
+		return err
+	}
+	_, err = r.Receive()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func SetUserOnline(uid int64, host string) (bool, error) {
 	r := Redix[_SetUserOnline]
 	RedixMu[_SetUserOnline].Lock()

@@ -44,6 +44,9 @@ func main() {
 	}
 
 	initRedix(*rh)
+	if err := ClearRedis(gLocalAddr); err != nil {
+		glog.Fatalf("ClearRedis before starting failed: %v", err)
+	}
 
 	go InitZK(strings.Split(*zkHosts, ","), gMsgbusRoot, gCometRoot)
 
