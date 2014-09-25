@@ -50,6 +50,8 @@ func (a *AppMsg) SetDstId(dstId int64) {
 	binary.LittleEndian.PutUint64(a.buf[kHeadForward:], uint64(a.DstId))
 	// 帧头
 	binary.LittleEndian.PutUint64(a.buf[kHeadForward+8:], uint64(a.DstId))
+	// 数据头
+	a.buf[kHeadForward+kHeadFrame] = byte(1 << 7)
 }
 
 func (a *AppMsg) SetSrcId(srcId int64) {
