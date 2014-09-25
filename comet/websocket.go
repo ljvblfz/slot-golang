@@ -297,22 +297,17 @@ func WsHandler(ws *websocket.Conn) {
 	s := NewSession(id, bindedIds, ws)
 	selement := gSessionList.AddSession(s)
 
+	if id < 0 {
+		destIds := gSessionList.CalcDestIds(s, 0)
+		onlineMsg := NewAppMsg(0, id, MIDOnline)
+		GMsgBusManager.Push2Backend(destIds, onlineMsg.MarshalBytes())
+	}
+
 	if timeout <= 0 {
 		timeout = TIME_OUT
 	}
 	ws.ReadTimeout = (time.Duration(timeout) + 30) * time.Second
-	//start := time.Now().UnixNano()
-	//end := int64(start + int64(time.Second))
 	for {
-		// more than 1 sec, reset the timer
-		//if end-start >= int64(time.Second) {
-		//	if err = setReadTimeout(ws, timeout + 30); err != nil {
-		//		glog.Errorf("<%s> user_id:\"%d\" websocket.SetReadDeadline() error(%s)\n", addr, id, err)
-		//		break
-		//	}
-		//	start = end
-		//}
-
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
 			if err != io.EOF {
 				glog.Errorf("[connection] <%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
@@ -367,6 +362,11 @@ func WsHandler(ws *websocket.Conn) {
 		if err != nil {
 			glog.Errorf("[mid|return] return mid %d for user %d failed, error: %v", mid, id, err)
 		}
+	}
+	if id < 0 {
+		destIds := gSessionList.CalcDestIds(s, 0)
+		offlineMsg := NewAppMsg(0, id, MIDOffline)
+		GMsgBusManager.Push2Backend(destIds, offlineMsg.MarshalBytes())
 	}
 	gSessionList.RemoveSession(selement)
 	return

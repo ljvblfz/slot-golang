@@ -257,7 +257,6 @@ func (this *SessionList) UpdateIds(id int64, ids string) {
 				session.BindedIds = newIds
 				// 异步修改对应的用户手机的绑定列表,避免嵌套的导致死锁
 				go this.bindAndUnbind(id, binds, unbinds)
-				//GMsgBusManager.NotifyBindedIdChanged(id, binds, unbinds)
 			}
 		}
 		lock.Unlock()
@@ -312,6 +311,7 @@ func (this *SessionList) bindAndUnbind(id int64, binds []int64, unbinds []int64)
 			lock.Unlock()
 		}
 	}
+	GMsgBusManager.NotifyBindedIdChanged(id, binds, unbinds)
 }
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {

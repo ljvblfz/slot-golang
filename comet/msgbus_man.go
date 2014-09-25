@@ -93,6 +93,13 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 
 // TODO NOT IMPLEMENTED, 应用层不包含该协议码
 func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []int64, unbindIds []int64) {
+	// new
+	msg := NewAppMsg(0, deviceId, MIDBind)
+	GMsgBusManager.Push2Backend(newBindIds, msg.MarshalBytes())
+	msg.SetMsgId(MIDUnbind)
+	GMsgBusManager.Push2Backend(newBindIds, msg.MarshalBytes())
+
+	// old from gree
 	//if glog.V(1) {
 	//	glog.Infof("[binded|notify] binded ids change for %d, new binded: %v, unbind ids: %v",
 	//		deviceId, newBindIds, unbindIds)
