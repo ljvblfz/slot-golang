@@ -5,8 +5,8 @@ import (
 	"cloud-base/hlist"
 	"github.com/golang/glog"
 	"sync"
-	"strings"
-	"strconv"
+	//"strings"
+	//"strconv"
 )
 
 var (
@@ -189,129 +189,84 @@ func (this *SessionList) CalcDestIds(s *Session, toId int64) []int64 {
 	return ids
 }
 
-func (this *SessionList) UpdateIds(id int64, ids string) {
-
-	newIdMap := make(map[int64]bool)
-
-	idsStrs := strings.Split(ids, ",")
-	for i, _ := range idsStrs {
-		if len(idsStrs[i]) == 0 {
-			continue
-		}
-		n, err := strconv.ParseInt(idsStrs[i], 10, 64)
-		if err != nil {
-			glog.Errorf("[binded ids] id [%d] receive non-int id updated message [%s], error: %v", id, ids, err)
-			continue
-		}
-		newIdMap[n] = true
-	}
-
-	var allIds []int64
-	if id > 0 {
-		glog.Errorf("[bind|unexpected] device is user id, but we expect a hardware id, id: %d, binded: %s", id, ids)
-		if id % int64(kUseridUnit) != 0 {
-			glog.Errorf("[bind|id] wrong id %d, invalid user id, it should be multiples of %d", id, kUseridUnit)
-			return
-		}
-		for i := 1; i < 16; i++ {
-			allIds = append(allIds, id + int64(i))
-		}
-
-	} else {
-		allIds = append(allIds, id)
-	}
-	for _, id = range allIds {
-		blockId := getBlockID(id)
-
+func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) {
+	mids := TransId(userId)
+	// add or remove deviceId from mobileIds session
+	for _, mid := range mids {
+		blockId := getBlockID(mid)
 		lock := this.mu[blockId]
 		lock.Lock()
-
-		if list, ok := this.kv[blockId][id]; ok {
+		if list, ok := this.kv[blockId][mid]; ok {
 			for e := list.Front(); e != nil; e = e.Next() {
-				session, ok := e.Value.(*Session)
+				s, ok := e.Value.(*Session)
 				if !ok {
 					break
 				}
-				newIds := make([]int64, 0, len(idsStrs))
-				unbinds := make([]int64, 0)
-				binds := make([]int64, 0)
-				for _, oldid := range session.BindedIds {
-					if _, exist := newIdMap[oldid]; !exist {
-						unbinds = append(unbinds, oldid)
-					}
-				}
-				for newid, _ := range newIdMap {
-					same := false
-					for _, oldid := range session.BindedIds {
-						if newid == oldid {
-							same = true
-							break
-						}
-					}
-					if !same {
-						binds = append(binds, newid)
-					}
-					newIds = append(newIds, newid)
-				}
-				glog.Infof("[bind] id %d binded from %v to %v", session.Uid, session.BindedIds, newIds)
-				session.BindedIds = newIds
-				// 异步修改对应的用户手机的绑定列表,避免嵌套的导致死锁
-				go this.bindAndUnbind(id, binds, unbinds)
-			}
-		}
-		lock.Unlock()
-	}
-}
+				if bindType {
+					// 绑定
+					s.BindedIds = append(s.BindedIds, deviceId)
+					glog.Infof("[bind|bind] mid %d add device %d", mid, deviceId)
 
-func (this *SessionList) bindAndUnbind(id int64, binds []int64, unbinds []int64) {
-	for _, i := range binds {
-		ids := TransId(i)
-		for _, fId := range ids {
-			blockId := getBlockID(fId)
-			lock := this.mu[blockId]
-			lock.Lock()
-			if list, ok := this.kv[blockId][fId]; ok {
-				for e := list.Front(); e != nil; e = e.Next() {
-					s, ok := e.Value.(*Session)
-					if !ok {
-						break
-					}
-					s.BindedIds = append(s.BindedIds, id)
-					glog.Infof("[bind|binds] id %d add %d", fId, id)
-				}
-			}
-			lock.Unlock()
-		}
-	}
-	for _, i := range unbinds {
-		ids := TransId(i)
-		for _, fId := range ids {
-			blockId := getBlockID(fId)
-
-			lock := this.mu[blockId]
-			lock.Lock()
-			if list, ok := this.kv[blockId][fId]; ok {
-				for e := list.Front(); e != nil; e = e.Next() {
-					s, ok := e.Value.(*Session)
-					if !ok {
-						break
-					}
+				} else {
+					// 解绑
 					for k, v := range s.BindedIds {
-						if v != id {
+						if v != deviceId {
 							continue
 						}
 						lastIndex := len(s.BindedIds) - 1
 						s.BindedIds[k] = s.BindedIds[lastIndex]
 						s.BindedIds = s.BindedIds[:lastIndex]
-						glog.Infof("[bind|binds] id %d remove %d", fId, id)
+						glog.Infof("[bind|unbind] mid %d remove device %d", mid, deviceId)
 						break
 					}
 				}
 			}
-			lock.Unlock()
+		}
+		lock.Unlock()
+	}
+
+	// add or remove mobile id from deviceId's session
+	blockId := getBlockID(deviceId)
+	lock := this.mu[blockId]
+	foundDevice := false
+	lock.Lock()
+	if list, ok := this.kv[blockId][deviceId]; ok {
+		foundDevice = true
+		for e := list.Front(); e != nil; e = e.Next() {
+			s, ok := e.Value.(*Session)
+			if !ok {
+				break
+			}
+			if bindType {
+				// 绑定
+				s.BindedIds = append(s.BindedIds, userId)
+				glog.Infof("[bind|bind] deviceId %d add userId %d", deviceId, userId)
+
+			} else {
+				// 解绑
+				for k, v := range s.BindedIds {
+					if v != userId {
+						continue
+					}
+					lastIndex := len(s.BindedIds) - 1
+					s.BindedIds[k] = s.BindedIds[lastIndex]
+					s.BindedIds = s.BindedIds[:lastIndex]
+					glog.Infof("[bind|unbind] deviceId %d remove userId %d", deviceId, userId)
+					break
+				}
+			}
 		}
 	}
-	GMsgBusManager.NotifyBindedIdChanged(id, binds, unbinds)
+	lock.Unlock()
+
+	// if found deviceId, send bind/unbind message to mids
+	if foundDevice {
+		if bindType {
+			GMsgBusManager.NotifyBindedIdChanged(deviceId, mids, nil)
+		} else {
+			GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, mids)
+		}
+	}
 }
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {
