@@ -48,7 +48,7 @@ func NewAppMsg(dstId int64, srcId int64, msgId uint16) *AppMsg {
 func (a *AppMsg) SetDstId(dstId int64) {
 	a.DstId = dstId
 	// 转发头
-	binary.LittleEndian.PutUint64(a.buf[kHeadForward:], uint64(a.DstId))
+	binary.LittleEndian.PutUint64(a.buf[:], uint64(a.DstId))
 	// 帧头
 	binary.LittleEndian.PutUint64(a.buf[kHeadForward+8:], uint64(a.DstId))
 	// 数据头
