@@ -13,6 +13,7 @@ const (
 	HostUsers = "Host:%s" // (1, 2, 3)
 	PubKey    = "PubKey"
 	SubDeviceUsersKey = "PubDeviceUsers"
+	SubModifiedPasswdKey = "PubModifiedPasswdUser"
 
     RedisDeviceUsers = "bind:device"
 	RedisUserDevices = "bind:user"
@@ -28,6 +29,7 @@ const (
 	_SelectMobileId
 	_ReturnMobileId
 	_SubDeviceUsersKey
+	_SubModifiedPasswd
 	_Max
 
 	// eval, script, 2, htable, id, PubKey, cometIP
@@ -89,6 +91,10 @@ func initRedix(addr string) {
 	ScriptOffline.Load(Redix[_SetUserOffline])
 
 	err = SubDeviceUsers()
+	if err != nil {
+		panic(err)
+	}
+	err = SubModifiedPasswd()
 	if err != nil {
 		panic(err)
 	}
@@ -295,6 +301,54 @@ func HandleDeviceUsers(ch <-chan []byte) {
 			continue
 		}
 		go gSessionList.UpdateIds(deviceId, userId, msgType != 0)
+	}
+}
+
+func SubModifiedPasswd() error {
+	r := Redix[_SubModifiedPasswd]
+	RedixMu[_SubModifiedPasswd].Lock()
+	defer RedixMu[_SubModifiedPasswd].Unlock()
+
+	psc := redis.PubSubConn{Conn: r}
+	err := psc.Subscribe(SubModifiedPasswdKey)
+	if err != nil {
+		return err
+	}
+	ch := make(chan []byte, 128)
+	go func() {
+		defer psc.Close()
+		for {
+			data := psc.Receive()
+			switch n := data.(type) {
+			case redis.Message:
+				ch <- n.Data
+			case redis.Subscription:
+				if n.Count == 0 {
+					glog.Fatalf("Subscription: %s %s %d, %v\n", n.Kind, n.Channel, n.Count, n)
+					return
+				}
+			case error:
+				glog.Errorf("[modifypwd|redis] sub of error: %v\n", n)
+				return
+			}
+		}
+	}()
+	go HandleModifiedPasswd(ch)
+	return nil
+}
+
+func HandleModifiedPasswd(ch <-chan []byte) {
+	for buf := range ch {
+		if buf == nil {
+			continue
+		}
+
+		userId, err := strconv.ParseInt(string(buf), 10, 64)
+		if err != nil {
+			glog.Errorf("[modifiedpasswd] invalid userId %s, error: %v", string(buf), err)
+			continue
+		}
+		go gSessionList.KickOffline(userId)
 	}
 }
 

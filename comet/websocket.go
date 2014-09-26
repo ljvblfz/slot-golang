@@ -59,6 +59,7 @@ var (
 	AckOtherglogoned       = []byte{byte(7)} // 您已在别处登陆
 	AckWrongLoginTimeout   = []byte{byte(8)} // 超时解析错误
 	AckServerError		   = []byte{byte(9)} // 服务器错误
+	AckModifiedPasswd	   = []byte{byte(10)} // 密码已修改
 
 	websocketUrl	[]string
 	urlLock			sync.Mutex

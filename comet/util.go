@@ -14,6 +14,7 @@ const (
 	kHeadData = 12
 
 	// 应用层协议的消息ID
+	MIDKickout	= 0x23
 	MIDOnline	= 0x35
 	MIDOffline	= 0x36
 	MIDBind		= 0x37
