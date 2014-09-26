@@ -11,7 +11,7 @@ PackDir=(comet msgbus rmqkeeper)
 DirSize=${#PackDir[@]}
 GitBranch=master
 ProjectName=cloud-socket
-Url=git@192.168.0.231:yangying/cloud-socket.git
+Url=git@192.168.0.231:serverside/cloud-socket.git
 
 mkdir -p src
 cd src

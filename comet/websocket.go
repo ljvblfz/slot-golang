@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/golang/glog"
-	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -60,6 +59,7 @@ var (
 	AckOtherglogoned       = []byte{byte(7)} // 您已在别处登陆
 	AckWrongLoginTimeout   = []byte{byte(8)} // 超时解析错误
 	AckServerError		   = []byte{byte(9)} // 服务器错误
+	AckModifiedPasswd	   = []byte{byte(10)} // 密码已修改
 
 	websocketUrl	[]string
 	urlLock			sync.Mutex
@@ -209,18 +209,17 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 
-	//glog.Infof("Recv login %s\n", string(reply))
 	// parse login params
 	id, timestamp, timeout, encryShadow, loginErr := getLoginParams(string(reply))
 	if loginErr != nil {
-		glog.Errorf("[%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
+		glog.Errorf("[online|check] [%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
 		websocket.Message.Send(ws, AckWrongParams)
 		ws.Close()
 		return
 	}
 	// check login
 	if err = isAuth(id, timestamp, timeout, encryShadow); err != nil {
-		glog.Errorf("[%s] auth failed:\"%s\", error: %v", addr, string(reply), err)
+		glog.Errorf("[online|check] [%s] auth failed:\"%s\", error: %v", addr, string(reply), err)
 		websocket.Message.Send(ws, LoginFailed.ErrorId)
 		ws.Close()
 		return
@@ -231,27 +230,27 @@ func WsHandler(ws *websocket.Conn) {
 		// 用户登录，检查其id是否为16整数倍，并为其分配一个1到15内的未使用的手机子id，相加后作为手机
 		// id，用于本session
 		if id % int64(kUseridUnit) != 0 {
-			glog.Warningf("[login] invalid user id %d, low byte is not zero", id)
+			glog.Warningf("[online|mobileid] invalid user id %d, low byte is not zero", id)
 			err = websocket.Message.Send(ws, AckWrongLoginDevice)
 			ws.Close()
 			return
 		}
 		mobileid, err := SelectMobileId(id)
 		if err != nil {
-			glog.Warningf("[login|mobileid] select mobile id for user %d failed: %v", id, err)
+			glog.Warningf("[online|mobileid] select mobile id for user %d failed: %v", id, err)
 			err = websocket.Message.Send(ws, AckServerError)
 			ws.Close()
 			return
 		}
 		if mobileid <= 0 {
-			glog.Warningf("[login|mobileid] no valid mobile id for user %d, the user may have 15 clients now.", id)
+			glog.Warningf("[online|mobileid] no valid mobile id for user %d, the user may have 15 clients now.", id)
 			err = websocket.Message.Send(ws, AckWrongLoginDevice)
 			ws.Close()
 			return
 		}
 		newId := id + int64(mobileid % int(kUseridUnit))
 		if id > newId {
-			glog.Errorf("[login|id] user id overflow, origin id: %d, newId %d with mid %d", id, newId, mobileid)
+			glog.Errorf("[online|mobileid] user id overflow, origin id: %d, newId %d with mid %d", id, newId, mobileid)
 		}
 		mid = byte(mobileid)
 		// 先用原始的用户id获取设备列表
@@ -261,11 +260,10 @@ func WsHandler(ws *websocket.Conn) {
 		bindedIds, err = GetDeviceUsers(id)
 	}
 	if err != nil {
-		glog.Errorf("[getIds] id [%d] get ids error: %v, ids: %v", id, err, bindedIds)
-	} else {
-		if glog.V(2) {
-			glog.Infof("[getIds] get ids for id [%d]: count(%d)%v", id, len(bindedIds), bindedIds)
-		}
+		glog.Errorf("[online|getIds] id [%d] get ids error: %v, ids: %v", id, err, bindedIds)
+		websocket.Message.Send(ws, LoginFailed.ErrorId)
+		ws.Close()
+		return
 	}
 
 	statIncConnTotal()
@@ -279,44 +277,36 @@ func WsHandler(ws *websocket.Conn) {
 		err = websocket.Message.Send(ws, []byte{0})
 	}
 	if err != nil {
-		glog.Errorf("[%s] [uid: %d] sent login-ack error (%v)\n", addr, id, err)
+		glog.Errorf("[online|error] [%s] [uid: %d] sent login-ack error (%v)\n", addr, id, err)
 		ws.Close()
 		return
 	}
 
 	_, err = SetUserOnline(id, gLocalAddr)
 	if err != nil {
-		glog.Errorf("redis online error [uid: %d] %v\n", id, err)
+		glog.Errorf("[online|check] redis online error [uid: %d] %v\n", id, err)
 		ws.Close()
 		return
 	}
 	if glog.V(2) {
-		glog.Infof("[online] id %d on %s, param: %s", id, gLocalAddr, reply)
+		glog.Infof("[online] id: %d, comet: %s, param: %s, binded ids: %v", id, gLocalAddr, reply, bindedIds)
 	}
 
 	s := NewSession(id, bindedIds, ws)
 	selement := gSessionList.AddSession(s)
 
+	if id < 0 {
+		destIds := gSessionList.CalcDestIds(s, 0)
+		onlineMsg := NewAppMsg(0, id, MIDOnline)
+		GMsgBusManager.Push2Backend(destIds, onlineMsg.MarshalBytes())
+	}
+
 	if timeout <= 0 {
 		timeout = TIME_OUT
 	}
 	ws.ReadTimeout = (time.Duration(timeout) + 30) * time.Second
-	//start := time.Now().UnixNano()
-	//end := int64(start + int64(time.Second))
 	for {
-		// more than 1 sec, reset the timer
-		//if end-start >= int64(time.Second) {
-		//	if err = setReadTimeout(ws, timeout + 30); err != nil {
-		//		glog.Errorf("<%s> user_id:\"%d\" websocket.SetReadDeadline() error(%s)\n", addr, id, err)
-		//		break
-		//	}
-		//	start = end
-		//}
-
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
-			if err != io.EOF {
-				glog.Errorf("[connection] <%s> user_id:\"%d\" websocket.Message.Receive() error(%s)\n", addr, id, err)
-			}
 			break
 		}
 		gSessionList.GetBindedIds(s, &bindedIds)
@@ -325,10 +315,8 @@ func WsHandler(ws *websocket.Conn) {
 				glog.Errorf("<%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
 				break
 			}
-			//glog.Debugf("<%s> user_id:\"%s\" receive heartbeat\n", addr, id)
 		} else {
 			statIncUpStreamIn()
-			//glog.Debugf("<%s> user_id:\"%s\" recv msg %s\n", addr, id, reply)
 			// Send to Message Bus
 			msg := reply
 
@@ -354,12 +342,13 @@ func WsHandler(ws *websocket.Conn) {
 		}
 		//end = time.Now().UnixNano()
 	}
+	offlineErr := err
 	err = SetUserOffline(id, gLocalAddr)
 	if err != nil {
-		glog.Errorf("[offline error] uid %d, error: %v", id, err)
+		glog.Errorf("[offline|error] uid %d, error: %v", id, err)
 	}
 	if glog.V(2) {
-		glog.Infof("[offline] id %d on %s", id, gLocalAddr)
+		glog.Infof("[offline] id:%d, comet: %s, reason: %v", id, gLocalAddr, offlineErr)
 	}
 	if id > 0 && mid > 0 {
 		id -= int64(mid)
@@ -367,6 +356,11 @@ func WsHandler(ws *websocket.Conn) {
 		if err != nil {
 			glog.Errorf("[mid|return] return mid %d for user %d failed, error: %v", mid, id, err)
 		}
+	}
+	if id < 0 {
+		destIds := gSessionList.CalcDestIds(s, 0)
+		offlineMsg := NewAppMsg(0, id, MIDOffline)
+		GMsgBusManager.Push2Backend(destIds, offlineMsg.MarshalBytes())
 	}
 	gSessionList.RemoveSession(selement)
 	return

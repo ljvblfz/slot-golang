@@ -68,11 +68,11 @@ func WatchRmq() {
 	for {
 		nodes, watch, err := zk.GetNodesW(zkConn, zkRmqRoot)
 		if err == zookeeper.ErrNoNode || err == zookeeper.ErrNoChildrenForEphemerals {
-			glog.Errorln(err)
+			glog.Errorf("[zk|rmq] error %v", err)
 			time.Sleep(time.Second)
 			continue
 		} else if err != nil {
-			glog.Errorln(err)
+			glog.Errorf("[zk|rmq] error %v", err)
 			time.Sleep(time.Second)
 			continue
 		}
@@ -80,7 +80,7 @@ func WatchRmq() {
 		for _, n := range nodes {
 			addr, err := zk.GetNodeData(zkConn, zkRmqRoot + "/" + n)
 			if err != nil {
-				glog.Errorf("[%s] cannot get", addr)
+				glog.Errorf("[zk|rmq] [%s] cannot get", addr)
 				continue
 			}
 			addrs = append(addrs, addr)
@@ -88,14 +88,14 @@ func WatchRmq() {
 		for _, addr := range addrs {
 			confs := strings.SplitN(addr, ",", 2)
 			if len(confs) != 2 {
-				glog.Errorf("[rmq] data in zk is not valid format(eg: url,queuename): %s", confs)
+				glog.Errorf("[zk|rmq] data in zk is not valid format(eg: url,queuename): %s", confs)
 				continue
 			}
 			glog.Infof("[rmq] online %s", addr)
 			GRmqs.Add(confs[0], confs[1])
 		}
 		e := <-watch
-		glog.Infof("zk receive an event %v", e)
+		glog.Infof("[zk|rmq] zk receive an event %v", e)
 	}
 }
 

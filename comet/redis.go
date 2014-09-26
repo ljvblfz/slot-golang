@@ -13,6 +13,7 @@ const (
 	HostUsers = "Host:%s" // (1, 2, 3)
 	PubKey    = "PubKey"
 	SubDeviceUsersKey = "PubDeviceUsers"
+	SubModifiedPasswdKey = "PubModifiedPasswdUser"
 
     RedisDeviceUsers = "bind:device"
 	RedisUserDevices = "bind:user"
@@ -28,8 +29,26 @@ const (
 	_SelectMobileId
 	_ReturnMobileId
 	_SubDeviceUsersKey
+	_SubModifiedPasswd
 	_Max
 
+	// eval, script, 2, htable, id, PubKey, cometIP
+	_scriptOnline = `
+local count = redis.call('hincrby', KEYS[1], KEYS[2], 1)
+if count == 1 then
+	redis.call('publish', ARGV[1], KEYS[2].."|"..ARGV[2].."|1")
+end
+return count
+`
+
+	_scriptOffline = `
+local count = redis.call('hincrby', KEYS[1], KEYS[2], -1)
+if count == 0 then
+	redis.call('publish', ARGV[1], KEYS[2].."|"..ARGV[2].."|0")
+	redis.call('hdel', KEYS[1], KEYS[2])
+end
+return count
+`
 	// 为用户挑选一个[1,15]中未使用的手机id
 	_scriptSelectMobileId = `
 for mid=1,15,1 do
@@ -45,6 +64,8 @@ var (
 	Redix   []redis.Conn
 	RedixMu []*sync.Mutex
 
+	ScriptOnline *redis.Script
+	ScriptOffline *redis.Script
 	ScriptSelectMobileId *redis.Script
 )
 var redisAddr string
@@ -64,11 +85,47 @@ func initRedix(addr string) {
 	}
 	ScriptSelectMobileId = redis.NewScript(1, _scriptSelectMobileId)
 	ScriptSelectMobileId.Load(Redix[_SelectMobileId])
+	ScriptOnline = redis.NewScript(2, _scriptOnline)
+	ScriptOnline.Load(Redix[_SetUserOnline])
+	ScriptOffline = redis.NewScript(2, _scriptOffline)
+	ScriptOffline.Load(Redix[_SetUserOffline])
 
 	err = SubDeviceUsers()
 	if err != nil {
 		panic(err)
 	}
+	err = SubModifiedPasswd()
+	if err != nil {
+		panic(err)
+	}
+}
+
+func ClearRedis(ip string) error {
+	r := Redix[_SetUserOnline]
+	RedixMu[_SetUserOnline].Lock()
+	defer RedixMu[_SetUserOnline].Unlock()
+
+	err := r.Send("del", fmt.Sprintf("Host:%s", ip))
+	if err != nil {
+		return err
+	}
+	err = r.Send("publish", PubKey, fmt.Sprintf("0|%s|0", ip))
+	if err != nil {
+		return err
+	}
+	err = r.Flush()
+	if err != nil {
+		return err
+	}
+	_, err = r.Receive()
+	if err != nil {
+		return err
+	}
+	_, err = r.Receive()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func SetUserOnline(uid int64, host string) (bool, error) {
@@ -76,47 +133,66 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 	RedixMu[_SetUserOnline].Lock()
 	defer RedixMu[_SetUserOnline].Unlock()
 
-	ret, err := redis.Int(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, 1))
-	if err != nil {
-		r.Close()
-		return false, err
-	}
-	if ret == 1 {
-		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 1))
-		if err != nil {
-			r.Close()
-			return false, err
-		}
-	}
-	return ret == 1, err
+	// new
+	return redis.Bool(ScriptOnline.Do(r,
+		fmt.Sprintf(HostUsers, host),
+		uid,
+		PubKey,
+		host,
+	))
+
+	// old
+	//ret, err := redis.Int(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, 1))
+	//if err != nil {
+	//	r.Close()
+	//	return false, err
+	//}
+	//if ret == 1 {
+	//	_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 1))
+	//	if err != nil {
+	//		r.Close()
+	//		return false, err
+	//	}
+	//}
+	//return ret == 1, err
 }
 
 func SetUserOffline(uid int64, host string) error {
 	r := Redix[_SetUserOffline]
 	RedixMu[_SetUserOffline].Lock()
 	defer RedixMu[_SetUserOffline].Unlock()
-	var (
-		err error
-		ret int
-	)
-	ret, err = redis.Int(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, -1))
-	if err != nil {
-		r.Close()
-		return err
-	}
-	if ret <= 0 {
-		_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 0))
-		if err != nil {
-			r.Close()
-			return err
-		}
-		_, err = r.Do("hdel", fmt.Sprintf(HostUsers, host), uid)
-		if err != nil {
-			r.Close()
-			return err
-		}
-	}
+	// new
+	_, err := redis.Bool(ScriptOffline.Do(r,
+		fmt.Sprintf(HostUsers, host),
+		uid,
+		PubKey,
+		host,
+	))
 	return err
+
+	// old
+	//var (
+	//	err error
+	//	ret int
+	//)
+	//ret, err = redis.Int(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, -1))
+	//if err != nil {
+	//	r.Close()
+	//	return err
+	//}
+	//if ret <= 0 {
+	//	_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 0))
+	//	if err != nil {
+	//		r.Close()
+	//		return err
+	//	}
+	//	_, err = r.Do("hdel", fmt.Sprintf(HostUsers, host), uid)
+	//	if err != nil {
+	//		r.Close()
+	//		return err
+	//	}
+	//}
+	//return err
 }
 
 func GetDeviceUsers(deviceId int64) ([]int64, error) {
@@ -204,17 +280,75 @@ func HandleDeviceUsers(ch <-chan []byte) {
 			continue
 		}
 
-		strs := strings.SplitN(string(buf), "|", 2)
-		if len(strs) != 2 || len(strs) == 0 {
+		strs := strings.SplitN(string(buf), "|", 3)
+		if len(strs) != 3 || len(strs) == 0 {
 			glog.Errorf("[binded id] invalid pub-sub msg format: %s", string(buf))
 			continue
 		}
-		id, err := strconv.ParseInt(strs[0], 10, 64)
+		deviceId, err := strconv.ParseInt(strs[0], 10, 64)
 		if err != nil {
-			glog.Errorf("[binded id] invalid id %s, error: %v", strs[0], err)
+			glog.Errorf("[binded id] invalid deviceId %s, error: %v", strs[0], err)
 			continue
 		}
-		go gSessionList.UpdateIds(id, strs[1])
+		userId, err := strconv.ParseInt(strs[1], 10, 64)
+		if err != nil {
+			glog.Errorf("[binded id] invalid userId %s, error: %v", strs[1], err)
+			continue
+		}
+		msgType, err := strconv.ParseInt(strs[2], 10, 32)
+		if err != nil {
+			glog.Errorf("[binded id] invalid bind type %s, error: %v", strs[2], err)
+			continue
+		}
+		go gSessionList.UpdateIds(deviceId, userId, msgType != 0)
+	}
+}
+
+func SubModifiedPasswd() error {
+	r := Redix[_SubModifiedPasswd]
+	RedixMu[_SubModifiedPasswd].Lock()
+	defer RedixMu[_SubModifiedPasswd].Unlock()
+
+	psc := redis.PubSubConn{Conn: r}
+	err := psc.Subscribe(SubModifiedPasswdKey)
+	if err != nil {
+		return err
+	}
+	ch := make(chan []byte, 128)
+	go func() {
+		defer psc.Close()
+		for {
+			data := psc.Receive()
+			switch n := data.(type) {
+			case redis.Message:
+				ch <- n.Data
+			case redis.Subscription:
+				if n.Count == 0 {
+					glog.Fatalf("Subscription: %s %s %d, %v\n", n.Kind, n.Channel, n.Count, n)
+					return
+				}
+			case error:
+				glog.Errorf("[modifypwd|redis] sub of error: %v\n", n)
+				return
+			}
+		}
+	}()
+	go HandleModifiedPasswd(ch)
+	return nil
+}
+
+func HandleModifiedPasswd(ch <-chan []byte) {
+	for buf := range ch {
+		if buf == nil {
+			continue
+		}
+
+		userId, err := strconv.ParseInt(string(buf), 10, 64)
+		if err != nil {
+			glog.Errorf("[modifiedpasswd] invalid userId %s, error: %v", string(buf), err)
+			continue
+		}
+		go gSessionList.KickOffline(userId)
 	}
 }
 
