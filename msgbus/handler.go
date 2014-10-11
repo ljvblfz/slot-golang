@@ -55,7 +55,9 @@ func MainHandle(msg []byte) {
 		uid := int64(binary.LittleEndian.Uint64(toIds[i*8 : i*8+8]))
 		cometHosts, err := GUserMap.GetUserComet(uid)
 		if err != nil {
-			glog.Errorf("id: %d, error: %v", uid, err)
+			if glog.V(4) {
+				glog.Errorf("id: %d, error: %v", uid, err)
+			}
 			continue
 		}
 		for e := cometHosts.Front(); e != nil; e = e.Next() {
