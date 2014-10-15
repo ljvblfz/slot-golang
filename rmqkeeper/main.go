@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"cloud-socket/ver"
 	"github.com/golang/glog"
@@ -52,6 +53,10 @@ func main() {
 		return
 	}
 	pid := cmd.Process.Pid
+
+	// Sleep before register rmq to zk to wait rmq listening on its server socket
+	time.Sleep(time.Second)
+
 	InitZK(strings.Split(*zks, ","), *zkRoot)
 
 	quitCh := make(chan struct{})
