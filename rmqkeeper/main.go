@@ -55,7 +55,7 @@ func main() {
 	pid := cmd.Process.Pid
 
 	// Sleep before register rmq to zk to wait rmq listening on its server socket
-	time.Sleep(time.Second)
+	time.Sleep(3 * time.Second)
 
 	InitZK(strings.Split(*zks, ","), *zkRoot)
 
