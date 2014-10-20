@@ -1,19 +1,21 @@
 package main
 
 import (
-	"cloud-base/websocket"
 	"crypto/md5"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/golang/glog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"cloud-base/websocket"
+	"cloud-socket/msg"
+	"github.com/golang/glog"
 )
 
 const (
@@ -297,7 +299,7 @@ func WsHandler(ws *websocket.Conn) {
 
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
-		onlineMsg := NewAppMsg(0, id, MIDOnline)
+		onlineMsg := msg.NewAppMsg(0, id, msg.MIDOnline)
 		GMsgBusManager.Push2Backend(destIds, onlineMsg.MarshalBytes())
 	}
 
@@ -329,9 +331,6 @@ func WsHandler(ws *websocket.Conn) {
 			toId := int64(binary.LittleEndian.Uint64(msg[kDstIdOffset:kDstIdEnd]))
 
 			destIds := gSessionList.CalcDestIds(s, toId)
-			if destIds == nil {
-				continue
-			}
 
 			if glog.V(3) {
 				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg)
@@ -359,7 +358,7 @@ func WsHandler(ws *websocket.Conn) {
 	}
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
-		offlineMsg := NewAppMsg(0, id, MIDOffline)
+		offlineMsg := msg.NewAppMsg(0, id, msg.MIDOffline)
 		GMsgBusManager.Push2Backend(destIds, offlineMsg.MarshalBytes())
 	}
 	gSessionList.RemoveSession(selement)

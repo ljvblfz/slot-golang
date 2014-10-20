@@ -3,6 +3,7 @@ package main
 import (
 	"cloud-base/websocket"
 	"cloud-base/hlist"
+	"cloud-socket/msg"
 	"github.com/golang/glog"
 	"sync"
 	//"strings"
@@ -182,8 +183,6 @@ func (this *SessionList) CalcDestIds(s *Session, toId int64) []int64 {
 	var ids []int64
 	if ok {
 		ids = s.calcDestIds(toId)
-	} else {
-		glog.Error("[calc|fatal] should never happened")
 	}
 	this.mu[blockId].Unlock()
 	return ids
@@ -271,7 +270,7 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 
 func (this *SessionList) KickOffline(uid int64) {
 	ids := TransId(uid)
-	kickMsg := NewAppMsg(0, 0, MIDKickout)
+	kickMsg := msg.NewAppMsg(0, 0, msg.MIDKickout)
 	for _, id := range ids {
 		blockId := getBlockID(id)
 		lock := this.mu[blockId]

@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/binary"
-	"cloud-base/hlist"
-	"github.com/golang/glog"
 	"sync"
+
+	"cloud-base/hlist"
+	"cloud-socket/msg"
+	"github.com/golang/glog"
 )
 
 type MsgBusManager struct {
@@ -92,12 +94,12 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 }
 
 func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []int64, unbindIds []int64) {
-	msg := NewAppMsg(0, deviceId, MIDBind)
+	m := msg.NewAppMsg(0, deviceId, msg.MIDBind)
 	if len(newBindIds) > 0 {
-		GMsgBusManager.Push2Backend(newBindIds, msg.MarshalBytes())
+		GMsgBusManager.Push2Backend(newBindIds, m.MarshalBytes())
 	}
 	if len(unbindIds) > 0 {
-		msg.SetMsgId(MIDUnbind)
-		GMsgBusManager.Push2Backend(unbindIds, msg.MarshalBytes())
+		m.SetMsgId(msg.MIDUnbind)
+		GMsgBusManager.Push2Backend(unbindIds, m.MarshalBytes())
 	}
 }
