@@ -11,6 +11,9 @@ const (
 	kHeadFrame = 24
 	kHeadData = 12
 
+	// 转发头中的标记字节
+	kForwardFlagOffset = 16
+
 	// 应用层协议的消息ID
 	MIDKickout	= 0x23
 	MIDOnline	= 0x35
@@ -35,11 +38,21 @@ func NewAppMsg(dstId int64, srcId int64, msgId uint16) *AppMsg {
 		a.buf[i] = 0
 	}
 	// 预填的后续不会改变的数据
-	frame := a.buf[20:20+24]
+	frame := a.buf[kHeadForward:kHeadForward+kHeadFrame]
 	frame[0] = 1 << 7
 	a.SetDstId(dstId)
 	a.SetSrcId(srcId)
 	a.SetMsgId(msgId)
+	return a
+}
+
+func NewAckMsg(srcId int64, message []byte) *AppMsg {
+	a := &AppMsg{
+		buf: make([]byte, len(message)),
+	}
+	copy(a.buf, message)
+	// 数据头中的ACK头
+	a.buf[kHeadForward+kHeadFrame] |= 1 << 6
 	return a
 }
 
@@ -85,4 +98,15 @@ func (a *AppMsg) MarshalBytes() []byte {
 	copy(a.buf[kHeadForward+kHeadFrame+8:], headCheck[:2])
 
 	return a.buf
+}
+
+// 消息的转发类型
+// 返回true时，转发，不上传，服务器不回复ACK
+// 返回false时，不转发，上传，服务器回复ACK
+func IsForwardType(msg []byte) bool {
+	return msg[kForwardFlagOffset] & 0x1 != 0
+}
+
+func ForwardSrcId(msg []byte) int64 {
+	return int64(binary.LittleEndian.Uint64(msg[8:16]))
 }

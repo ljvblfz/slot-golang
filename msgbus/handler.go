@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/binary"
+
 	"cloud-base/hlist"
+	msgs "cloud-socket/msg"
 	"github.com/golang/glog"
 )
 
@@ -29,15 +31,29 @@ func MainHandle(msg []byte) {
 		glog.Infof("[msg|in] ids count: %d, to ids: %v, total len: %d, data: %v...", idsSize, ids, len(msg), msg[:3])
 	}
 
+	shouldForward := msgs.IsForwardType(data)
+
 	// Write into rabbitmq
-	if len(data) >= kMsgIdEnd {
-		msgId := int(binary.LittleEndian.Uint16(data[kMsgIdOffset:kMsgIdEnd]))
-		if glog.V(2) {
-			glog.Infof("[rmq|write] write to msgid %d, msg: %s...", msgId, data[0:3])
-		} else if glog.V(3) {
-			glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data)
+	if !shouldForward {
+		if len(data) >= kMsgIdEnd {
+			msgId := int(binary.LittleEndian.Uint16(data[kMsgIdOffset:kMsgIdEnd]))
+			if glog.V(3) {
+				glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data)
+			} else if glog.V(2) {
+				glog.Infof("[rmq|write] write to msgid %d, msg: %s...", msgId, data[0:3])
+			}
+			GRmqs.Push(data, msgId)
 		}
-		GRmqs.Push(data, msgId)
+
+		id := msgs.ForwardSrcId(data)
+		m := msgs.NewAckMsg(id, data)
+		err := GUserMap.PushToComet(id, m.MarshalBytes())
+		if err != nil {
+			statIncDownStreamOutBad()
+			glog.Errorf("[msg|ack] ACK to [%d] error: %v", id, err)
+		}
+
+		return
 	}
 
 	if idsSize == 1 {
