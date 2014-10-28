@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"cloud-base/hlist"
-	"cloud-socket/msg"
+	"cloud-socket/msgs"
 	"github.com/golang/glog"
 )
 
@@ -94,12 +94,12 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 }
 
 func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []int64, unbindIds []int64) {
-	m := msg.NewAppMsg(0, deviceId, msg.MIDBind)
+	m := msgs.NewAppMsg(0, deviceId, msgs.MIDBind)
 	if len(newBindIds) > 0 {
 		GMsgBusManager.Push2Backend(newBindIds, m.MarshalBytes())
 	}
 	if len(unbindIds) > 0 {
-		m.SetMsgId(msg.MIDUnbind)
+		m.SetMsgId(msgs.MIDUnbind)
 		GMsgBusManager.Push2Backend(unbindIds, m.MarshalBytes())
 	}
 }

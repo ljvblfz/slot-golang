@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 
 	"cloud-base/hlist"
-	msgs "cloud-socket/msg"
+	"cloud-socket/msgs"
 	"github.com/golang/glog"
 )
 

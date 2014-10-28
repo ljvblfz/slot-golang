@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"cloud-base/websocket"
-	"cloud-socket/msg"
+	"cloud-socket/msgs"
 	"github.com/golang/glog"
 )
 
@@ -299,7 +299,7 @@ func WsHandler(ws *websocket.Conn) {
 
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
-		onlineMsg := msg.NewAppMsg(0, id, msg.MIDOnline)
+		onlineMsg := msgs.NewAppMsg(0, id, msgs.MIDOnline)
 		GMsgBusManager.Push2Backend(destIds, onlineMsg.MarshalBytes())
 	}
 
@@ -358,7 +358,7 @@ func WsHandler(ws *websocket.Conn) {
 	}
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
-		offlineMsg := msg.NewAppMsg(0, id, msg.MIDOffline)
+		offlineMsg := msgs.NewAppMsg(0, id, msgs.MIDOffline)
 		GMsgBusManager.Push2Backend(destIds, offlineMsg.MarshalBytes())
 	}
 	gSessionList.RemoveSession(selement)

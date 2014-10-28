@@ -3,7 +3,7 @@ package main
 import (
 	"cloud-base/websocket"
 	"cloud-base/hlist"
-	"cloud-socket/msg"
+	"cloud-socket/msgs"
 	"github.com/golang/glog"
 	"sync"
 	//"strings"
@@ -270,7 +270,7 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 
 func (this *SessionList) KickOffline(uid int64) {
 	ids := TransId(uid)
-	kickMsg := msg.NewAppMsg(0, 0, msg.MIDKickout)
+	kickMsg := msgs.NewAppMsg(0, 0, msgs.MIDKickout)
 	for _, id := range ids {
 		blockId := getBlockID(id)
 		lock := this.mu[blockId]
