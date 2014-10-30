@@ -15,12 +15,8 @@ func handleSignal(closeF closeFunc) {
 
 	for sig := range c {
 		switch sig {
-		case syscall.SIGINT:
+		case syscall.SIGINT, syscall.SIGTERM:
 			closeF()
-		// case SIG_STATUS:
-		// 	glog.Infoln("catch sigstatus, ignore")
-		case syscall.SIGTERM:
-			glog.Info("catch sigterm, ignore")
 		}
 		return
 	}

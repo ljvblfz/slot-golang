@@ -87,11 +87,8 @@ func handleSignal(quit <-chan struct{}, closeF func()) {
 		select {
 		case sig := <-c:
 			switch sig {
-			case syscall.SIGINT, syscall.SIGSTOP:
+			case syscall.SIGINT, syscall.SIGTERM:
 				closeF()
-				return
-			case syscall.SIGTERM:
-				glog.Info("catch sigterm, ignore")
 				return
 			}
 
