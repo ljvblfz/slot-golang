@@ -58,6 +58,9 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 			if srv == s {
 				glog.Infof("[%s] removed ok", s.conn.RemoteAddr())
 				this.list.Remove(e)
+				if this.curr == e {
+					this.curr = nil
+				}
 				statDecMsgbusConns()
 				break
 			}
