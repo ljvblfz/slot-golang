@@ -20,7 +20,7 @@ do
 		mv $Pwd/${msgbusName}_update $Pwd/${msgbusName}
 		echo "Updated program"
 	fi
-	GOMAXPROC=2 $Pwd/$msgbusName -alsologtostderr=$GlogToStderr -rh=$onlineRedisIp:$onlineRedisPort -addr=$msgbusIp:$msgbusPort -zks=$Zks -zkroot=$zkRoot -v=$GlogV
+	GOMAXPROCS=2 $Pwd/$msgbusName -alsologtostderr=$GlogToStderr -rh=$onlineRedisIp:$onlineRedisPort -addr=$msgbusIp:$msgbusPort -zks=$Zks -zkroot=$zkRoot -v=$GlogV
 	sleep 3
 done
 

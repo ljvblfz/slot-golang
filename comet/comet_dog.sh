@@ -13,7 +13,7 @@ do
 		mv $Pwd/${cometName} $Pwd/old/${cometName}_`date +%Y%m%d-%H%M%S`
 		mv $Pwd/${cometName}_update $Pwd/${cometName}
 	fi
-	GOMAXPROC=2 $Pwd/$cometName -alsologtostderr=true -log_dir=log -ports="$Ports" -rh=$onlineRedisIp:$onlineRedisPort -lip=$cometIp -zks=$Zks -zkroot="$zkRoot" -zkrootc=$zkRootc -v=$GlogV -sh="$StatusServer"
+	GOMAXPROCS=2 $Pwd/$cometName -alsologtostderr=true -log_dir=log -ports="$Ports" -rh=$onlineRedisIp:$onlineRedisPort -lip=$cometIp -zks=$Zks -zkroot="$zkRoot" -zkrootc=$zkRootc -v=$GlogV -sh="$StatusServer"
 	sleep 3
 done
 
