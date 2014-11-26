@@ -42,8 +42,8 @@ const (
 	kUseridUnit uint = 16
 
 	kDstIdOffset = 0
-	kDstIdLen = 8
-	kDstIdEnd = kDstIdOffset + kDstIdLen
+	kDstIdLen    = 8
+	kDstIdEnd    = kDstIdOffset + kDstIdLen
 )
 
 var (
@@ -51,20 +51,20 @@ var (
 	ParamsError       = &ErrorCode{2001, "登陆参数错误"}
 	LoginFailed       = &ErrorCode{2002, "登陆失败"}
 
-	AckLoginOK             = []byte{byte(0)} // 登陆成功
-	AckWrongParams         = []byte{byte(1)} // 错误的登陆参数
-	AckWrongLoginType      = []byte{byte(2)} // 登陆类型解析错误
-	AckWrongLoginDevice    = []byte{byte(3)} // 登陆设备ID解析错误
-	AckWrongLoginTimestamp = []byte{byte(4)} // 登陆时间戳解析错误
-	AckLoginTimeout        = []byte{byte(5)} // 登陆超时
-	AckWrongMD5            = []byte{byte(6)} // 错误的md5
-	AckOtherglogoned       = []byte{byte(7)} // 您已在别处登陆
-	AckWrongLoginTimeout   = []byte{byte(8)} // 超时解析错误
-	AckServerError		   = []byte{byte(9)} // 服务器错误
-	AckModifiedPasswd	   = []byte{byte(10)} // 密码已修改
+	AckLoginOK             = []byte{byte(0)}  // 登陆成功
+	AckWrongParams         = []byte{byte(1)}  // 错误的登陆参数
+	AckWrongLoginType      = []byte{byte(2)}  // 登陆类型解析错误
+	AckWrongLoginDevice    = []byte{byte(3)}  // 登陆设备ID解析错误
+	AckWrongLoginTimestamp = []byte{byte(4)}  // 登陆时间戳解析错误
+	AckLoginTimeout        = []byte{byte(5)}  // 登陆超时
+	AckWrongMD5            = []byte{byte(6)}  // 错误的md5
+	AckOtherglogoned       = []byte{byte(7)}  // 您已在别处登陆
+	AckWrongLoginTimeout   = []byte{byte(8)}  // 超时解析错误
+	AckServerError         = []byte{byte(9)}  // 服务器错误
+	AckModifiedPasswd      = []byte{byte(10)} // 密码已修改
 
-	websocketUrl	[]string
-	urlLock			sync.Mutex
+	websocketUrl []string
+	urlLock      sync.Mutex
 )
 
 type ErrorCode struct {
@@ -99,11 +99,11 @@ func websocketListen(bindAddr string) {
 			}
 			return nil
 		},
-		Handler: WsHandler,
+		Handler:  WsHandler,
 		MustMask: false,
 	}
 	path := "ws"
-	httpServeMux.Handle("/" + path, wsHandler)
+	httpServeMux.Handle("/"+path, wsHandler)
 
 	addr, err := net.ResolveTCPAddr("tcp", bindAddr)
 	if err != nil {
@@ -176,7 +176,7 @@ func getLoginParams(req string) (id int64, timestamp, timeout uint64, md5Str str
 }
 
 func isAuth(id int64, timestamp uint64, timeout uint64, md5Str string) error {
-	if timestamp > 0 && uint64(time.Now().Unix()) - timestamp >= EXPIRE_TIME {
+	if timestamp > 0 && uint64(time.Now().Unix())-timestamp >= EXPIRE_TIME {
 		return fmt.Errorf("login timeout, %d - %d >= %d", uint64(time.Now().Unix()), timestamp, EXPIRE_TIME)
 		// return false
 	}
@@ -231,7 +231,7 @@ func WsHandler(ws *websocket.Conn) {
 	if id > 0 {
 		// 用户登录，检查其id是否为16整数倍，并为其分配一个1到15内的未使用的手机子id，相加后作为手机
 		// id，用于本session
-		if id % int64(kUseridUnit) != 0 {
+		if id%int64(kUseridUnit) != 0 {
 			glog.Warningf("[online|mobileid] invalid user id %d, low byte is not zero", id)
 			err = websocket.Message.Send(ws, AckWrongLoginDevice)
 			ws.Close()
@@ -250,7 +250,7 @@ func WsHandler(ws *websocket.Conn) {
 			ws.Close()
 			return
 		}
-		newId := id + int64(mobileid % int(kUseridUnit))
+		newId := id + int64(mobileid%int(kUseridUnit))
 		if id > newId {
 			glog.Errorf("[online|mobileid] user id overflow, origin id: %d, newId %d with mid %d", id, newId, mobileid)
 		}
@@ -300,7 +300,7 @@ func WsHandler(ws *websocket.Conn) {
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
 		onlineMsg := msgs.NewAppMsg(0, id, msgs.MIDOnline)
-		GMsgBusManager.Push2Backend(destIds, onlineMsg.MarshalBytes())
+		GMsgBusManager.Push2Backend(id, destIds, onlineMsg.MarshalBytes())
 	}
 
 	if timeout <= 0 {
@@ -337,7 +337,7 @@ func WsHandler(ws *websocket.Conn) {
 			} else if glog.V(2) {
 				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg[0:3])
 			}
-			GMsgBusManager.Push2Backend(destIds, msg)
+			GMsgBusManager.Push2Backend(id, destIds, msg)
 		}
 		//end = time.Now().UnixNano()
 	}
@@ -359,7 +359,7 @@ func WsHandler(ws *websocket.Conn) {
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
 		offlineMsg := msgs.NewAppMsg(0, id, msgs.MIDOffline)
-		GMsgBusManager.Push2Backend(destIds, offlineMsg.MarshalBytes())
+		GMsgBusManager.Push2Backend(id, destIds, offlineMsg.MarshalBytes())
 	}
 	gSessionList.RemoveSession(selement)
 	return

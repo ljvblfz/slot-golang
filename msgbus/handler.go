@@ -11,14 +11,16 @@ import (
 const (
 	// 消息ID偏移位置，根据手机与板子的协议，整个消息中，MsgId前包括20字节的转发头，
 	// 24字节的帧头，数据头中的4字节其他数据
-	kMsgIdOffset = 20+24+4
-	kMsgIdLen = 2
-	kMsgIdEnd = kMsgIdOffset + kMsgIdLen
+	kMsgIdOffset = 20 + 24 + 4
+	kMsgIdLen    = 2
+	kMsgIdEnd    = kMsgIdOffset + kMsgIdLen
 )
 
-func MainHandle(msg []byte) {
+func MainHandle(srcMsg []byte) {
 	statIncUpStreamIn()
 
+	srcId := binary.LittleEndian.Uint64(srcMsg[:8])
+	msg := srcMsg[8:]
 	idsSize := binary.LittleEndian.Uint16(msg[:2])
 	toIds := msg[2 : 2+idsSize*8]
 	data := msg[2+idsSize*8:]
@@ -26,34 +28,36 @@ func MainHandle(msg []byte) {
 	if glog.V(2) {
 		var ids []int64
 		for i := uint16(0); i < idsSize; i++ {
-			ids = append(ids, int64(binary.LittleEndian.Uint64(toIds[i*8 : i*8+8])))
+			ids = append(ids, int64(binary.LittleEndian.Uint64(toIds[i*8:i*8+8])))
 		}
-		glog.Infof("[msg|in] ids count: %d, to ids: %v, total len: %d, data: %v...", idsSize, ids, len(msg), msg[:3])
+		glog.Infof("[msg|in] from: %d, ids count: %d, to ids: %v, total len: %d, data: %v...", srcId, idsSize, ids, len(msg), msg[:3])
 	}
 
-	shouldForward := msgs.IsForwardType(data)
+	if srcId < 0 {
+		shouldForward := msgs.IsForwardType(data)
 
-	// Write into rabbitmq
-	if !shouldForward {
-		if len(data) >= kMsgIdEnd {
-			msgId := int(binary.LittleEndian.Uint16(data[kMsgIdOffset:kMsgIdEnd]))
-			if glog.V(3) {
-				glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data)
-			} else if glog.V(2) {
-				glog.Infof("[rmq|write] write to msgid %d, msg: %s...", msgId, data[0:3])
+		// Write into rabbitmq
+		if !shouldForward {
+			if len(data) >= kMsgIdEnd {
+				msgId := int(binary.LittleEndian.Uint16(data[kMsgIdOffset:kMsgIdEnd]))
+				if glog.V(3) {
+					glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data)
+				} else if glog.V(2) {
+					glog.Infof("[rmq|write] write to msgid %d, msg: %s...", msgId, data[0:3])
+				}
+				GRmqs.Push(data, msgId)
 			}
-			GRmqs.Push(data, msgId)
-		}
 
-		id := msgs.ForwardSrcId(data)
-		m := msgs.NewAckMsg(id, data)
-		err := GUserMap.PushToComet(id, m.MarshalBytes())
-		if err != nil {
-			statIncDownStreamOutBad()
-			glog.Errorf("[msg|ack] ACK to [%d] error: %v", id, err)
-		}
+			id := msgs.ForwardSrcId(data)
+			m := msgs.NewAckMsg(id, data)
+			err := GUserMap.PushToComet(id, m.MarshalBytes())
+			if err != nil {
+				statIncDownStreamOutBad()
+				glog.Errorf("[msg|ack] ACK to [%d] error: %v", id, err)
+			}
 
-		return
+			return
+		}
 	}
 
 	if idsSize == 1 {

@@ -69,15 +69,16 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 	this.mu.Unlock()
 }
 
-func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
+func (this *MsgBusManager) Push2Backend(srcId int64, ids []int64, msg []byte) {
 	size := uint16(len(ids))
-	pushData := make([]byte, 2+size*8+uint16(len(msg)))
-	binary.LittleEndian.PutUint16(pushData[:2], size)
-	idsData := pushData[2 : 2+size*8]
+	pushData := make([]byte, 8+2+size*8+uint16(len(msg)))
+	binary.LittleEndian.PutUint64(pushData[:8], uint64(srcId))
+	binary.LittleEndian.PutUint16(pushData[8:8+2], size)
+	idsData := pushData[8+2 : 8+2+size*8]
 	for i := uint16(0); i < size; i++ {
 		binary.LittleEndian.PutUint64(idsData[i*8:i*8+8], uint64(ids[i]))
 	}
-	copy(pushData[2+size*8:], msg)
+	copy(pushData[8+2+size*8:], msg)
 
 	//glog.Infof("[push] %v", pushData)
 	if this.curr != nil {
@@ -99,10 +100,10 @@ func (this *MsgBusManager) Push2Backend(ids []int64, msg []byte) {
 func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []int64, unbindIds []int64) {
 	m := msgs.NewAppMsg(0, deviceId, msgs.MIDBind)
 	if len(newBindIds) > 0 {
-		GMsgBusManager.Push2Backend(newBindIds, m.MarshalBytes())
+		GMsgBusManager.Push2Backend(0, newBindIds, m.MarshalBytes())
 	}
 	if len(unbindIds) > 0 {
 		m.SetMsgId(msgs.MIDUnbind)
-		GMsgBusManager.Push2Backend(unbindIds, m.MarshalBytes())
+		GMsgBusManager.Push2Backend(0, unbindIds, m.MarshalBytes())
 	}
 }
