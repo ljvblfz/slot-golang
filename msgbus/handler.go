@@ -19,7 +19,7 @@ const (
 func MainHandle(srcMsg []byte) {
 	statIncUpStreamIn()
 
-	srcId := binary.LittleEndian.Uint64(srcMsg[:8])
+	srcId := int64(binary.LittleEndian.Uint64(srcMsg[:8]))
 	msg := srcMsg[8:]
 	idsSize := binary.LittleEndian.Uint16(msg[:2])
 	toIds := msg[2 : 2+idsSize*8]
@@ -40,17 +40,17 @@ func MainHandle(srcMsg []byte) {
 		if !shouldForward {
 			if len(data) >= kMsgIdEnd {
 				msgId := int(binary.LittleEndian.Uint16(data[kMsgIdOffset:kMsgIdEnd]))
-				if glog.V(3) {
-					glog.Infof("[rmq|write] write to msgid %d, msg: %s", msgId, data)
-				} else if glog.V(2) {
-					glog.Infof("[rmq|write] write to msgid %d, msg: %s...", msgId, data[0:3])
-				}
 				GRmqs.Push(data, msgId)
 			}
 
 			id := msgs.ForwardSrcId(data)
 			m := msgs.NewAckMsg(id, data)
-			err := GUserMap.PushToComet(id, m.MarshalBytes())
+			ackMsg := m.MarshalBytes()
+			pushBuf := make([]byte, 2+8+len(ackMsg))
+			binary.LittleEndian.PutUint16(pushBuf[:8], 1)
+			binary.LittleEndian.PutUint64(pushBuf[2:2+8], uint64(id))
+			copy(pushBuf[2+8:], ackMsg)
+			err := GUserMap.PushToComet(id, pushBuf)
 			if err != nil {
 				statIncDownStreamOutBad()
 				glog.Errorf("[msg|ack] ACK to [%d] error: %v", id, err)
@@ -103,6 +103,7 @@ func MainHandle(srcMsg []byte) {
 			i++
 		}
 		copy(pushData[2+vSize*8:], data)
+
 		err := GComets.PushMsg(pushData, k)
 		if err != nil {
 			glog.Errorf("[msg|down] Broadcast to comet failed, comet: %s, ids: %s, err: %v", k, v, err)

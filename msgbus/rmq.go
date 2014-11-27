@@ -14,16 +14,16 @@ import (
 
 var (
 	GRmqs = &Rmqs{
-		servers:	hlist.New(),
-		curr:		nil,
-		mu:			sync.Mutex{},
+		servers: hlist.New(),
+		curr:    nil,
+		mu:      sync.Mutex{},
 	}
 )
 
 type Rmqs struct {
-	servers	*hlist.Hlist
-	curr	*hlist.Element
-	mu		sync.Mutex
+	servers *hlist.Hlist
+	curr    *hlist.Element
+	mu      sync.Mutex
 }
 
 func (this *Rmqs) Add(addr string, exchangeName string) error {
@@ -70,12 +70,13 @@ func (this *Rmqs) Add(addr string, exchangeName string) error {
 	}
 
 	s := &rmqServer{
-		conn: conn,
-		channel: channel,
-		addr: addr,
+		conn:         conn,
+		channel:      channel,
+		addr:         addr,
 		exchangeName: exchangeName,
 	}
 	this.servers.PushFront(s)
+	statIncRmqCount()
 
 	if this.curr == nil {
 		this.curr = this.servers.Front()
@@ -98,9 +99,9 @@ func (this *Rmqs) listenClose(c chan *amqp.Error, s *rmqServer) {
 	// retry twice connecting to rmq server
 	for i := 0; i < 2; i++ {
 		time.Sleep(5 * time.Second)
-		glog.Infof("[amq|reconnecting] reconnecting %d ...", i + 1)
+		glog.Infof("[amq|reconnecting] reconnecting %d ...", i+1)
 		if nil == this.Add(addr, exchangeName) {
-			glog.Infof("[amq|reconnecting] reconnect successful on %d times", i + 1)
+			glog.Infof("[amq|reconnecting] reconnect successful on %d times", i+1)
 			return
 		}
 	}
@@ -120,6 +121,7 @@ func (this *Rmqs) Remove(s *rmqServer) {
 			if srv == s {
 				glog.Infof("[%s] removed ok", s.addr)
 				this.servers.Remove(e)
+				statDecRmqCount()
 				break
 			}
 		}
@@ -138,11 +140,19 @@ func (this *Rmqs) Push(msg []byte, serviceId int) {
 			false,
 			false,
 			amqp.Publishing{
-				ContentType:	"text/plain",
-				Body:			msg,
+				ContentType: "text/plain",
+				Body:        msg,
 			},
 		)
-		if err != nil {
+		if err == nil {
+			statIncMsgToRmq()
+			if glog.V(3) {
+				glog.Infof("[rmq|write] write to msgid %d, msg: %s", serviceId, msg)
+			} else if glog.V(2) {
+				glog.Infof("[rmq|write] write to msgid %d, msg: %s...", serviceId, msg[0:3])
+			}
+
+		} else {
 			glog.Errorf("[rmq|publish] error on publish msg, error: %v, msg: (%v)", err, msg)
 			// 试验性的错误处理，还不确认这个能正确处理服务器关闭的情况
 			if err == amqp.ErrClosed {
@@ -159,16 +169,14 @@ func (this *Rmqs) Push(msg []byte, serviceId int) {
 		} else {
 			this.curr = this.servers.Front()
 		}
-	} else {
-		glog.Errorf("[rmq] curr == nil, list: %v", this.servers)
 	}
 }
 
 type rmqServer struct {
-	conn			*amqp.Connection
-	channel			*amqp.Channel
-	addr			string
-	exchangeName	string
+	conn         *amqp.Connection
+	channel      *amqp.Channel
+	addr         string
+	exchangeName string
 }
 
 func (s *rmqServer) Close() {

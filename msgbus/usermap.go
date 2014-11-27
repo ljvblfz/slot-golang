@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"cloud-base/hlist"
+	"fmt"
 	"github.com/golang/glog"
 	"strconv"
 	"sync"
@@ -178,7 +178,11 @@ func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 				glog.Errorf("[msg|down] to: (%d)%v", 1, h)
 			} else {
 				statIncDownStreamOut()
-				glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
+				if glog.V(3) {
+					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg)
+				} else if glog.V(2) {
+					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
+				}
 			}
 		}
 	}
