@@ -8,18 +8,18 @@ import (
 const (
 	// 消息头各部分的长度
 	kHeadForward = 20
-	kHeadFrame = 24
-	kHeadData = 12
+	kHeadFrame   = 24
+	kHeadData    = 12
 
 	// 转发头中的标记字节
 	kForwardFlagOffset = 16
 
 	// 应用层协议的消息ID
-	MIDKickout	= 0x23
-	MIDOnline	= 0x35
-	MIDOffline	= 0x36
-	MIDBind		= 0x37
-	MIDUnbind	= 0x38
+	MIDKickout = 0x23
+	MIDOnline  = 0x35
+	MIDOffline = 0x36
+	MIDBind    = 0x37
+	MIDUnbind  = 0x38
 )
 
 type AppMsg struct {
@@ -32,13 +32,14 @@ type AppMsg struct {
 
 func NewAppMsg(dstId int64, srcId int64, msgId uint16) *AppMsg {
 	a := &AppMsg{
-		buf: make([]byte, kHeadForward + kHeadFrame + kHeadData),
+		buf: make([]byte, kHeadForward+kHeadFrame+kHeadData),
 	}
 	for i, _ := range a.buf {
 		a.buf[i] = 0
 	}
+	a.buf[16] |= 1
 	// 预填的后续不会改变的数据
-	frame := a.buf[kHeadForward:kHeadForward+kHeadFrame]
+	frame := a.buf[kHeadForward : kHeadForward+kHeadFrame]
 	frame[0] = 1 << 7
 	a.SetDstId(dstId)
 	a.SetSrcId(srcId)
@@ -88,7 +89,7 @@ func (a *AppMsg) MarshalBytes() []byte {
 	var headCheck [2]uint8
 	i := kHeadForward
 	count := kHeadForward + kHeadFrame + 8
-	for ; i + 1 < count; i += 2 {
+	for ; i+1 < count; i += 2 {
 		headCheck[0] ^= a.buf[i]
 		headCheck[1] ^= a.buf[i+1]
 	}
@@ -104,7 +105,7 @@ func (a *AppMsg) MarshalBytes() []byte {
 // 返回true时，转发，不上传，服务器不回复ACK
 // 返回false时，不转发，上传，服务器回复ACK
 func IsForwardType(msg []byte) bool {
-	return msg[kForwardFlagOffset] & 0x1 != 0
+	return msg[kForwardFlagOffset]&0x1 != 0
 }
 
 func ForwardSrcId(msg []byte) int64 {
