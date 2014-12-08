@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 
 	"cloud-base/hlist"
+	"cloud-base/rmqs"
 	"cloud-socket/msgs"
 	"github.com/golang/glog"
 )
@@ -15,6 +16,22 @@ const (
 	kMsgIdLen    = 2
 	kMsgIdEnd    = kMsgIdOffset + kMsgIdLen
 )
+
+var (
+	GRmqs = rmqs.NewRmqs(onNewRmq, onClosedRmq, onSentMsg)
+)
+
+func onNewRmq(addr string) {
+	statIncRmqCount()
+}
+
+func onClosedRmq(addr string) {
+	statDecRmqCount()
+}
+
+func onSentMsg(msg []byte) {
+	statIncMsgToRmq()
+}
 
 func MainHandle(srcMsg []byte) {
 	statIncUpStreamIn()
@@ -54,6 +71,8 @@ func MainHandle(srcMsg []byte) {
 			if err != nil {
 				statIncDownStreamOutBad()
 				glog.Errorf("[msg|ack] ACK to [%d] error: %v", id, err)
+			} else {
+				statIncRmqCount()
 			}
 
 			return

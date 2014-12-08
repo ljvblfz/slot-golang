@@ -4,16 +4,16 @@ import (
 	"strings"
 	"time"
 
-	"cloud-base/zk"
 	"cloud-base/atomic"
+	"cloud-base/zk"
 	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
 )
 
 var (
-	zkConn			*zookeeper.Conn
-	zkRoot			string
-	zkListenAddr	string
+	zkConn       *zookeeper.Conn
+	zkRoot       string
+	zkListenAddr string
 
 	zkOk atomic.AtomicBoolean
 )
@@ -41,8 +41,8 @@ func watchZK(existed bool, event zookeeper.Event) {
 	watchEvent(event)
 }
 
-func InitZK(addrs []string, listenAddr string, rootName string) error {
-	conn, err := zk.Connect(addrs, 60 * time.Second, watchEvent)
+func InitZK(addrs []string, listenAddr string, rootName string, rmqRoot string) error {
+	conn, err := zk.Connect(addrs, 60*time.Second, watchEvent)
 	if err != nil {
 		return err
 	}
@@ -58,12 +58,12 @@ func InitZK(addrs []string, listenAddr string, rootName string) error {
 		return createErr
 	}
 
-	go WatchRmq()
+	go WatchRmq(rmqRoot)
 	return nil
 }
 
-func WatchRmq() {
-	zkRmqRoot := "/" + "Rabbitmq"
+func WatchRmq(rmqRoot string) {
+	zkRmqRoot := "/" + rmqRoot
 	glog.Infof("Watching rabbitmq root [%s] OK!", zkRmqRoot)
 	for {
 		nodes, watch, err := zk.GetNodesW(zkConn, zkRmqRoot)
@@ -78,7 +78,7 @@ func WatchRmq() {
 		}
 		var addrs []string = make([]string, 0, len(nodes))
 		for _, n := range nodes {
-			addr, err := zk.GetNodeData(zkConn, zkRmqRoot + "/" + n)
+			addr, err := zk.GetNodeData(zkConn, zkRmqRoot+"/"+n)
 			if err != nil {
 				glog.Errorf("[zk|rmq] [%s] cannot get", addr)
 				continue
