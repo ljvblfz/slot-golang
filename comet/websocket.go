@@ -326,8 +326,7 @@ func WsHandler(ws *websocket.Conn) {
 				glog.Infof("Invalid msg lenght %d bytes, %v", len(msg), msg)
 				break
 			}
-			// 提取消息中的目标id
-			// 根据手机与嵌入式协议，前20字节为转发帧，前8字节为目标ID
+			// 根据手机与嵌入式协议，提取消息中的目标id
 			toId := int64(binary.LittleEndian.Uint64(msg[kDstIdOffset:kDstIdEnd]))
 
 			destIds := gSessionList.CalcDestIds(s, toId)
