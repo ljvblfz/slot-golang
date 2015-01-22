@@ -25,6 +25,7 @@ func NewServer(addr string, handler *Handler) *Server {
 		socketMu: &sync.Mutex{},
 	}
 	handler.Server = s
+	handler.Go()
 	return s
 }
 

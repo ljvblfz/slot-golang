@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -13,62 +14,68 @@ import (
 )
 
 const (
-	CmdRegister = iota
-	CmdLogin
-	CmdBind
-	CmdMax
+	CmdGetToken         = uint16(0xE0)
+	CmdRegister         = uint16(0xE1)
+	CmdLogin            = uint16(0xE2)
+	CmdChangeName       = uint16(0xE3)
+	CmdBind             = uint16(0xE4)
+	CmdHeartBeat        = uint16(0xE5)
+	CmdSubDeviceOffline = uint16(0xE6)
 
-	UrlRegister = "/api/device/register"
-	UrlLogin    = "/api/device/login"
-	UrlBind     = "/api/bind/in"
+	UrlRegister   = "/api/device/register"
+	UrlLogin      = "/api/device/login"
+	UrlBind       = "/api/bind/in"
+	UrlChangeName = "/api/device/changename"
 )
 
 var (
-	AckOk          = []byte{0}
-	AckHTTPError   = []byte{1}
-	AckServerError = []byte{2}
+	AckOk          int32 = 0
+	AckHTTPError   int32 = 1000
+	AckServerError int32 = 1001
+	AckBadCmd      int32 = 1002
 )
 
 type Task struct {
 	Peer    *net.UDPAddr
 	Msg     []byte
 	Url     string
-	CmdType int8
+	CmdType uint16
 	Input   map[string]string
 	Output  map[string]string
 }
 
 // 返回需要回复给设备的消息
-func (t *Task) Do() []byte {
-	if len(t.Input) == 0 {
-		glog.Warning("input is empty")
-	}
+func (t *Task) DoHTTPTask() (status int32, response map[string]interface{}, error error) {
 	reqs := ""
 	for k, v := range t.Input {
 		reqs = fmt.Sprintf("%s&%s=%s", reqs, k, v)
 	}
-	//req := bytes.NewReader([]byte(url.QueryEscape(strings.TrimLeft(reqs, "&"))))
 	req := bytes.NewReader([]byte(strings.TrimLeft(reqs, "&")))
 	rep, err := http.Post(t.Url, "application/x-www-form-urlencoded;charset=utf-8", req)
-	// TODO response
+	defer rep.Body.Close()
+
 	if err != nil {
-		glog.Errorf("[task] process task %v failed on server, response: %v, error: %v", t, rep, err)
-		return AckServerError
+		return AckServerError, nil, fmt.Errorf("[task] process task %v failed on server, response: %v, error: %v", t, rep, err)
 	}
 
 	if rep.StatusCode != 200 {
-		glog.Errorf("[task] process task [%#v] failed on http code: %v", t, rep.StatusCode)
-		return AckHTTPError
+		return AckHTTPError, nil, fmt.Errorf("[task] process task [%#v] failed on http code: %v", t, rep.StatusCode)
 	}
 
 	buf := bytes.Buffer{}
-	buf.Write(AckOk)
 	_, err = io.Copy(&buf, rep.Body)
 	if err != nil {
 		glog.Warningf("[task] copy from body to buffer failed, buffer: %v, err: %v", buf.Bytes(), err)
 	}
-	rep.Body.Close()
-	return buf.Bytes()
+	d := json.NewDecoder(rep.Body)
+	response = make(map[string]interface{})
+	err = d.Decode(&response)
+	if err != nil {
+		return AckHTTPError, nil, err
+	}
+
+	return AckOk, response, nil
+
 	//body, err := url.QueryUnescape(string(buf.Bytes()))
 	//if err != nil {
 	//	glog.Warningf("[task] unescaped data %s failed: %v", string(buf.Bytes()), err)
