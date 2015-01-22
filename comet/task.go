@@ -29,10 +29,10 @@ const (
 )
 
 var (
-	AckOk          int32 = 0
-	AckHTTPError   int32 = 1000
-	AckServerError int32 = 1001
-	AckBadCmd      int32 = 1002
+	DAckOk          int32 = 0
+	DAckHTTPError   int32 = 1000
+	DAckServerError int32 = 1001
+	DAckBadCmd      int32 = 1002
 )
 
 type Task struct {
@@ -55,11 +55,11 @@ func (t *Task) DoHTTPTask() (status int32, response map[string]interface{}, erro
 	defer rep.Body.Close()
 
 	if err != nil {
-		return AckServerError, nil, fmt.Errorf("[task] process task %v failed on server, response: %v, error: %v", t, rep, err)
+		return DAckServerError, nil, fmt.Errorf("[task] process task %v failed on server, response: %v, error: %v", t, rep, err)
 	}
 
 	if rep.StatusCode != 200 {
-		return AckHTTPError, nil, fmt.Errorf("[task] process task [%#v] failed on http code: %v", t, rep.StatusCode)
+		return DAckHTTPError, nil, fmt.Errorf("[task] process task [%#v] failed on http code: %v", t, rep.StatusCode)
 	}
 
 	buf := bytes.Buffer{}
@@ -71,10 +71,10 @@ func (t *Task) DoHTTPTask() (status int32, response map[string]interface{}, erro
 	response = make(map[string]interface{})
 	err = d.Decode(&response)
 	if err != nil {
-		return AckHTTPError, nil, err
+		return DAckHTTPError, nil, err
 	}
 
-	return AckOk, response, nil
+	return DAckOk, response, nil
 
 	//body, err := url.QueryUnescape(string(buf.Bytes()))
 	//if err != nil {

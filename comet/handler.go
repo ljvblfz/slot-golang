@@ -158,7 +158,7 @@ func (h *Handler) handle(t *Task) ([]byte, error) {
 	default:
 		glog.Warningf("invalid command type %v", t.Msg[0])
 		b := make([]byte, 4)
-		binary.LittleEndian.PutUint32(b, uint32(AckBadCmd))
+		binary.LittleEndian.PutUint32(b, uint32(DAckBadCmd))
 		output = append(output, b...)
 		return output, nil
 	}
@@ -244,12 +244,12 @@ func (h *Handler) onRegister(t *Task, body []byte) ([]byte, error) {
 			copy(output[12:76], []byte(cookie))
 			ss := strings.SplitN(cookie, "|", 2)
 			if len(ss) == 0 {
-				binary.LittleEndian.PutUint32(output[0:4], uint32(AckServerError))
+				binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
 				return output, nil
 			}
 			id, err := strconv.ParseInt(ss[0], 10, 64)
 			if err != nil {
-				binary.LittleEndian.PutUint32(output[0:4], uint32(AckServerError))
+				binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
 				return output, nil
 			}
 			binary.LittleEndian.PutUint64(output[4:12], uint64(id))
@@ -260,6 +260,7 @@ func (h *Handler) onRegister(t *Task, body []byte) ([]byte, error) {
 
 func (h *Handler) onLogin(t *Task, body []byte) ([]byte, error) {
 	// TODO check length
+	var sn []byte //:= body[22:38]
 	token := body[0:16]
 	if err := VerifyToken(sn, token); err != nil {
 		glog.Errorf("VerifyToken for sn %v and token %v failed: %v", sn, token, err)
@@ -268,8 +269,8 @@ func (h *Handler) onLogin(t *Task, body []byte) ([]byte, error) {
 	cookie := body[16:80]
 	pid := body[80:88]
 	//t.Input["mac"] = fmt.Sprintf("%x", mac)
-	t.Input["cookie"] = cookie
-	t.Input["pid"] = pid
+	t.Input["cookie"] = string(cookie)
+	t.Input["pid"] = fmt.Sprintf("%d", pid)
 
 	output := make([]byte, 12)
 	httpStatus, rep, err := t.DoHTTPTask()
@@ -292,12 +293,12 @@ func (h *Handler) onLogin(t *Task, body []byte) ([]byte, error) {
 			copy(output[12:76], []byte(cookie))
 			ss := strings.SplitN(cookie, "|", 2)
 			if len(ss) == 0 {
-				binary.LittleEndian.PutUint32(output[0:4], uint32(AckServerError))
+				binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
 				return output, nil
 			}
 			id, err := strconv.ParseInt(ss[0], 10, 64)
 			if err != nil {
-				binary.LittleEndian.PutUint32(output[0:4], uint32(AckServerError))
+				binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
 				return output, nil
 			}
 			binary.LittleEndian.PutUint64(output[4:12], uint64(id))

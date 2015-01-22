@@ -33,7 +33,7 @@ func (this *MsgBusServer) Dail() error {
 
 	tcpLocalAddr.IP = net.ParseIP(this.localAddr)
 	if tcpLocalAddr.IP == nil {
-		glog.Fatalf("Resovle Local TcpAddr [%s] [%s]\n", this.localAddr, err.Error())
+		glog.Fatalf("Resovle Local TcpAddr [%s]\n", this.localAddr)
 	}
 	//tcpLocalAddr, err = net.ResolveTCPAddr("tcp", this.localAddr)
 	//if err != nil {

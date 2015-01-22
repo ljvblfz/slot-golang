@@ -21,9 +21,9 @@ func NewMsgBusManager() *MsgBusManager {
 	return &MsgBusManager{list: hlist.New(), mu: &sync.Mutex{}}
 }
 
-func onMsgBusCloseEvent(s *MsgBusServer) {
+func (this *MsgBusManager) onMsgBusCloseEvent(s *MsgBusServer) {
 	glog.Infof("[%s] closed", s.conn.RemoteAddr())
-	GMsgBusManager.Offline(s)
+	this.Offline(s)
 }
 
 func (this *MsgBusManager) Online(remoteAddr string) {
@@ -38,7 +38,7 @@ func (this *MsgBusManager) Online(remoteAddr string) {
 
 	g := NewMsgBusServer(gLocalAddr, remoteAddr)
 	if g.Dail() == nil {
-		go g.Reciver(onMsgBusCloseEvent)
+		go g.Reciver(this.onMsgBusCloseEvent)
 	}
 	e := this.list.PushFront(g)
 	//this.head = this.list.Front() 有必要缓存一个head元素？

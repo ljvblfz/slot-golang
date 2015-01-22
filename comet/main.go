@@ -3,10 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
-	"github.com/golang/glog"
+	"net/url"
+	"os"
+	"runtime"
 	"strings"
+
 	"cloud-socket/ver"
+	"github.com/golang/glog"
 )
 
 var (
@@ -18,6 +21,16 @@ var (
 )
 
 func main() {
+
+	if os.Getenv("GOMAXPROCS") == "" {
+		runtime.GOMAXPROCS(runtime.NumCPU())
+	}
+	cType := flag.String("type", "ws", "comet类型，ws或udp")
+
+	addr := flag.String("hudp", ":7999", "UDP监听地址")
+	handlerCount := flag.Int("hc", 1024, "处理消息的线程数")
+	httpUrl := flag.String("hurl", "", "HTTP服务器根URL(eg: http://127.0.0.1:8080)")
+
 	rh := flag.String("rh", "193.168.1.224:6379", "Redis服务器地址")
 	lHost := flag.String("ports", ":1234,:1235", "监听的websocket地址")
 	zkHosts := flag.String("zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK的地址,多个地址用逗号分割")
@@ -35,23 +48,36 @@ func main() {
 
 	defer glog.Flush()
 
-	log.SetFlags(log.Flags() | log.Llongfile)
+	glog.CopyStandardLogTo("INFO")
 
 	InitStat(gStatusAddr)
+	InitRedix(*rh)
 
-	if len(gLocalAddr) == 0 {
-		glog.Fatalf("必须指定本机IP")
-	}
-
-	initRedix(*rh)
 	if err := ClearRedis(gLocalAddr); err != nil {
 		glog.Fatalf("ClearRedis before starting failed: %v", err)
 	}
 
 	go InitZK(strings.Split(*zkHosts, ","), gMsgbusRoot, gCometRoot)
 
-	gSessionList = InitSessionList()
-	StartHttp(strings.Split(*lHost, ","))
+	if *cType == "ws" {
+		gSessionList = InitSessionList()
+		StartHttp(strings.Split(*lHost, ","))
+		if len(gLocalAddr) == 0 {
+			glog.Fatalf("必须指定本机IP")
+		}
+
+	} else if *cType == "udp" {
+		if _, e := url.Parse(*httpUrl); len(*httpUrl) == 0 || e != nil {
+			glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *httpUrl, e)
+		}
+
+		handler := NewHandler(*handlerCount, *httpUrl)
+		server := NewServer(*addr, handler)
+		go server.Start()
+
+	} else {
+		glog.Fatalf("-type must be ws or udp")
+	}
 
 	handleSignal(func() {
 		CloseZK()

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cloud-base/websocket"
 	"cloud-base/hlist"
 	"cloud-socket/msgs"
 	"github.com/golang/glog"
@@ -25,11 +24,11 @@ func getBlockID(uid int64) int64 {
 
 type Session struct {
 	Uid       int64
-	BindedIds []int64	// Uid为手机:包含所有已绑定的板子id;Uid为板子时，包含所有已绑定的用户id
-	Conn      *websocket.Conn
+	BindedIds []int64 // Uid为手机:包含所有已绑定的板子id;Uid为板子时，包含所有已绑定的用户id
+	Conn      Connection
 }
 
-func NewSession(uid int64, bindedIds []int64, conn *websocket.Conn) *Session {
+func NewSession(uid int64, bindedIds []int64, conn Connection) *Session {
 	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn}
 }
 
@@ -40,7 +39,7 @@ func (this *Session) Close() {
 func (this *Session) isBinded(id int64) bool {
 	if this.Uid < 0 {
 		// 当this代表板子时，检查id是否属于已绑定用户下的手机
-		id = id - id % int64(kUseridUnit)
+		id = id - id%int64(kUseridUnit)
 	}
 	for _, v := range this.BindedIds {
 		if v == id {
@@ -58,7 +57,7 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 		} else {
 			for i, ci := 0, len(this.BindedIds); i < ci; i++ {
 				for j := int64(1); j < int64(kUseridUnit); j++ {
-					destIds = append(destIds, this.BindedIds[i] + j)
+					destIds = append(destIds, this.BindedIds[i]+j)
 				}
 			}
 		}
@@ -68,9 +67,9 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", this.Uid, toId, this.BindedIds)
 			return nil
 		}
-		if this.Uid < 0 && toId % int64(kUseridUnit) == 0 {
-			destIds = make([]int64, kUseridUnit - 1)
-			for i, c := 0, int(kUseridUnit - 1); i < c; i++ {
+		if this.Uid < 0 && toId%int64(kUseridUnit) == 0 {
+			destIds = make([]int64, kUseridUnit-1)
+			for i, c := 0, int(kUseridUnit-1); i < c; i++ {
 				toId++
 				destIds[i] = toId
 			}
@@ -283,7 +282,7 @@ func (this *SessionList) KickOffline(uid int64) {
 				if !ok {
 					break
 				}
-				err := websocket.Message.Send(s.Conn, msgBody)
+				_, err := s.Conn.Send(msgBody)
 				if err != nil && glog.V(2) {
 					glog.Warningf("[kick|send] mid: %d, user: %d, error: %v", s.Uid, id, err)
 				}
@@ -313,7 +312,7 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 				if len(data) < 24 {
 					glog.Errorf("[invalid data] [uid: %d] length less than 24 (%d)%v", uid, len(data), data)
 				}
-				err := websocket.Message.Send(session.Conn, data)
+				_, err := session.Conn.Send(data)
 				if err != nil {
 					// 不要在这里移除用户session，用户的websocket连接会处理这个情况
 					if glog.V(1) {

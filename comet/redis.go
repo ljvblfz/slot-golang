@@ -10,12 +10,12 @@ import (
 )
 
 const (
-	HostUsers = "Host:%s" // (1, 2, 3)
-	PubKey    = "PubKey"
-	SubDeviceUsersKey = "PubDeviceUsers"
+	HostUsers            = "Host:%s" // (1, 2, 3)
+	PubKey               = "PubKey"
+	SubDeviceUsersKey    = "PubDeviceUsers"
 	SubModifiedPasswdKey = "PubModifiedPasswdUser"
 
-    RedisDeviceUsers = "bind:device"
+	RedisDeviceUsers = "bind:device"
 	RedisUserDevices = "bind:user"
 
 	// 用户正在使用的手机id
@@ -64,13 +64,13 @@ var (
 	Redix   []redis.Conn
 	RedixMu []*sync.Mutex
 
-	ScriptOnline *redis.Script
-	ScriptOffline *redis.Script
+	ScriptOnline         *redis.Script
+	ScriptOffline        *redis.Script
 	ScriptSelectMobileId *redis.Script
 )
 var redisAddr string
 
-func initRedix(addr string) {
+func InitRedix(addr string) {
 	Redix = make([]redis.Conn, _Max)
 	RedixMu = make([]*sync.Mutex, _Max)
 
@@ -204,8 +204,8 @@ func GetDeviceUsers(deviceId int64) ([]int64, error) {
 		return nil, err
 	}
 	bindedIds := make([]int64, 0, len(users))
-    for _, user_id := range users {
-        u_id, err := strconv.ParseInt(user_id, 10, 64)
+	for _, user_id := range users {
+		u_id, err := strconv.ParseInt(user_id, 10, 64)
 		if err != nil {
 			continue
 		}
@@ -217,7 +217,6 @@ func GetDeviceUsers(deviceId int64) ([]int64, error) {
 	return bindedIds, err
 }
 
-
 func GetUserDevices(userId int64) ([]int64, error) {
 	r := Redix[_GetUserDevices]
 	RedixMu[_GetUserDevices].Lock()
@@ -228,8 +227,8 @@ func GetUserDevices(userId int64) ([]int64, error) {
 		return nil, err
 	}
 	bindedIds := make([]int64, 0, len(idStrs))
-    for _, v := range idStrs {
-        id, err := strconv.ParseInt(v, 10, 64)
+	for _, v := range idStrs {
+		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
 			continue
 		}
