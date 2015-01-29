@@ -18,7 +18,7 @@ const (
 	CmdRegister         = uint16(0xE1)
 	CmdLogin            = uint16(0xE2)
 	CmdChangeName       = uint16(0xE3)
-	CmdBind             = uint16(0xE4)
+	CmdDoBind           = uint16(0xE4)
 	CmdHeartBeat        = uint16(0xE5)
 	CmdSubDeviceOffline = uint16(0xE6)
 

@@ -29,7 +29,8 @@ func main() {
 
 	addr := flag.String("hudp", ":7999", "UDP监听地址")
 	handlerCount := flag.Int("hc", 1024, "处理消息的线程数")
-	httpUrl := flag.String("hurl", "", "HTTP服务器根URL(eg: http://127.0.0.1:8080)")
+	apiUrl := flag.String("hurl", "", "HTTP服务器根URL(eg: http://127.0.0.1:8080)")
+	serveUdpAddr := flag.String("hhttp", ":8081", "UDP服务器提供HTTP服务的地址")
 
 	rh := flag.String("rh", "193.168.1.224:6379", "Redis服务器地址")
 	lHost := flag.String("ports", ":1234,:1235", "监听的websocket地址")
@@ -67,13 +68,13 @@ func main() {
 		}
 
 	} else if *cType == "udp" {
-		if _, e := url.Parse(*httpUrl); len(*httpUrl) == 0 || e != nil {
-			glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *httpUrl, e)
+		if _, e := url.Parse(*apiUrl); len(*apiUrl) == 0 || e != nil {
+			glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
 		}
 
-		handler := NewHandler(*handlerCount, *httpUrl)
+		handler := NewHandler(*handlerCount, *apiUrl, *serveUdpAddr)
 		server := NewServer(*addr, handler)
-		go server.Start()
+		go server.RunLoop()
 
 	} else {
 		glog.Fatalf("-type must be ws or udp")

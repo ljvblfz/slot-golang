@@ -29,7 +29,7 @@ func NewServer(addr string, handler *Handler) *Server {
 	return s
 }
 
-func (s *Server) Start() {
+func (s *Server) RunLoop() {
 	localAddr, err := net.ResolveUDPAddr("udp", s.addr)
 	if err != nil {
 		glog.Fatalf("Resolve server addr failed: %v", err)

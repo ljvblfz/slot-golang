@@ -294,7 +294,7 @@ func WsHandler(ws *websocket.Conn) {
 		glog.Infof("[online] id: %d, comet: %s, param: %s, binded ids: %v", id, gLocalAddr, reply, bindedIds)
 	}
 
-	s := NewSession(id, bindedIds, NewWsConn(ws))
+	s := NewWsSession(id, bindedIds, NewWsConn(ws))
 	selement := gSessionList.AddSession(s)
 
 	if id < 0 {

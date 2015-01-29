@@ -1,10 +1,14 @@
 package main
 
 import (
+	"fmt"
+	"net"
+	"sync"
+
 	"cloud-base/hlist"
 	"cloud-socket/msgs"
 	"github.com/golang/glog"
-	"sync"
+	uuid "github.com/nu7hatch/gouuid"
 	//"strings"
 	//"strconv"
 )
@@ -28,8 +32,16 @@ type Session struct {
 	Conn      Connection
 }
 
-func NewSession(uid int64, bindedIds []int64, conn Connection) *Session {
+func NewWsSession(uid int64, bindedIds []int64, conn Connection) *Session {
 	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn}
+}
+
+func NewUdpSession(conn Connection) *UdpSession {
+	return &UdpSession{
+		Session: Session{
+			Conn: conn,
+		},
+	}
 }
 
 func (this *Session) Close() {
@@ -114,38 +126,80 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 //	}
 //}
 
+type UdpSession struct {
+	Session
+}
+
+// TODO save to redis
+func (u *UdpSession) Save() error {
+	return nil
+}
+
+// update last access time
+func (u *UdpSession) Update(addr *net.UDPAddr) error {
+	return u.Conn.Update(addr)
+}
+
 type SessionList struct {
-	mu []*sync.Mutex
-	kv []map[int64]*hlist.Hlist
+	onlined   []map[int64]*hlist.Hlist
+	onlinedMu []*sync.Mutex
+
+	udps   map[uuid.UUID]*UdpSession // key: unique token
+	udpsMu *sync.RWMutex
 }
 
 func InitSessionList() *SessionList {
 	sl := &SessionList{
-		mu: make([]*sync.Mutex, BlockSize),
-		kv: make([]map[int64]*hlist.Hlist, BlockSize),
+		onlined:   make([]map[int64]*hlist.Hlist, BlockSize),
+		onlinedMu: make([]*sync.Mutex, BlockSize),
+		udps:      make(map[uuid.UUID]*UdpSession),
+		udpsMu:    &sync.RWMutex{},
 	}
 
 	for i := int64(0); i < BlockSize; i++ {
-		sl.mu[i] = &sync.Mutex{}
-		sl.kv[i] = make(map[int64]*hlist.Hlist, MapSize)
+		sl.onlined[i] = make(map[int64]*hlist.Hlist, MapSize)
+		sl.onlinedMu[i] = &sync.Mutex{}
 	}
 	return sl
+}
+
+func (this *SessionList) AddUdpSession(sid *uuid.UUID, s *UdpSession) error {
+	this.udpsMu.Lock()
+	defer this.udpsMu.Unlock()
+	if exist, ok := this.udps[*sid]; ok {
+		return fmt.Errorf("session [%s] exists with connection: %v", sid, exist.Conn)
+	}
+	this.udps[*sid] = s
+	return nil
+}
+
+func (this *SessionList) UpdateSession(sid *uuid.UUID, id int64, addr *net.UDPAddr) error {
+	this.udpsMu.Lock()
+	defer this.udpsMu.Unlock()
+	s, ok := this.udps[*sid]
+	if !ok {
+		return fmt.Errorf("session [%s] exists with session: %v", sid, s.Conn)
+	}
+	if s.Uid != id {
+		return fmt.Errorf("session [%s] not match with id: %v", sid, id)
+	}
+	return s.Update(addr)
 }
 
 func (this *SessionList) AddSession(s *Session) *hlist.Element {
 	// 能想到的错误返回值是同一用户，同一mac多次登录，但这可能不算错误
 	blockId := getBlockID(s.Uid)
-	this.mu[blockId].Lock()
-	h, ok := this.kv[blockId][s.Uid]
+	this.onlinedMu[blockId].Lock()
+	h, ok := this.onlined[blockId][s.Uid]
 	var e *hlist.Element
 	if ok {
 		e = h.PushFront(s)
 	} else {
 		h = hlist.New()
-		this.kv[blockId][s.Uid] = h
+		this.onlined[blockId][s.Uid] = h
 		e = h.PushFront(s)
 	}
-	this.mu[blockId].Unlock()
+	this.onlinedMu[blockId].Unlock()
 	return e
 }
 
@@ -155,21 +209,21 @@ func (this *SessionList) RemoveSession(e *hlist.Element) {
 	if s.Conn != nil {
 		s.Close()
 	}
-	this.mu[blockId].Lock()
-	list, ok := this.kv[blockId][s.Uid]
+	this.onlinedMu[blockId].Lock()
+	list, ok := this.onlined[blockId][s.Uid]
 	if ok {
 		list.Remove(e)
 		if list.Len() == 0 {
-			delete(this.kv[blockId], s.Uid)
+			delete(this.onlined[blockId], s.Uid)
 		}
 	}
-	this.mu[blockId].Unlock()
+	this.onlinedMu[blockId].Unlock()
 }
 
 func (this *SessionList) GetBindedIds(session *Session, ids *[]int64) {
 	blockId := getBlockID(session.Uid)
 
-	lock := this.mu[blockId]
+	lock := this.onlinedMu[blockId]
 	lock.Lock()
 	*ids = session.BindedIds
 	lock.Unlock()
@@ -177,13 +231,13 @@ func (this *SessionList) GetBindedIds(session *Session, ids *[]int64) {
 
 func (this *SessionList) CalcDestIds(s *Session, toId int64) []int64 {
 	blockId := getBlockID(s.Uid)
-	this.mu[blockId].Lock()
-	_, ok := this.kv[blockId][s.Uid]
+	this.onlinedMu[blockId].Lock()
+	_, ok := this.onlined[blockId][s.Uid]
 	var ids []int64
 	if ok {
 		ids = s.calcDestIds(toId)
 	}
-	this.mu[blockId].Unlock()
+	this.onlinedMu[blockId].Unlock()
 	return ids
 }
 
@@ -192,9 +246,9 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 	// add or remove deviceId from mobileIds session
 	for _, mid := range mids {
 		blockId := getBlockID(mid)
-		lock := this.mu[blockId]
+		lock := this.onlinedMu[blockId]
 		lock.Lock()
-		if list, ok := this.kv[blockId][mid]; ok {
+		if list, ok := this.onlined[blockId][mid]; ok {
 			for e := list.Front(); e != nil; e = e.Next() {
 				s, ok := e.Value.(*Session)
 				if !ok {
@@ -225,10 +279,10 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 
 	// add or remove mobile id from deviceId's session
 	blockId := getBlockID(deviceId)
-	lock := this.mu[blockId]
+	lock := this.onlinedMu[blockId]
 	foundDevice := false
 	lock.Lock()
-	if list, ok := this.kv[blockId][deviceId]; ok {
+	if list, ok := this.onlined[blockId][deviceId]; ok {
 		foundDevice = true
 		for e := list.Front(); e != nil; e = e.Next() {
 			s, ok := e.Value.(*Session)
@@ -272,11 +326,11 @@ func (this *SessionList) KickOffline(uid int64) {
 	kickMsg := msgs.NewAppMsg(0, 0, msgs.MIDKickout)
 	for _, id := range ids {
 		blockId := getBlockID(id)
-		lock := this.mu[blockId]
+		lock := this.onlinedMu[blockId]
 		kickMsg.SetDstId(id)
 		msgBody := kickMsg.MarshalBytes()
 		lock.Lock()
-		if list, ok := this.kv[blockId][id]; ok {
+		if list, ok := this.onlined[blockId][id]; ok {
 			for e := list.Front(); e != nil; e = e.Next() {
 				s, ok := e.Value.(*Session)
 				if !ok {
@@ -300,10 +354,10 @@ func (this *SessionList) KickOffline(uid int64) {
 func (this *SessionList) PushMsg(uid int64, data []byte) {
 	blockId := getBlockID(uid)
 
-	lock := this.mu[blockId]
+	lock := this.onlinedMu[blockId]
 	lock.Lock()
 
-	if list, ok := this.kv[blockId][uid]; ok {
+	if list, ok := this.onlined[blockId][uid]; ok {
 		for e := list.Front(); e != nil; e = e.Next() {
 			if session, ok := e.Value.(*Session); !ok {
 				lock.Unlock()

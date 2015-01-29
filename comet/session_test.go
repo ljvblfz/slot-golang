@@ -1,8 +1,8 @@
 package main
 
 import (
-	"fmt"
 	"cloud-base/hlist"
+	"fmt"
 	"sync"
 	"testing"
 )
@@ -15,7 +15,7 @@ func TestSession(t *testing.T) {
 	wg.Add(lens)
 	for i := 0; i < lens; i++ {
 		go func(id int) {
-			s1 := NewSession(int64(id), "a", "1111", nil, nil)
+			s1 := NewLoggedInSession(int64(id), "a", "1111", nil, nil)
 			e1 := g.AddSession(s1)
 			els = append(els, e1)
 			wg.Done()
