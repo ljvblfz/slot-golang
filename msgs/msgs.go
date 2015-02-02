@@ -20,6 +20,8 @@ const (
 	MIDOffline = 0x36
 	MIDBind    = 0x37
 	MIDUnbind  = 0x38
+
+	kPoly = 0x66
 )
 
 type AppMsg struct {
@@ -86,17 +88,31 @@ func (a *AppMsg) MarshalBytes() []byte {
 	// 数据头
 
 	// 异或校验HeadCheck之前的帧头和数据头，不满16位的补0
-	var headCheck [2]uint8
 	i := kHeadForward
-	count := kHeadForward + kHeadFrame + 8
-	for ; i+1 < count; i += 2 {
-		headCheck[0] ^= a.buf[i]
-		headCheck[1] ^= a.buf[i+1]
+	last := kHeadForward + kHeadFrame + 8
+	// new protocol
+	var headerCheck uint8
+	for ; i <= last; i++ {
+		headerCheck ^= a.buf[i]
+		for bit = 8; bit > 0; i-- {
+			if headerCheck & 0x80 {
+				headerCheck = (headerCheck << 1) ^ kPoly
+			} else {
+				headerCheck = (headerCheck << 1)
+			}
+		}
 	}
-	if i < count {
-		headCheck[0] ^= a.buf[i]
-	}
-	copy(a.buf[kHeadForward+kHeadFrame+8:], headCheck[:2])
+	a.buf[kHeadForward+kHeadFrame+8] = headerCheck
+	// old protocol
+	//var headCheck [2]uint8
+	//for ; i+1 < count; i += 2 {
+	//	headCheck[0] ^= a.buf[i]
+	//	headCheck[1] ^= a.buf[i+1]
+	//}
+	//if i < count {
+	//	headCheck[0] ^= a.buf[i]
+	//}
+	//copy(a.buf[kHeadForward+kHeadFrame+8:], headCheck[:2])
 
 	return a.buf
 }

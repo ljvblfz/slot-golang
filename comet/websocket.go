@@ -306,7 +306,7 @@ func WsHandler(ws *websocket.Conn) {
 	if timeout <= 0 {
 		timeout = TIME_OUT
 	}
-	ws.ReadTimeout = (time.Duration(timeout) + 30) * time.Second
+	ws.ReadTimeout = time.Duration(3*timeout) * time.Second
 	for {
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
 			break
