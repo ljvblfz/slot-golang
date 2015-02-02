@@ -94,8 +94,8 @@ func (a *AppMsg) MarshalBytes() []byte {
 	var headerCheck uint8
 	for ; i <= last; i++ {
 		headerCheck ^= a.buf[i]
-		for bit = 8; bit > 0; i-- {
-			if headerCheck & 0x80 {
+		for bit := 8; bit > 0; i-- {
+			if headerCheck&0x80 != 0 {
 				headerCheck = (headerCheck << 1) ^ kPoly
 			} else {
 				headerCheck = (headerCheck << 1)
