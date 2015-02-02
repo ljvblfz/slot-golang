@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -26,7 +27,7 @@ func NewHandler(workerCount int, apiServerUrl string, listenAddr string) *Handle
 	urls[CmdRegister] = apiServerUrl + UrlRegister
 	urls[CmdLogin] = apiServerUrl + UrlLogin
 	urls[CmdDoBind] = apiServerUrl + UrlBind
-	urls[CmdChangeName] = apiServerUrl + UrlChangeName
+	urls[CmdRename] = apiServerUrl + UrlChangeName
 
 	h := &Handler{
 		listenAddr:  listenAddr,
@@ -108,11 +109,6 @@ func (h *Handler) handle(t *Task) error {
 		return fmt.Errorf("[protocol] invalid message protocol")
 	}
 
-	// TODO 区分转发消息和平台消息，做不同处理
-	if op == 0x3 {
-		return fmt.Errorf("[protocol] NOT IMPLEMENTED for transfer messages")
-	}
-
 	// check xor
 	if mlen < 24+24+12 {
 		return fmt.Errorf("[protocol] invalid message length for protocol")
@@ -128,12 +124,12 @@ func (h *Handler) handle(t *Task) error {
 	}
 	if op == 0x2 {
 		// parse data(udp)
-		// 52 = 24 + 24 + 4
-		c := binary.LittleEndian.Uint16(t.Msg[52:54])
+		// 51 = 24 + 24 + 3
+		c := binary.LittleEndian.Uint16(t.Msg[51:53])
 
 		// 60 = 24 + 24 + 12
 		bodyIndex := 60
-		body := t.Msg[:bodyIndex]
+		body := t.Msg[bodyIndex:]
 
 		output := make([]byte, bodyIndex, 128)
 		copy(output[:bodyIndex], t.Msg[:bodyIndex])
@@ -154,10 +150,10 @@ func (h *Handler) handle(t *Task) error {
 			t.Url = h.kApiUrls[c]
 			res, err = h.onLogin(t, body)
 
-		case CmdChangeName:
+		case CmdRename:
 			t.CmdType = c
 			t.Url = h.kApiUrls[c]
-			res, err = h.onChangeName(t, body)
+			res, err = h.onRename(t, body)
 
 		case CmdDoBind:
 			t.CmdType = c
@@ -173,7 +169,7 @@ func (h *Handler) handle(t *Task) error {
 			res, err = h.onSubDeviceOffline(t, body)
 
 		default:
-			glog.Warningf("invalid command type %v", t.Msg[0])
+			glog.Warningf("invalid command type %v", c)
 			b := make([]byte, 4)
 			binary.LittleEndian.PutUint32(b, uint32(DAckBadCmd))
 			output = append(output, b...)
@@ -190,13 +186,16 @@ func (h *Handler) handle(t *Task) error {
 		}
 		if err != nil {
 			if glog.V(1) {
-				glog.Errorf("[handle] cmd: %v, error: %v", c, err)
+				glog.Errorf("[handle] cmd: %X, error: %v", c, err)
 			}
 		}
 		if res != nil {
 			output = append(output, res...)
 		}
 
+		if glog.V(2) {
+			glog.Infof("UDP SEND: %d, %v", len(output), output)
+		}
 		err = computeCheck(output)
 		if err == nil {
 			h.Server.Send(t.Peer, output)
@@ -208,8 +207,11 @@ func (h *Handler) handle(t *Task) error {
 		h.Server.Send(t.Peer, output)
 
 	} else {
+
 		// TODO transfer message to dest id
 		// maybe it needn't check pack number, because it belongs to dest mobile?
+
+		return fmt.Errorf("[protocol] NOT IMPLEMENTED for transfer messages")
 	}
 	return nil
 
@@ -232,13 +234,12 @@ func (h *Handler) handle(t *Task) error {
 }
 
 func (h *Handler) onGetToken(t *Task, body []byte) ([]byte, error) {
-	if len(body) != 16 {
-		glog.Errorf("onGetToken: bad body length")
-		return nil, fmt.Errorf("bad body length")
+	if len(body) != 24 {
+		return nil, fmt.Errorf("onGetToken: bad body length %d", len(body))
 	}
 	// TODO not defined
 	// start a new session?
-	glog.Fatal("NOT IMPLEMENTED")
+	glog.Warning("NOT IMPLEMENTED")
 	return nil, nil
 	//sn := body
 	//token, err := NewToken(sn)
@@ -257,14 +258,13 @@ func (h *Handler) onGetToken(t *Task, body []byte) ([]byte, error) {
 }
 
 func (h *Handler) onRegister(t *Task, body []byte) ([]byte, error) {
-	if len(body) != 32 {
-		glog.Errorf("onRegister: bad body length")
-		return nil, fmt.Errorf("bad body length")
+	if len(body) < 31 {
+		return nil, fmt.Errorf("onRegister: bad body length %d", len(body))
 	}
 	// TODO check pack number in session
 
 	dv := body[0:2]
-	mac := body[2:10]
+	mac := base64.StdEncoding.EncodeToString(body[2:10])
 	produceTime := binary.LittleEndian.Uint32(body[10:14])
 	sn := body[14:30]
 	nameLen := body[30]
@@ -277,7 +277,7 @@ func (h *Handler) onRegister(t *Task, body []byte) ([]byte, error) {
 	//	glog.Errorf("VerifyToken for sn %v and token %v failed: %v", sn, token, err)
 	//	return nil, err
 	//}
-	t.Input["mac"] = fmt.Sprintf("%x", mac)
+	t.Input["mac"] = mac
 	t.Input["dv"] = fmt.Sprintf("%x", dv)
 	t.Input["pt"] = fmt.Sprintf("%d", produceTime)
 
@@ -294,16 +294,14 @@ func (h *Handler) onRegister(t *Task, body []byte) ([]byte, error) {
 	if s, ok := rep["status"]; ok {
 		if status, ok := s.(float64); ok {
 			binary.LittleEndian.PutUint32(output[0:4], uint32(int32(status)))
-			if status != 0 {
-				return output, nil
-			}
 		}
 	}
 	// device need id in protocol
 	if c, ok := rep["cookie"]; ok {
 		if cookie, ok := c.(string); ok {
-			// TODO 64 bytes?
+			glog.Infof("REGISTER: mac: %s, cookie: %v", mac, cookie)
 			copy(output[12:76], []byte(cookie))
+			// TODO 64 bytes?
 			ss := strings.SplitN(cookie, "|", 2)
 			if len(ss) == 0 {
 				binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
@@ -322,17 +320,15 @@ func (h *Handler) onRegister(t *Task, body []byte) ([]byte, error) {
 
 func (h *Handler) onLogin(t *Task, body []byte) ([]byte, error) {
 	if len(body) != 72 {
-		glog.Errorf("onLogin: bad body length")
-		return nil, fmt.Errorf("bad body length")
+		return nil, fmt.Errorf("onLogin: bad body length %v", len(body))
 	}
 	// TODO check pack number in session
 
-	// TODO 子设备的pid?
-	id := int64(binary.LittleEndian.Uint64(body[0:8]))
-	cookie := body[9:72]
-	//t.Input["mac"] = fmt.Sprintf("%x", mac)
+	mac := base64.StdEncoding.EncodeToString(body[0:8])
+	cookie := body[8:72]
 	t.Input["cookie"] = string(cookie)
-	t.Input["id"] = fmt.Sprintf("%d", id)
+	t.Input["mac"] = mac
+	glog.Infof("LOGIN: mac: %s, cookie: %v", mac, string(cookie))
 
 	output := make([]byte, 12)
 	httpStatus, rep, err := t.DoHTTPTask()
@@ -347,8 +343,10 @@ func (h *Handler) onLogin(t *Task, body []byte) ([]byte, error) {
 		}
 	}
 	binary.LittleEndian.PutUint32(output[0:4], uint32(status))
+	glog.Infof("onLogin: %v", status)
 	if 0 == status {
 		sid := NewUuid()
+		glog.Infof("SID: %v", sid)
 		s := NewUdpSession(NewUdpConnection(h.Server.socket, t.Peer))
 		err = gSessionList.AddUdpSession(sid, s)
 		if err != nil {
@@ -356,37 +354,20 @@ func (h *Handler) onLogin(t *Task, body []byte) ([]byte, error) {
 		}
 		s.Save()
 	}
-	//if c, ok := rep["proxyKey"]; ok {
-	//	if cookie, ok := c.(string); ok {
-	//		// TODO 64 bytes?
-	//		copy(output[12:76], []byte(cookie))
-	//		ss := strings.SplitN(cookie, "|", 2)
-	//		if len(ss) == 0 {
-	//			binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
-	//			return output, nil
-	//		}
-	//		id, err := strconv.ParseInt(ss[0], 10, 64)
-	//		if err != nil {
-	//			binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
-	//			return output, nil
-	//		}
-	//		binary.LittleEndian.PutUint64(output[4:12], uint64(id))
-	//	}
-	//}
 	return output, nil
 }
 
-func (h *Handler) onChangeName(t *Task, body []byte) ([]byte, error) {
+func (h *Handler) onRename(t *Task, body []byte) ([]byte, error) {
 	// TODO verify sid
 	//sid := body[0:16]
 	// TODO check pack number in session
 
-	id := int64(binary.LittleEndian.Uint64(body[16:24]))
+	mac := base64.StdEncoding.EncodeToString(body[16:24])
 	nameLen := body[24]
 	name := body[25 : 25+nameLen]
 
 	t.Input["name"] = string(name)
-	t.Input["id"] = fmt.Sprintf("%d", id)
+	t.Input["mac"] = mac
 
 	output := make([]byte, 4)
 

@@ -4,20 +4,20 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
+	//"io"
 	"net"
 	"net/http"
 	//"net/url"
 	"strings"
 
-	"github.com/golang/glog"
+	//"github.com/golang/glog"
 )
 
 const (
 	CmdGetToken         = uint16(0xE0)
 	CmdRegister         = uint16(0xE1)
 	CmdLogin            = uint16(0xE2)
-	CmdChangeName       = uint16(0xE3)
+	CmdRename           = uint16(0xE3)
 	CmdDoBind           = uint16(0xE4)
 	CmdHeartBeat        = uint16(0xE5)
 	CmdSubDeviceOffline = uint16(0xE6)
@@ -25,7 +25,7 @@ const (
 	UrlRegister   = "/api/device/register"
 	UrlLogin      = "/api/device/login"
 	UrlBind       = "/api/bind/in"
-	UrlChangeName = "/api/device/changename"
+	UrlChangeName = "/api/device/changingname"
 )
 
 var (
@@ -62,20 +62,20 @@ func (t *Task) DoHTTPTask() (status int32, response map[string]interface{}, erro
 		return DAckHTTPError, nil, fmt.Errorf("[task] process task [%#v] failed on http code: %v", t, rep.StatusCode)
 	}
 
-	buf := bytes.Buffer{}
-	_, err = io.Copy(&buf, rep.Body)
-	if err != nil {
-		glog.Warningf("[task] copy from body to buffer failed, buffer: %v, err: %v", buf.Bytes(), err)
-	}
 	d := json.NewDecoder(rep.Body)
 	response = make(map[string]interface{})
 	err = d.Decode(&response)
 	if err != nil {
-		return DAckHTTPError, nil, err
+		return DAckHTTPError, nil, fmt.Errorf("decode error %v", err)
 	}
 
 	return DAckOk, response, nil
 
+	//buf := bytes.Buffer{}
+	//_, err = io.Copy(&buf, rep.Body)
+	//if err != nil {
+	//	glog.Warningf("[task] copy from body to buffer failed, buffer: %v, err: %v", buf.Bytes(), err)
+	//}
 	//body, err := url.QueryUnescape(string(buf.Bytes()))
 	//if err != nil {
 	//	glog.Warningf("[task] unescaped data %s failed: %v", string(buf.Bytes()), err)

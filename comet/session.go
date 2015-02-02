@@ -178,7 +178,7 @@ func (this *SessionList) UpdateSession(sid *uuid.UUID, id int64, addr *net.UDPAd
 	defer this.udpsMu.Unlock()
 	s, ok := this.udps[*sid]
 	if !ok {
-		return fmt.Errorf("session [%s] exists with session: %v", sid, s.Conn)
+		return fmt.Errorf("session [%s] not exists", sid)
 	}
 	if s.Uid != id {
 		return fmt.Errorf("session [%s] not match with id: %v", sid, id)

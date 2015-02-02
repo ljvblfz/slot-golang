@@ -25,7 +25,7 @@ func main() {
 	if os.Getenv("GOMAXPROCS") == "" {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
-	cType := flag.String("type", "ws", "comet类型，ws或udp")
+	cType := flag.String("type", "ws", "comet服务类型，可选:1)ws, 2)udp, 3)ws,udp")
 
 	addr := flag.String("hudp", ":7999", "UDP监听地址")
 	handlerCount := flag.Int("hc", 1024, "处理消息的线程数")
@@ -60,24 +60,29 @@ func main() {
 
 	go InitZK(strings.Split(*zkHosts, ","), gMsgbusRoot, gCometRoot)
 
-	if *cType == "ws" {
-		gSessionList = InitSessionList()
-		StartHttp(strings.Split(*lHost, ","))
-		if len(gLocalAddr) == 0 {
-			glog.Fatalf("必须指定本机IP")
+	gSessionList = InitSessionList()
+
+	types := strings.Split(*cType, ",")
+	for _, t := range types {
+		switch t {
+		case "ws":
+			if len(gLocalAddr) == 0 {
+				glog.Fatalf("必须指定本机IP")
+			}
+			StartHttp(strings.Split(*lHost, ","))
+
+		case "udp":
+			if _, e := url.Parse(*apiUrl); len(*apiUrl) == 0 || e != nil {
+				glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
+			}
+
+			handler := NewHandler(*handlerCount, *apiUrl, *serveUdpAddr)
+			server := NewServer(*addr, handler)
+			go server.RunLoop()
+
+		default:
+			glog.Fatalf("undifined argument for \"-type\"")
 		}
-
-	} else if *cType == "udp" {
-		if _, e := url.Parse(*apiUrl); len(*apiUrl) == 0 || e != nil {
-			glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
-		}
-
-		handler := NewHandler(*handlerCount, *apiUrl, *serveUdpAddr)
-		server := NewServer(*addr, handler)
-		go server.RunLoop()
-
-	} else {
-		glog.Fatalf("-type must be ws or udp")
 	}
 
 	handleSignal(func() {
