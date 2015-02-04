@@ -52,11 +52,10 @@ func (t *Task) DoHTTPTask() (status int32, response map[string]interface{}, erro
 	}
 	req := bytes.NewReader([]byte(strings.TrimLeft(reqs, "&")))
 	rep, err := http.Post(t.Url, "application/x-www-form-urlencoded;charset=utf-8", req)
-	defer rep.Body.Close()
-
 	if err != nil {
 		return DAckServerError, nil, fmt.Errorf("[task] process task %v failed on server, response: %v, error: %v", t, rep, err)
 	}
+	defer rep.Body.Close()
 
 	if rep.StatusCode != 200 {
 		return DAckHTTPError, nil, fmt.Errorf("[task] process task [%#v] failed on http code: %v", t, rep.StatusCode)
