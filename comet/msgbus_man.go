@@ -80,7 +80,6 @@ func (this *MsgBusManager) Push2Backend(srcId int64, ids []int64, msg []byte) {
 	}
 	copy(pushData[8+2+size*8:], msg)
 
-	//glog.Infof("[push] %v", pushData)
 	if this.curr != nil {
 		this.curr.Value.(*MsgBusServer).Send(pushData)
 		this.mu.Lock()
