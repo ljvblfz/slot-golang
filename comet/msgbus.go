@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"github.com/golang/glog"
 	"io"
+	"io/ioutil"
 	"net"
+
+	"github.com/golang/glog"
 )
 
 const (
@@ -75,7 +77,11 @@ func (this *MsgBusServer) Reciver(onCloseEventFunc func(s *MsgBusServer)) {
 		size := binary.LittleEndian.Uint32(header)
 		if size > PAYLOAD_MAX {
 			glog.Errorf("[%s] overload the max[%d]>[%d]\n", this.remoteAddr, size, PAYLOAD_MAX)
-			break
+			_, err = io.CopyN(ioutil.Discard, this.conn, int64(size))
+			if err != nil {
+				break
+			}
+			continue
 		}
 
 		data := buf[:size]

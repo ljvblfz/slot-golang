@@ -322,7 +322,7 @@ func WsHandler(ws *websocket.Conn) {
 			// Send to Message Bus
 			msg := reply
 
-			if len(msg) < 12 {
+			if len(msg) < kDstIdEnd {
 				glog.Infof("Invalid msg lenght %d bytes, %v", len(msg), msg)
 				break
 			}
@@ -334,7 +334,7 @@ func WsHandler(ws *websocket.Conn) {
 			if glog.V(3) {
 				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg)
 			} else if glog.V(2) {
-				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg[0:3])
+				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg[0:kDstIdEnd])
 			}
 			GMsgBusManager.Push2Backend(id, destIds, msg)
 		}
