@@ -2,11 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
-	"github.com/golang/glog"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/garyburd/redigo/redis"
+	"github.com/golang/glog"
 )
 
 const (
@@ -20,6 +22,8 @@ const (
 
 	// 用户正在使用的手机id
 	RedisUserMobiles = "user:mobileid"
+
+	RedisSessionDevice = "sess:dev:%s"
 )
 const (
 	_SetUserOnline = iota
@@ -30,6 +34,9 @@ const (
 	_ReturnMobileId
 	_SubDeviceUsersKey
 	_SubModifiedPasswd
+	_GetDeviceSession
+	_SetDeviceSession
+	_ExpireDeviceSession
 	_Max
 
 	// eval, script, 2, htable, id, PubKey, cometIP
@@ -367,5 +374,47 @@ func ReturnMobileId(userId int64, mid byte) error {
 
 	_, err := r.Do("srem", fmt.Sprintf("%s:%d", RedisUserMobiles, userId), mid)
 
+	return err
+}
+
+func GetDeviceSession(sid string) ([]byte, error) {
+	r := Redix[_GetDeviceSession]
+	RedixMu[_GetDeviceSession].Lock()
+	defer RedixMu[_GetDeviceSession].Unlock()
+
+	return r.Do("get", fmt.Sprintf(RedisSessionDevice, sid))
+}
+
+func SetDeviceSession(sid string, expire int, data []byte) error {
+	r := Redix[_SetDeviceSession]
+	RedixMu[_SetDeviceSession].Lock()
+	defer RedixMu[_SetDeviceSession].Unlock()
+
+	err := r.Send("set", fmt.Sprintf(RedisSessionDevice, sid), data)
+	if err != nil {
+		return err
+	}
+	err = r.Send("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
+	if err != nil {
+		return err
+	}
+	err = r.Flush()
+	if err != nil {
+		return err
+	}
+	_, err = r.Receive()
+	if err != nil {
+		return err
+	}
+	_, err = r.Receive()
+	return err
+}
+
+func ExpireDeviceSession(sid string, expire int) error {
+	r := Redix[_ExpireDeviceSession]
+	RedixMu[_ExpireDeviceSession].Lock()
+	defer RedixMu[_ExpireDeviceSession].Unlock()
+
+	_, err = r.Do("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
 	return err
 }

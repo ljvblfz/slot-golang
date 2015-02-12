@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -128,7 +129,13 @@ func (h *Handler) handle(t *Task) error {
 		c := binary.LittleEndian.Uint16(t.Msg[51:53])
 
 		// 60 = 24 + 24 + 12
-		bodyIndex := 60
+		sidIndex := 60
+		sid, err := uuid.Parse(t.Msg[sidIndex : sidIndex+16])
+		if err != nil {
+			return fmt.Errorf("parse session id error: %v", err)
+		}
+		// 76 = 60 + 16
+		bodyIndex := sidIndex + 16
 		body := t.Msg[bodyIndex:]
 
 		output := make([]byte, bodyIndex, 128)
@@ -143,30 +150,30 @@ func (h *Handler) handle(t *Task) error {
 		case CmdRegister:
 			t.CmdType = c
 			t.Url = h.kApiUrls[c]
-			res, err = h.onRegister(t, body)
+			res, err = h.onRegister(t, sid, body)
 
 		case CmdLogin:
 			t.CmdType = c
 			t.Url = h.kApiUrls[c]
-			res, err = h.onLogin(t, body)
+			res, err = h.onLogin(t, sid, body)
 
 		case CmdRename:
 			t.CmdType = c
 			t.Url = h.kApiUrls[c]
-			res, err = h.onRename(t, body)
+			res, err = h.onRename(t, sid, body)
 
 		case CmdDoBind:
 			t.CmdType = c
 			t.Url = h.kApiUrls[c]
-			res, err = h.onDoBind(t, body)
+			res, err = h.onDoBind(t, sid, body)
 
 		case CmdHeartBeat:
 			t.CmdType = c
-			res, err = h.onHearBeat(t, body)
+			res, err = h.onHearBeat(t, sid, body)
 
 		case CmdSubDeviceOffline:
 			t.CmdType = c
-			res, err = h.onSubDeviceOffline(t, body)
+			res, err = h.onSubDeviceOffline(t, sid, body)
 
 		default:
 			glog.Warningf("invalid command type %v", c)
@@ -233,35 +240,62 @@ func (h *Handler) handle(t *Task) error {
 	//}
 }
 
+// TODO check pack number and other things in session here
+func (h *Handler) GetAndVeryifySession(body []byte) (*uuid.UUID, error) {
+	if len(body) != 16 {
+		return nil, nil, fmt.Errorf("not enough bytes for session id")
+	}
+	sid, _ := uuid.Parse(body[0:16])
+	if !gSessionList.IsExisting(sid) {
+		return nil, fmt.Errorf("invalid session id %s", sid)
+	}
+	return sid, nil
+}
+
 func (h *Handler) onGetToken(t *Task, body []byte) ([]byte, error) {
 	if len(body) != 24 {
 		return nil, fmt.Errorf("onGetToken: bad body length %d", len(body))
 	}
-	// TODO not defined
-	// start a new session?
-	glog.Warning("NOT IMPLEMENTED")
-	return nil, nil
-	//sn := body
-	//token, err := NewToken(sn)
+
+	mac := make([]byte, 8)
+	copy(mac, body[:8])
+	sn := make([]byte, 16)
+	copy(sn, body[8:24])
+
+	// TODO verify mac and sn by real production's information
+	// if err := VerifyDevice(mac, sn); err != nil {
+	//	return nil, fmt.Errorf("invalid device error: %v", err)
+	// }
+
+	sid := NewUuid()
+	s := NewUdpSession(NewUdpConnection(h.Server.socket, t.Peer), mac, sn, t.Peer.String())
+	err = gSessionList.AddUdpSession(sid, s)
+	if err != nil {
+		glog.Fatalf("[session] AddSession failed: %v", err)
+	}
+	output := make([]byte, 20)
+	binary.LittleEndian.PutUint32(output[:4], 0)
+	binary.LittleEndian.PutUint32(output[4:20], sid[:16])
+
+	// TODO we don't need save session into redis now
+	//sd, err := json.Marshal(s)
 	//if err != nil {
-	//	glog.Errorf("NewToken for sn %v error: %v", sn, err)
+	//	glog.Errorf("Marshal session into json failed: %v", err)
 	//	return nil, err
 	//}
-	//snCopy := make([]byte, len(sn))
-	//copy(snCopy, sn)
-	//s := NewUdpSession(NewUdpConnection(h.Server.socket, t.Peer), snCopy)
-	//if err = gSessionList.AddUdpSession(string(token), s); err != nil {
-	//	glog.Fatalf("[session] AddSession failed: %v", err)
-	//}
-	//s.Save()
-	//return token, nil
+	//err = SetDeviceSession(sid, sd)
+
+	return output, nil
 }
 
-func (h *Handler) onRegister(t *Task, body []byte) ([]byte, error) {
+func (h *Handler) onRegister(t *Task, sid *uuid.UUID, body []byte) ([]byte, error) {
 	if len(body) < 31 {
 		return nil, fmt.Errorf("onRegister: bad body length %d", len(body))
 	}
-	// TODO check pack number in session
+	_, err := h.GetAndVeryifySession(body[:16])
+	if err != nil {
+		return nil, fmt.Errorf("[session] verify session error: %v", err)
+	}
 
 	dv := body[0:2]
 	mac := base64.StdEncoding.EncodeToString(body[2:10])
@@ -318,17 +352,20 @@ func (h *Handler) onRegister(t *Task, body []byte) ([]byte, error) {
 	return output, nil
 }
 
-func (h *Handler) onLogin(t *Task, body []byte) ([]byte, error) {
+func (h *Handler) onLogin(t *Task, sid *uuid.UUID, body []byte) ([]byte, error) {
 	if len(body) != 72 {
 		return nil, fmt.Errorf("onLogin: bad body length %v", len(body))
 	}
-	// TODO check pack number in session
+	_, err := h.GetAndVeryifySession(body[:16])
+	if err != nil {
+		return nil, fmt.Errorf("[session] verify session error: %v", err)
+	}
 
 	mac := base64.StdEncoding.EncodeToString(body[0:8])
 	cookie := body[8:72]
 	t.Input["cookie"] = string(cookie)
 	t.Input["mac"] = mac
-	glog.Infof("LOGIN: mac: %s, cookie: %v", mac, string(cookie))
+	//glog.Infof("LOGIN: mac: %s, cookie: %v", mac, string(cookie))
 
 	output := make([]byte, 12)
 	httpStatus, rep, err := t.DoHTTPTask()
@@ -343,24 +380,24 @@ func (h *Handler) onLogin(t *Task, body []byte) ([]byte, error) {
 		}
 	}
 	binary.LittleEndian.PutUint32(output[0:4], uint32(status))
-	glog.Infof("onLogin: %v", status)
-	if 0 == status {
-		sid := NewUuid()
-		glog.Infof("SID: %v", sid)
-		s := NewUdpSession(NewUdpConnection(h.Server.socket, t.Peer))
-		err = gSessionList.AddUdpSession(sid, s)
-		if err != nil {
-			glog.Fatalf("[session] AddSession failed: %v", err)
-		}
-		s.Save()
-	}
+	copy(output[4:20], body[:16])
+	//if 0 == status {
+	//	sid := NewUuid()
+	//	s := NewUdpSession(NewUdpConnection(h.Server.socket, t.Peer))
+	//	err = gSessionList.AddUdpSession(sid, s)
+	//	if err != nil {
+	//		glog.Fatalf("[session] AddSession failed: %v", err)
+	//	}
+	//	s.Save()
+	//}
 	return output, nil
 }
 
-func (h *Handler) onRename(t *Task, body []byte) ([]byte, error) {
-	// TODO verify sid
-	//sid := body[0:16]
-	// TODO check pack number in session
+func (h *Handler) onRename(t *Task, sid *uuid.UUID, body []byte) ([]byte, error) {
+	_, err := h.GetAndVeryifySession(body[0:16])
+	if err != nil {
+		return nil, fmt.Errorf("[session] verify session error: %v", err)
+	}
 
 	mac := base64.StdEncoding.EncodeToString(body[16:24])
 	nameLen := body[24]
@@ -390,10 +427,11 @@ func (h *Handler) onRename(t *Task, body []byte) ([]byte, error) {
 	return output, nil
 }
 
-func (h *Handler) onDoBind(t *Task, body []byte) ([]byte, error) {
-	// TODO verify sid
-	//sid := body[0:16]
-	// TODO check pack number in session
+func (h *Handler) onDoBind(t *Task, sid *uuid.UUID, body []byte) ([]byte, error) {
+	_, err := h.GetAndVeryifySession(body[0:16])
+	if err != nil {
+		return nil, fmt.Errorf("[session] verify session error: %v", err)
+	}
 
 	uid := body[16:24]
 	result := binary.LittleEndian.Uint32(body[24:28])
@@ -421,9 +459,11 @@ func (h *Handler) onDoBind(t *Task, body []byte) ([]byte, error) {
 	return output, nil
 }
 
-func (h *Handler) onHearBeat(t *Task, body []byte) ([]byte, error) {
-	sid := body[0:16]
-	// TODO check pack number in session
+func (h *Handler) onHearBeat(t *Task, sid *uuid.UUID, body []byte) ([]byte, error) {
+	sid, err := h.GetAndVeryifySession(body[0:16])
+	if err != nil {
+		return nil, fmt.Errorf("[session] verify session error: %v", err)
+	}
 
 	id := int64(binary.LittleEndian.Uint64(body[16:24]))
 
@@ -442,10 +482,11 @@ func (h *Handler) onHearBeat(t *Task, body []byte) ([]byte, error) {
 	return output, err
 }
 
-func (h *Handler) onSubDeviceOffline(t *Task, body []byte) ([]byte, error) {
-	// TODO verify sid
-	//sid := body[0:16]
-	// TODO check pack number in session
+func (h *Handler) onSubDeviceOffline(t *Task, sid *uuid.UUID, body []byte) ([]byte, error) {
+	_, err := h.GetAndVeryifySession(body[0:16])
+	if err != nil {
+		return nil, fmt.Errorf("[session] verify session error: %v", err)
+	}
 
 	//id := int64(binary.LittleEndian.Uint64(body[16:24]))
 

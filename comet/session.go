@@ -36,14 +36,6 @@ func NewWsSession(uid int64, bindedIds []int64, conn Connection) *Session {
 	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn}
 }
 
-func NewUdpSession(conn Connection) *UdpSession {
-	return &UdpSession{
-		Session: Session{
-			Conn: conn,
-		},
-	}
-}
-
 func (this *Session) Close() {
 	this.Conn.Close()
 }
@@ -127,17 +119,21 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 //}
 
 type UdpSession struct {
-	Session
+	Session `json:"-"`
+	SN      []byte `json:"SN"`
+	MAC     []byte `json:"MAC"`
+	Addr    string `json:"Addr"`
 }
 
-// TODO save to redis
-func (u *UdpSession) Save() error {
-	return nil
-}
-
-// update last access time
-func (u *UdpSession) Update(addr *net.UDPAddr) error {
-	return u.Conn.Update(addr)
+func NewUdpSession(conn Connection, mac []byte, sn []byte, peerAddr string) *UdpSession {
+	return &UdpSession{
+		Session: Session{
+			Conn: conn,
+		},
+		MAC:  mac,
+		SN:   sn,
+		Addr: peerAddr,
+	}
 }
 
 type SessionList struct {
