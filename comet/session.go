@@ -169,6 +169,17 @@ func (this *SessionList) AddUdpSession(sid *uuid.UUID, s *UdpSession) error {
 	return nil
 }
 
+func (this *SessionList) GetDeviceIdAndDstIds(sid *uuid.UUID) (int64, []int64, error) {
+	this.udpsMu.Lock()
+	defer this.udpsMu.Unlock()
+	s, ok := this.udps[*sid]
+	if !ok {
+		return fmt.Errorf("session [%s] not exists", sid)
+	}
+	binds := s.Session.calcDestIds(0)
+	return s.Session.Uid, binds, nil
+}
+
 func (this *SessionList) UpdateSession(sid *uuid.UUID, id int64, addr *net.UDPAddr) error {
 	this.udpsMu.Lock()
 	defer this.udpsMu.Unlock()
