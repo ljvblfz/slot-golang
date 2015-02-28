@@ -1,12 +1,12 @@
 package main
 
 import (
+	"cloud-socket/ver"
 	"flag"
 	"fmt"
-	"log"
 	"github.com/golang/glog"
+	"log"
 	"strings"
-	"cloud-socket/ver"
 )
 
 var (
