@@ -101,6 +101,22 @@ func (a *AppMsg) MarshalBytes() []byte {
 	return a.buf
 }
 
+// 计算数据头中的校验和
+// 实现协议：智能家居通讯协议V2.3.2
+func ChecksumDataHeader(msg []byte) []byte {
+	var headCheck [2]uint8
+	i := kHeadForward
+	count := kHeadForward + kHeadFrame + 8
+	for ; i+1 < count; i += 2 {
+		headCheck[0] ^= msg[i]
+		headCheck[1] ^= msg[i+1]
+	}
+	if i < count {
+		headCheck[0] ^= msg[i]
+	}
+	return headCheck[:]
+}
+
 // 消息的转发类型
 // 返回true时，转发，不上传，服务器不回复ACK
 // 返回false时，不转发，上传，服务器回复ACK

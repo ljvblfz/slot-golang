@@ -11,15 +11,15 @@ const (
 	kMaxPackageSize = 10240
 )
 
-type Server struct {
+type UdpServer struct {
 	addr     string
 	handler  *Handler
 	socket   *net.UDPConn
 	socketMu *sync.Mutex
 }
 
-func NewServer(addr string, handler *Handler) *Server {
-	s := &Server{
+func NewUdpServer(addr string, handler *Handler) *UdpServer {
+	s := &UdpServer{
 		addr:     addr,
 		handler:  handler,
 		socketMu: &sync.Mutex{},
@@ -29,7 +29,7 @@ func NewServer(addr string, handler *Handler) *Server {
 	return s
 }
 
-func (s *Server) RunLoop() {
+func (s *UdpServer) RunLoop() {
 	localAddr, err := net.ResolveUDPAddr("udp", s.addr)
 	if err != nil {
 		glog.Fatalf("Resolve server addr failed: %v", err)
@@ -39,7 +39,7 @@ func (s *Server) RunLoop() {
 		glog.Fatalf("Listen on addr failed: %v", err)
 	}
 	s.socket = socket
-	glog.Infof("Server started on %v", socket.LocalAddr())
+	glog.Infof("UdpServer started on %v", socket.LocalAddr())
 
 	buf := make([]byte, kMaxPackageSize)
 	for {
@@ -64,7 +64,7 @@ func (s *Server) RunLoop() {
 	}
 }
 
-func (s *Server) Send(peer *net.UDPAddr, msg []byte) {
+func (s *UdpServer) Send(peer *net.UDPAddr, msg []byte) {
 	s.socketMu.Lock()
 	n, err := s.socket.WriteToUDP(msg, peer)
 	s.socketMu.Unlock()

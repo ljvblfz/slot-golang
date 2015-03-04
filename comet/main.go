@@ -77,7 +77,7 @@ func main() {
 			}
 
 			handler := NewHandler(*handlerCount, *apiUrl, *serveUdpAddr)
-			server := NewServer(*addr, handler)
+			server := NewUdpServer(*addr, handler)
 			go server.RunLoop()
 
 		default:

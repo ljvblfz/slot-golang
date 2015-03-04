@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
+	//"time"
 
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"

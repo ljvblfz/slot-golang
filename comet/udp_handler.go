@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
+	//"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -16,7 +16,7 @@ import (
 )
 
 type Handler struct {
-	Server     *Server
+	Server     *UdpServer
 	listenAddr string
 
 	kApiUrls    map[uint16]string
@@ -84,6 +84,19 @@ func (h *Handler) processer() {
 	}
 }
 
+// check the whole message
+func checkSum(data []byte) error {
+	err := checkHeader(data)
+	if err != nil {
+		return err
+	}
+	err = checkData(data)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 // TODO
 func checkHeader(data []byte) error {
 	return nil
@@ -111,16 +124,11 @@ func (h *Handler) handle(t *Task) error {
 		return fmt.Errorf("[protocol] invalid message protocol")
 	}
 
-	// check xor
 	if mlen < 24+24+12 {
 		return fmt.Errorf("[protocol] invalid message length for protocol")
 	}
 	// discard msg if found checking error
-	err := checkHeader(t.Msg)
-	if err != nil {
-		return err
-	}
-	err = checkData(t.Msg)
+	err := checkSum(t.Msg)
 	if err != nil {
 		return err
 	}
@@ -222,23 +230,6 @@ func (h *Handler) handle(t *Task) error {
 		return fmt.Errorf("[protocol] NOT IMPLEMENTED for transfer messages")
 	}
 	return nil
-
-	// ???
-	//inputs := strings.Split(strings.TrimSpace(string(t.Msg[1:])), "&")
-	//for _, in := range inputs {
-	//	args := strings.SplitN(in, "=", 2)
-	//	if len(args) == 0 {
-	//		return fmt.Errorf("empty argument [%v]", in)
-	//	}
-	//	if len(args[0]) == 0 {
-	//		return fmt.Errorf("key in form cannot be empty [%v]", in)
-	//	}
-	//	if len(args) > 1 {
-	//		t.Input[args[0]] = args[1]
-	//	} else {
-	//		t.Input[args[0]] = ""
-	//	}
-	//}
 }
 
 // TODO check pack number and other things in session here
@@ -328,7 +319,6 @@ func (h *Handler) onRegister(t *Task, sid *uuid.UUID, body []byte) ([]byte, erro
 		if cookie, ok := c.(string); ok {
 			glog.Infof("REGISTER: mac: %s, cookie: %v", mac, cookie)
 			copy(output[12:76], []byte(cookie))
-			// TODO 64 bytes?
 			ss := strings.SplitN(cookie, "|", 2)
 			if len(ss) == 0 {
 				binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
@@ -451,7 +441,7 @@ func (h *Handler) onHearBeat(t *Task, sid *uuid.UUID, body []byte) ([]byte, erro
 
 	id := int64(binary.LittleEndian.Uint64(body[:8]))
 
-	err := gSessionList.UpdateSession(&uid, id, t.Peer)
+	err = gSessionList.UpdateSession(&uid, id, t.Peer)
 
 	output := make([]byte, 4)
 	if err != nil {
