@@ -20,6 +20,11 @@ const (
 	MIDOffline = 0x36
 	MIDBind    = 0x37
 	MIDUnbind  = 0x38
+
+	FlagAck  = 1 << 6
+	FlagRead = 1 << 7
+
+	kPoly = 0x66
 )
 
 type AppMsg struct {
@@ -53,7 +58,7 @@ func NewAckMsg(srcId int64, message []byte) *AppMsg {
 	}
 	copy(a.buf, message)
 	// 数据头中的ACK头
-	a.buf[kHeadForward+kHeadFrame] |= 1 << 6
+	a.buf[kHeadForward+kHeadFrame] |= FlagAck
 	return a
 }
 
@@ -101,20 +106,21 @@ func (a *AppMsg) MarshalBytes() []byte {
 	return a.buf
 }
 
-// 计算数据头中的校验和
+// 计算数据头中前n字节的头校验和
 // 实现协议：智能家居通讯协议V2.3.2
-func ChecksumDataHeader(msg []byte) []byte {
-	var headCheck [2]uint8
-	i := kHeadForward
-	count := kHeadForward + kHeadFrame + 8
-	for ; i+1 < count; i += 2 {
-		headCheck[0] ^= msg[i]
-		headCheck[1] ^= msg[i+1]
+func ChecksumHeader(msg []byte, n int) byte {
+	var headerCheck uint8
+	for i := 0; i < n; i++ {
+		headerCheck ^= msg[i]
+		for bit := 8; bit > 0; bit-- {
+			if headerCheck&0x80 != 0 {
+				headerCheck = (headerCheck << 1) ^ kPoly
+			} else {
+				headerCheck = (headerCheck << 1)
+			}
+		}
 	}
-	if i < count {
-		headCheck[0] ^= msg[i]
-	}
-	return headCheck[:]
+	return headerCheck
 }
 
 // 消息的转发类型

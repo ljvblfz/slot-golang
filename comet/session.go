@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"cloud-base/hlist"
 	"cloud-socket/msgs"
@@ -16,6 +17,8 @@ import (
 var (
 	BlockSize int64 = 128
 	MapSize   int64 = 1024
+
+	ErrSessNotExist = fmt.Errorf("session not exists")
 )
 
 func getBlockID(uid int64) int64 {
@@ -91,7 +94,7 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 //	for {
 //		done := false
 //		select {
-//		case s := <-this.TaskChan:
+//		case s := <-this.MsgChan:
 //			newIds = s
 //			idsChanged = true
 //		default:
@@ -119,10 +122,11 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 //}
 
 type UdpSession struct {
-	Session `json:"-"`
-	SN      []byte `json:"SN"`
-	MAC     []byte `json:"MAC"`
-	Addr    string `json:"Addr"`
+	Session
+	Addr          string
+	LastHeartbeat time.Time
+
+	mu *sync.Mutex
 }
 
 func NewUdpSession(conn Connection, mac []byte, sn []byte, peerAddr string) *UdpSession {
@@ -130,10 +134,19 @@ func NewUdpSession(conn Connection, mac []byte, sn []byte, peerAddr string) *Udp
 		Session: Session{
 			Conn: conn,
 		},
-		MAC:  mac,
-		SN:   sn,
-		Addr: peerAddr,
+		Addr:          peerAddr,
+		LastHeartbeat: time.Now(),
+		mu:            &sync.Mutex{},
 	}
+}
+
+// Caller should have lock on UdpSession
+func (s *UdpSession) Update(addr *net.UDPAddr) error {
+	if s.Addr != addr.String() {
+		s.Addr = addr.String()
+	}
+	s.LastHeartbeat = time.Now()
+	return nil
 }
 
 type SessionList struct {
@@ -141,6 +154,7 @@ type SessionList struct {
 	onlinedMu []*sync.Mutex
 
 	udps   map[uuid.UUID]*UdpSession // key: unique token
+	d2s    map[int64]uuid.UUID       // reverse relation in udps
 	udpsMu *sync.RWMutex
 }
 
@@ -149,6 +163,7 @@ func InitSessionList() *SessionList {
 		onlined:   make([]map[int64]*hlist.Hlist, BlockSize),
 		onlinedMu: make([]*sync.Mutex, BlockSize),
 		udps:      make(map[uuid.UUID]*UdpSession),
+		d2s:       make(map[int64]uuid.UUID),
 		udpsMu:    &sync.RWMutex{},
 	}
 
@@ -166,32 +181,68 @@ func (this *SessionList) AddUdpSession(sid *uuid.UUID, s *UdpSession) error {
 		return fmt.Errorf("session [%s] exists with connection: %v", sid, exist.Conn)
 	}
 	this.udps[*sid] = s
+	this.d2s[s.Uid] = *sid
+	return nil
+}
+
+func (this *SessionList) RemoveUdpSession(sid *uuid.UUID) error {
+	this.udpsMu.Lock()
+	defer this.udpsMu.Unlock()
+	exist, ok := this.udps[*sid]
+	if !ok {
+		return ErrSessNotExist
+	}
+	delete(this.udps, *sid)
+	delete(this.d2s, exist.Uid)
 	return nil
 }
 
 func (this *SessionList) GetDeviceIdAndDstIds(sid *uuid.UUID) (int64, []int64, error) {
-	this.udpsMu.Lock()
-	defer this.udpsMu.Unlock()
+	this.udpsMu.RLock()
+	defer this.udpsMu.RUnlock()
 	s, ok := this.udps[*sid]
 	if !ok {
-		return fmt.Errorf("session [%s] not exists", sid)
+		return 0, nil, fmt.Errorf("session [%s] not exists", sid)
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	binds := s.Session.calcDestIds(0)
 	return s.Session.Uid, binds, nil
 }
 
-func (this *SessionList) UpdateSession(sid *uuid.UUID, id int64, addr *net.UDPAddr) error {
-	this.udpsMu.Lock()
-	defer this.udpsMu.Unlock()
+func (this *SessionList) GetUdpSession(sid *uuid.UUID) (*UdpSession, error) {
+	this.udpsMu.RLock()
 	s, ok := this.udps[*sid]
 	if !ok {
-		return fmt.Errorf("session [%s] not exists", sid)
+		this.udpsMu.RUnlock()
+		return nil, fmt.Errorf("session [%s] not exists", sid)
 	}
-	if s.Uid != id {
-		return fmt.Errorf("session [%s] not match with id: %v", sid, id)
-	}
-	return s.Update(addr)
+	s.mu.Lock()
+
+	this.udpsMu.RUnlock()
+
+	return s, nil
 }
+
+func (this *SessionList) ReleaseUdpSession(s *UdpSession) error {
+	s.mu.Unlock()
+	return nil
+}
+
+//func (this *SessionList) UpdateSession(sid *uuid.UUID, id int64, addr *net.UDPAddr) error {
+//	this.udpsMu.Lock()
+//	defer this.udpsMu.Unlock()
+//	s, ok := this.udps[*sid]
+//	if !ok {
+//		return fmt.Errorf("session [%s] not exists", sid)
+//	}
+//	s.mu.Lock()
+//	defer s.mu.Unlock()
+//	if s.Uid != id {
+//		return fmt.Errorf("session [%s] not match with id: %v", sid, id)
+//	}
+//	return s.update(addr)
+//}
 
 func (this *SessionList) AddSession(s *Session) *hlist.Element {
 	// 能想到的错误返回值是同一用户，同一mac多次登录，但这可能不算错误
@@ -387,4 +438,19 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 		}
 	}
 	lock.Unlock()
+}
+
+func (this *SessionList) PushUdpMsg(uid int64, msg []byte) error {
+	this.udpsMu.RLock()
+	defer this.udpsMu.RUnlock()
+
+	sid, ok := this.d2s[uid]
+	if !ok {
+		return fmt.Errorf("no such device")
+	}
+	if this.udps[sid].Conn == nil {
+		return fmt.Errorf("nil connection")
+	}
+	_, err := this.udps[sid].Conn.Send(msg)
+	return err
 }

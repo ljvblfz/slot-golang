@@ -35,7 +35,7 @@ var (
 	DAckBadCmd      int32 = 1002
 )
 
-type Task struct {
+type UdpMsg struct {
 	Peer    *net.UDPAddr
 	Msg     []byte
 	Url     string
@@ -45,7 +45,7 @@ type Task struct {
 }
 
 // 返回需要回复给设备的消息
-func (t *Task) DoHTTPTask() (status int32, response map[string]interface{}, error error) {
+func (t *UdpMsg) DoHTTPTask() (status int32, response map[string]interface{}, error error) {
 	reqs := ""
 	for k, v := range t.Input {
 		reqs = fmt.Sprintf("%s&%s=%s", reqs, k, v)

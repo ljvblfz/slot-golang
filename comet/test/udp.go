@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"cloud-socket/msgs"
 )
 
 const (
@@ -24,8 +27,7 @@ const (
 type Client struct {
 	SN          [16]byte
 	MAC         [8]byte
-	Sid         [16]byte
-	Token       [16]byte
+	Sid         []byte
 	Cookie      [64]byte
 	Id          [8]byte
 	Name        string
@@ -33,6 +35,12 @@ type Client struct {
 	DeviceType  uint16
 	Socket      *net.UDPConn
 	ServerAddr  *net.UDPAddr
+	rch         chan []byte
+}
+
+type testCase struct {
+	name string
+	fn   func() (map[string]interface{}, error)
 }
 
 // get token
@@ -43,17 +51,20 @@ type Client struct {
 // heartbeat
 // offline sub
 func (c *Client) Run() {
-	tests := []func() (map[string]interface{}, error){
-		//c.doToken,
-		c.doRegister,
-		c.doLogin,
-		c.doRename,
-		c.doDoBind,
-		c.doHeartbeat,
-		c.doOfflineSub,
+	go c.readLoop()
+
+	tests := []testCase{
+		testCase{"doNewSession", c.doNewSession},
+		testCase{"doRegister", c.doRegister},
+		testCase{"doLogin", c.doLogin},
+		testCase{"doRename", c.doRename},
+		//testCase{"doDoBind", c.doDoBind},
+		testCase{"doHeartbeat", c.doHeartbeat},
+		//testCase{"doOfflineSub", c.doOfflineSub},
 	}
 	for _, t := range tests {
-		result, err := t()
+		result, err := t.fn()
+		log.Printf("--- %s ---", t.name)
 		if err != nil {
 			log.Printf("[%v] error: %v", err)
 		}
@@ -63,27 +74,30 @@ func (c *Client) Run() {
 		for k, v := range result {
 			log.Printf("%s=%v", k, v)
 		}
-		log.Println("---")
+		time.Sleep(time.Millisecond)
+		//log.Println("---")
 	}
 }
 
-func (c *Client) packBody(msgId uint16, body []byte) []byte {
+func (c *Client) packBody(msgId uint16, sid []byte, body []byte) []byte {
 	transFrame := make([]byte, 24)
 	transFrame[0] = (transFrame[0] &^ 0x7) | 0x2
 
-	pkgFrame := make([]byte, 24)
+	dataHeader := make([]byte, 10)
+	binary.LittleEndian.PutUint16(dataHeader[4:6], msgId)
+	binary.LittleEndian.PutUint16(dataHeader[6:8], uint16(len(body)))
 
-	dataHeader := make([]byte, 12)
-	binary.LittleEndian.PutUint16(dataHeader[3:5], msgId)
-
-	output := append(append(append(transFrame, pkgFrame...), dataHeader...), body...)
+	output := append(transFrame, dataHeader...)
+	output = append(output, sid...)
+	output = append(output, body...)
 
 	// sum header
-	// sum body
+	output[24+8] = msgs.ChecksumHeader(output, 24+8)
+	// TODO sum body
 	return output
 }
 
-func (c *Client) Send(request []byte) ([]byte, error) {
+func (c *Client) Query(request []byte) ([]byte, error) {
 	n, err := c.Socket.WriteToUDP(request, c.ServerAddr)
 	if err != nil {
 		return nil, err
@@ -91,33 +105,33 @@ func (c *Client) Send(request []byte) ([]byte, error) {
 	if n != len(request) {
 		return nil, fmt.Errorf("not sent all message")
 	}
-	response := make([]byte, 256)
-	for {
-		n, peer, err := c.Socket.ReadFromUDP(response)
-		if peer.String() != c.ServerAddr.String() {
-			continue
-		}
-		if n < 60 {
-			return nil, fmt.Errorf("response less than header count(60 bytes)")
-		}
-		log.Printf("rep: len(%d) %v", n, response[:n])
-		return response[60:n], err
+	response := c.read()
+	// ignore 50 header bytes
+	if n < 50 {
+		return nil, fmt.Errorf("response less than header count(50 bytes)")
 	}
+	//log.Printf("rep: len(%d) %v", n, response[:n])
+	return response[50:n], err
 }
 
-func (c *Client) doToken() (map[string]interface{}, error) {
+func (c *Client) doNewSession() (map[string]interface{}, error) {
 	body := make([]byte, 24)
 	copy(body[:8], c.MAC[:])
 	copy(body[8:24], c.SN[:])
 
-	req := c.packBody(CmdGetToken, body)
-	rep, err := c.Send(req)
+	req := c.packBody(CmdGetToken, c.Sid, body)
+	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
-	m["token"] = hex.EncodeToString(rep[:24])
-	copy(c.Token[:], rep[:24])
+	ok := binary.LittleEndian.Uint32(rep[:4])
+	m["code"] = ok
+	m["sid"] = hex.EncodeToString(rep[4:20])
+	copy(c.Sid[:], rep[4:20])
+	if ok != 0 {
+		log.Fatalf("doNewSession failed: %v", m)
+	}
 	return m, nil
 }
 
@@ -131,8 +145,8 @@ func (c *Client) doRegister() (map[string]interface{}, error) {
 	body[30] = byte(len(name))
 	copy(body[31:31+len(name)], name)
 
-	req := c.packBody(CmdRegister, body)
-	rep, err := c.Send(req)
+	req := c.packBody(CmdRegister, c.Sid, body)
+	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
@@ -150,15 +164,13 @@ func (c *Client) doLogin() (map[string]interface{}, error) {
 	copy(body[0:8], c.MAC[:])
 	copy(body[8:72], c.Cookie[:])
 
-	req := c.packBody(CmdLogin, body)
-	rep, err := c.Send(req)
+	req := c.packBody(CmdLogin, c.Sid, body)
+	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
 	m["code"] = binary.LittleEndian.Uint32(rep[:4])
-	m["sid"] = hex.EncodeToString(rep[4:20])
-	copy(c.Sid[:], rep[4:20])
 	return m, nil
 }
 
@@ -166,21 +178,19 @@ func (c *Client) doRename() (map[string]interface{}, error) {
 	c.Name += "2"
 	name := []byte(c.Name)
 	body := make([]byte, 25+len(name))
-	copy(body[:16], c.Sid[:])
-	copy(body[16:24], c.MAC[:])
-	body[24] = byte(len(name))
-	copy(body[25:25+len(name)], name)
+	copy(body[:8], c.MAC[:])
+	body[8] = byte(len(name))
+	copy(body[9:9+len(name)], name)
 
-	req := c.packBody(CmdChangeName, body)
-	rep, err := c.Send(req)
+	//log.Printf("SID: %v", c.Sid)
+	req := c.packBody(CmdChangeName, c.Sid, body)
+	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
-	m["sid"] = hex.EncodeToString(rep[:16])
-	copy(c.Sid[:], rep[:16])
-	m["mac"] = hex.EncodeToString(rep[16:24])
-	m["code"] = binary.LittleEndian.Uint32(rep[24:28])
+	m["code"] = binary.LittleEndian.Uint32(rep[:4])
+	m["mac"] = hex.EncodeToString(rep[4:12])
 	return m, nil
 }
 
@@ -190,8 +200,8 @@ func (c *Client) doDoBind() (map[string]interface{}, error) {
 	copy(body[16:24], c.MAC[:])
 	copy(body[24:32], c.Id[:])
 
-	req := c.packBody(CmdDoBind, body)
-	rep, err := c.Send(req)
+	req := c.packBody(CmdDoBind, c.Sid, body)
+	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
@@ -204,19 +214,16 @@ func (c *Client) doDoBind() (map[string]interface{}, error) {
 }
 
 func (c *Client) doHeartbeat() (map[string]interface{}, error) {
-	body := make([]byte, 24)
-	copy(body[0:16], c.Sid[:])
-	copy(body[16:24], c.Id[:])
+	body := make([]byte, 8)
+	copy(body[:8], c.Id[:8])
 
-	req := c.packBody(CmdHeartBeat, body)
-	rep, err := c.Send(req)
+	req := c.packBody(CmdHeartBeat, c.Sid, body)
+	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
-	m["sid"] = hex.EncodeToString(rep[:16])
-	copy(c.Sid[:], rep[:16])
-	m["code"] = binary.LittleEndian.Uint32(rep[16:20])
+	m["code"] = binary.LittleEndian.Uint32(rep[:4])
 	return m, nil
 }
 
@@ -225,8 +232,8 @@ func (c *Client) doOfflineSub() (map[string]interface{}, error) {
 	copy(body[0:16], c.Sid[:])
 	copy(body[16:24], c.MAC[:])
 
-	req := c.packBody(CmdSubDeviceOffline, body)
-	rep, err := c.Send(req)
+	req := c.packBody(CmdSubDeviceOffline, c.Sid, body)
+	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +244,26 @@ func (c *Client) doOfflineSub() (map[string]interface{}, error) {
 	return m, nil
 }
 
+func (c *Client) read() []byte {
+	return <-c.rch
+}
+
+func (c *Client) readLoop() {
+	for {
+		buf := make([]byte, 128)
+		n, peer, err := c.Socket.ReadFromUDP(buf)
+		if err != nil {
+			continue
+		}
+		if peer.String() != c.ServerAddr.String() {
+			continue
+		}
+		c.rch <- buf[:n]
+	}
+}
+
 func main() {
+	log.SetFlags(log.Flags() | log.Lshortfile)
 	if len(os.Args) < 2 {
 		fmt.Printf("Usage: %v server-ip:server-port local-ip:local-port\n", os.Args[0])
 		return
@@ -258,17 +284,26 @@ func main() {
 		return
 	}
 
-	log.Println("Client started")
-
 	c := Client{
 		Name:        "deviceName",
 		ProduceTime: time.Now(),
 		DeviceType:  0xFFFE,
+		Sid:         make([]byte, 16),
 		Socket:      socket,
 		ServerAddr:  server,
+		rch:         make(chan []byte, 128),
 	}
-	copy(c.SN[:], []byte("AAAAAAAAAAAAAAAC")[:16])
-	copy(c.MAC[:], []byte("AAAAAAAC")[:8])
+	n, err := rand.Read(c.SN[:])
+	if n != 16 || err != nil {
+		fmt.Println("crypto/rand on SN failed:", n, err)
+		return
+	}
+	n, err = rand.Read(c.MAC[:])
+	if n != 8 || err != nil {
+		fmt.Println("crypto/rand on MAC failed:", n, err)
+		return
+	}
+	log.Printf("Client started, mac: %v, sn: %v", hex.EncodeToString(c.MAC[:]), hex.EncodeToString(c.SN[:]))
 	c.Run()
 
 	//fmt.Println("Connect ok, we can send message now(eg: <cmd> <body>)")

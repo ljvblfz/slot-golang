@@ -382,7 +382,8 @@ func GetDeviceSession(sid string) ([]byte, error) {
 	RedixMu[_GetDeviceSession].Lock()
 	defer RedixMu[_GetDeviceSession].Unlock()
 
-	return r.Do("get", fmt.Sprintf(RedisSessionDevice, sid))
+	res, err := r.Do("get", fmt.Sprintf(RedisSessionDevice, sid))
+	return res.([]byte), err
 }
 
 func SetDeviceSession(sid string, expire int, data []byte) error {
@@ -415,6 +416,6 @@ func ExpireDeviceSession(sid string, expire int) error {
 	RedixMu[_ExpireDeviceSession].Lock()
 	defer RedixMu[_ExpireDeviceSession].Unlock()
 
-	_, err = r.Do("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
+	_, err := r.Do("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
 	return err
 }
