@@ -26,6 +26,7 @@ const (
 
 var (
 	ErrSessTimeout = fmt.Errorf("session timeout")
+	ErrSessPackSeq = fmt.Errorf("wrong package sequence number")
 )
 
 type Handler struct {
@@ -184,6 +185,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		if mlen < FrameHeaderLen+DataHeaderLen {
 			return fmt.Errorf("[protocol] invalid message length for protocol")
 		}
+		packNum := binary.LittleEndian.Uint16(t.Msg[2:4])
 		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+6:]))
 		// discard msg if found checking error
 		if t.Msg[FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+8) {
@@ -212,7 +214,8 @@ func (h *Handler) handle(t *UdpMsg) error {
 			if err != nil {
 				return fmt.Errorf("cmd: %X, sid: [%v], error: %v", c, sid, err)
 			}
-			err = h.VerifySession(sess)
+			glog.Infof("seq num: %v", packNum)
+			err = h.VerifySession(sess, packNum)
 			if err != nil {
 				if err == ErrSessTimeout {
 					gSessionList.RemoveUdpSession(sid)
@@ -225,6 +228,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		body := t.Msg[bodyIndex : bodyIndex+bodyLen]
 
 		output := make([]byte, bodyIndex, 128)
+		// copy same packNum into this ACK response
 		copy(output[:bodyIndex], t.Msg[:bodyIndex])
 
 		var res []byte
@@ -320,12 +324,23 @@ func (h *Handler) handle(t *UdpMsg) error {
 }
 
 // check pack number and other things in session here
-func (h *Handler) VerifySession(s *UdpSession) error {
+func (h *Handler) VerifySession(s *UdpSession, packNum uint16) error {
 	if time.Now().Sub(s.LastHeartbeat) > 2*kHeartBeat {
 		return ErrSessTimeout
 	}
-	// TODO pack number
+	// pack number
+	switch {
+	case packNum > s.Ridx:
+	case packNum < s.Ridx && packNum < 10 && s.Ridx > uint16(65530):
+	default:
+		return ErrSessPackSeq
+	}
+
 	// TODO cmd number
+
+	// all ok
+	s.Ridx = packNum
+
 	return nil
 }
 

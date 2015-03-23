@@ -126,6 +126,9 @@ type UdpSession struct {
 	Addr          string
 	LastHeartbeat time.Time
 
+	Sidx uint16 // 自身的包序号
+	Ridx uint16 // 收取的包序号
+
 	mu *sync.Mutex
 }
 
