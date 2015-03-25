@@ -33,9 +33,13 @@ type Client struct {
 	Name        string
 	ProduceTime time.Time
 	DeviceType  uint16
-	Socket      *net.UDPConn
-	ServerAddr  *net.UDPAddr
-	rch         chan []byte
+
+	Sidx uint16 // 自身的包序号
+	Ridx uint16 // 收取的包序号
+
+	Socket     *net.UDPConn
+	ServerAddr *net.UDPAddr
+	rch        chan []byte
 }
 
 type testCase struct {
@@ -80,14 +84,16 @@ func (c *Client) Run() {
 }
 
 func (c *Client) packBody(msgId uint16, sid []byte, body []byte) []byte {
-	transFrame := make([]byte, 24)
-	transFrame[0] = (transFrame[0] &^ 0x7) | 0x2
+	frameHeader := make([]byte, 24)
+	frameHeader[0] = (frameHeader[0] &^ 0x7) | 0x2
+	c.Sidx++
+	binary.LittleEndian.PutUint16(frameHeader[2:4], c.Sidx)
 
 	dataHeader := make([]byte, 10)
 	binary.LittleEndian.PutUint16(dataHeader[4:6], msgId)
 	binary.LittleEndian.PutUint16(dataHeader[6:8], uint16(len(body)))
 
-	output := append(transFrame, dataHeader...)
+	output := append(frameHeader, dataHeader...)
 	output = append(output, sid...)
 	output = append(output, body...)
 
@@ -98,6 +104,7 @@ func (c *Client) packBody(msgId uint16, sid []byte, body []byte) []byte {
 }
 
 func (c *Client) Query(request []byte) ([]byte, error) {
+	idx := binary.LittleEndian.Uint16(request[2:4])
 	n, err := c.Socket.WriteToUDP(request, c.ServerAddr)
 	if err != nil {
 		return nil, err
@@ -109,6 +116,10 @@ func (c *Client) Query(request []byte) ([]byte, error) {
 	// ignore 50 header bytes
 	if n < 50 {
 		return nil, fmt.Errorf("response less than header count(50 bytes)")
+	}
+	nidx := binary.LittleEndian.Uint16(request[2:4])
+	if nidx != idx {
+		return nil, fmt.Errorf("wrong seqNum in ACK message")
 	}
 	//log.Printf("rep: len(%d) %v", n, response[:n])
 	return response[50:n], err
