@@ -2,9 +2,10 @@
 package main
 
 import (
-	"crypto/rand"
+	//"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -22,6 +23,11 @@ const (
 	CmdDoBind           = uint16(0xE4)
 	CmdHeartBeat        = uint16(0xE5)
 	CmdSubDeviceOffline = uint16(0xE6)
+)
+
+var (
+	ErrAckTimeout = errors.New("ack timeout")
+	ErrNoReply    = errors.New("no response")
 )
 
 type Client struct {
@@ -47,6 +53,36 @@ type testCase struct {
 	fn   func() (map[string]interface{}, error)
 }
 
+func (c *Client) Run() {
+	go c.readLoop()
+
+	c.testBenchmark()
+	// testApi()
+}
+
+func (c *Client) testBenchmark() {
+	ret, err := c.doNewSession()
+	if err != nil || ret["code"] != uint32(0) {
+		log.Printf("NewSession return %v, error: %v", ret["code"], err)
+		return
+	}
+	ret, err = c.doRegister()
+	if (ret["code"] != uint32(0) && ret["code"] != uint32(1)) || err != nil {
+		log.Printf("Register return %v, error: %v", ret["code"], err)
+		return
+	}
+
+	t := time.NewTicker(time.Second * 3)
+	for range t.C {
+		ret, err = c.doHeartbeat()
+		if err != nil {
+			log.Printf("Hearbeat error: %v", ret["code"], err)
+			continue
+		}
+		log.Printf("Heartbeat: %v", ret["code"])
+	}
+}
+
 // get token
 // register
 // login
@@ -54,9 +90,7 @@ type testCase struct {
 // bind
 // heartbeat
 // offline sub
-func (c *Client) Run() {
-	go c.readLoop()
-
+func (c *Client) testApi() {
 	tests := []testCase{
 		testCase{"doNewSession", c.doNewSession},
 		testCase{"doRegister", c.doRegister},
@@ -104,25 +138,34 @@ func (c *Client) packBody(msgId uint16, sid []byte, body []byte) []byte {
 }
 
 func (c *Client) Query(request []byte) ([]byte, error) {
-	idx := binary.LittleEndian.Uint16(request[2:4])
-	n, err := c.Socket.WriteToUDP(request, c.ServerAddr)
-	if err != nil {
-		return nil, err
+	for retry := 0; retry < 5; retry++ {
+		idx := binary.LittleEndian.Uint16(request[2:4])
+		n, err := c.Socket.WriteToUDP(request, c.ServerAddr)
+		if err != nil {
+			return nil, err
+		}
+		if n != len(request) {
+			return nil, fmt.Errorf("not sent all message")
+		}
+		response, err := c.read()
+		if err == ErrAckTimeout {
+			c.Sidx++
+			binary.LittleEndian.PutUint16(request[2:4], c.Sidx)
+			time.Sleep(time.Second * 3)
+			continue
+		}
+		// ignore 50 header bytes
+		if n < 50 {
+			return nil, fmt.Errorf("response less than header count(50 bytes)")
+		}
+		nidx := binary.LittleEndian.Uint16(request[2:4])
+		if nidx != idx {
+			return nil, fmt.Errorf("wrong seqNum in ACK message")
+		}
+		//log.Printf("rep: len(%d) %v", n, response[:n])
+		return response[50:n], err
 	}
-	if n != len(request) {
-		return nil, fmt.Errorf("not sent all message")
-	}
-	response := c.read()
-	// ignore 50 header bytes
-	if n < 50 {
-		return nil, fmt.Errorf("response less than header count(50 bytes)")
-	}
-	nidx := binary.LittleEndian.Uint16(request[2:4])
-	if nidx != idx {
-		return nil, fmt.Errorf("wrong seqNum in ACK message")
-	}
-	//log.Printf("rep: len(%d) %v", n, response[:n])
-	return response[50:n], err
+	return nil, ErrNoReply
 }
 
 func (c *Client) doNewSession() (map[string]interface{}, error) {
@@ -255,8 +298,13 @@ func (c *Client) doOfflineSub() (map[string]interface{}, error) {
 	return m, nil
 }
 
-func (c *Client) read() []byte {
-	return <-c.rch
+func (c *Client) read() ([]byte, error) {
+	select {
+	case <-time.After(3 * time.Second):
+		return nil, ErrAckTimeout
+	case b := <-c.rch:
+		return b, nil
+	}
 }
 
 func (c *Client) readLoop() {
@@ -304,61 +352,18 @@ func main() {
 		ServerAddr:  server,
 		rch:         make(chan []byte, 128),
 	}
-	n, err := rand.Read(c.SN[:])
-	if n != 16 || err != nil {
-		fmt.Println("crypto/rand on SN failed:", n, err)
-		return
-	}
-	n, err = rand.Read(c.MAC[:])
-	if n != 8 || err != nil {
-		fmt.Println("crypto/rand on MAC failed:", n, err)
-		return
-	}
+	c.SN[15] = 1
+	c.MAC[7] = 1
+	//n, err := rand.Read(c.SN[:])
+	//if n != 16 || err != nil {
+	//	fmt.Println("crypto/rand on SN failed:", n, err)
+	//	return
+	//}
+	//n, err = rand.Read(c.MAC[:])
+	//if n != 8 || err != nil {
+	//	fmt.Println("crypto/rand on MAC failed:", n, err)
+	//	return
+	//}
 	log.Printf("Client started, mac: %v, sn: %v", hex.EncodeToString(c.MAC[:]), hex.EncodeToString(c.SN[:]))
 	c.Run()
-
-	//fmt.Println("Connect ok, we can send message now(eg: <cmd> <body>)")
-
-	//buf := make([]byte, 65536)
-	//cmd := byte(0)
-	//in := ""
-	//inBuf := make([]byte, 0, 256)
-	//for {
-	//	inBuf = inBuf[:0]
-	//	fmt.Print("send: ")
-	//	nin, err := fmt.Scanf("%d %v\n", &cmd, &in)
-	//	//fmt.Printf("args: %d, cmd: %v, msg: %v\n", nin, cmd, in)
-	//	if len(in) == 0 {
-	//		continue
-	//	}
-	//	inBuf = append(inBuf, cmd)
-	//	inBuf = append(inBuf, []byte(in)...)
-
-	//	fmt.Printf("sending...")
-	//	_, err = socket.Write(inBuf)
-	//	if err != nil {
-	//		if op, ok := err.(*net.OpError); ok && op.Temporary() {
-	//			fmt.Printf("error: sending failed on %v", err)
-	//			continue
-	//		}
-	//		fmt.Printf("fatal: sending failed on %v", err)
-	//		break
-	//	}
-	//	fmt.Printf("done\n")
-
-	//	n, r, err := socket.ReadFromUDP(buf)
-	//	if err != nil {
-	//		if op, ok := err.(*net.OpError); ok && op.Temporary() {
-	//			fmt.Printf("error: sending failed on %v", err)
-	//			continue
-	//		}
-	//		fmt.Printf("fatal: sending failed on %v", err)
-	//		break
-	//	}
-	//	if n == 0 {
-	//		fmt.Printf("error: read empty data from %v", r)
-	//		continue
-	//	}
-	//	fmt.Printf("read: code: %d, msg: %s\n", buf[0], string(buf[1:n]))
-	//}
 }
