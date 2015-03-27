@@ -214,7 +214,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 			if err != nil {
 				return fmt.Errorf("cmd: %X, sid: [%v], error: %v", c, sid, err)
 			}
-			glog.Infof("seq num: %v", packNum)
+			//glog.Infof("seq num: %v", packNum)
 			err = h.VerifySession(sess, packNum)
 			if err != nil {
 				if err == ErrSessTimeout {
@@ -386,18 +386,6 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	if len(body) < 31 {
 		return nil, fmt.Errorf("[onRegister] bad body length %d", len(body))
 	}
-	//sess, err := gSessionList.GetUdpSession(sid)
-	//if err != nil {
-	//	return nil, fmt.Errorf("[onRegister] sid: [%v], error: %v", sid, err)
-	//}
-	//defer gSessionList.ReleaseUdpSession(sess)
-	//err = h.VerifySession(sess)
-	//if err != nil {
-	//	if err == ErrSessTimeout {
-	//		gSessionList.RemoveUdpSession(sid)
-	//	}
-	//	return nil, fmt.Errorf("[onRegister] verify session error: %v", err)
-	//}
 
 	dv := body[0:2]
 	mac := base64.StdEncoding.EncodeToString(body[2:10])
@@ -453,20 +441,9 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 	if len(body) != 72 {
 		return nil, fmt.Errorf("[onLogin] bad body length %v", len(body))
 	}
-	//sess, err := gSessionList.GetUdpSession(sid)
-	//if err != nil {
-	//	return nil, fmt.Errorf("[onLogin] sid: [%v], error: %v", sid, err)
-	//}
-	//defer gSessionList.ReleaseUdpSession(sess)
-	//err = h.VerifySession(sess)
-	//if err != nil {
-	//	if err == ErrSessTimeout {
-	//		gSessionList.RemoveUdpSession(sid)
-	//	}
-	//	return nil, fmt.Errorf("[onLogin] verify session error: %v", err)
-	//}
 
 	mac := base64.StdEncoding.EncodeToString(body[0:8])
+	// C program sent cookie string without trim zero bytes
 	cookie := string(bytes.TrimRight(body[8:72], "\x00"))
 	t.Input["mac"] = mac
 	t.Input["cookie"] = cookie
@@ -490,19 +467,6 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 }
 
 func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	//sess, err := gSessionList.GetUdpSession(sid)
-	//if err != nil {
-	//	return nil, fmt.Errorf("[onRename] sid: [%v], error: %v", sid, err)
-	//}
-	//defer gSessionList.ReleaseUdpSession(sess)
-	//err = h.VerifySession(sess)
-	//if err != nil {
-	//	if err == ErrSessTimeout {
-	//		gSessionList.RemoveUdpSession(sid)
-	//	}
-	//	return nil, fmt.Errorf("[onRename] verify session error: %v", err)
-	//}
-
 	mac := base64.StdEncoding.EncodeToString(body[:8])
 	nameLen := body[8]
 	name := body[9 : 9+nameLen]
@@ -534,19 +498,6 @@ func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 
 // TODO 业务流程未定义
 func (h *Handler) onDoBind(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	//sess, err := gSessionList.GetUdpSession(sid)
-	//if err != nil {
-	//	return nil, fmt.Errorf("[onDoBind] sid: [%v], error: %v", sid, err)
-	//}
-	//defer gSessionList.ReleaseUdpSession(sess)
-	//err = h.VerifySession(sess)
-	//if err != nil {
-	//	if err == ErrSessTimeout {
-	//		gSessionList.RemoveUdpSession(sid)
-	//	}
-	//	return nil, fmt.Errorf("[onDoBind] verify session error: %v", err)
-	//}
-
 	uid := body[16:24]
 	result := binary.LittleEndian.Uint32(body[24:28])
 
@@ -574,21 +525,6 @@ func (h *Handler) onDoBind(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 }
 
 func (h *Handler) onHearBeat(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	//sess, err := gSessionList.GetUdpSession(sid)
-	//if err != nil {
-	//	return nil, fmt.Errorf("[onHearBeat] sid: [%v], error: %v", sid, err)
-	//}
-	//defer gSessionList.ReleaseUdpSession(sess)
-	//err = h.VerifySession(sess)
-	//if err != nil {
-	//	if err == ErrSessTimeout {
-	//		gSessionList.RemoveUdpSession(sid)
-	//	}
-	//	return nil, fmt.Errorf("[onHearBeat] verify session error: %v", err)
-	//}
-
-	//id := int64(binary.LittleEndian.Uint64(body[:8]))
-
 	err := sess.Update(t.Peer)
 
 	output := make([]byte, 4)

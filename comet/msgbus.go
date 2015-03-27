@@ -31,10 +31,11 @@ func (this *MsgBusServer) Dail() error {
 		tcpRemoteAddr *net.TCPAddr
 	)
 
-	tcpLocalAddr.IP = net.ParseIP(this.localAddr)
-	if tcpLocalAddr.IP == nil {
-		glog.Fatalf("Resovle Local TcpAddr [%s]\n", this.localAddr)
+	ip, err := net.ResolveIPAddr("ip", this.localAddr)
+	if err != nil || ip.IP == nil {
+		glog.Fatalf("Resovle Local TcpAddr [%s], error: %v\n", this.localAddr, err)
 	}
+	tcpLocalAddr.IP = ip.IP
 	//tcpLocalAddr, err = net.ResolveTCPAddr("tcp", this.localAddr)
 	//if err != nil {
 	//	glog.Errorf("Resovle Local TcpAddr [%s] [%s]\n", this.localAddr, err.Error())
