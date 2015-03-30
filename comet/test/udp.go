@@ -6,12 +6,16 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"cloud-base/atomic"
 	"cloud-socket/msgs"
 )
 
@@ -28,6 +32,9 @@ const (
 var (
 	ErrAckTimeout = errors.New("ack timeout")
 	ErrNoReply    = errors.New("no response")
+
+	gBenchDur time.Duration
+	gDone     atomic.AtomicInt64
 )
 
 type Client struct {
@@ -72,14 +79,25 @@ func (c *Client) testBenchmark() {
 		return
 	}
 
-	t := time.NewTicker(time.Second * 3)
+	go func() {
+		t := time.NewTicker(time.Second * 3)
+		last := time.Now()
+		for now := range t.C {
+			log.Printf("qps: %f", float64(gDone.Set(0))/now.Sub(last).Seconds())
+			last = now
+		}
+	}()
+	t := time.NewTicker(gBenchDur)
 	for range t.C {
 		ret, err = c.doHeartbeat()
 		if err != nil {
 			log.Printf("Hearbeat error: %v", ret["code"], err)
 			continue
 		}
-		log.Printf("Heartbeat: %v", ret["code"])
+		if ret["code"] == uint32(0) {
+			gDone.Inc()
+		}
+		//log.Printf("Heartbeat: %v", ret["code"])
 	}
 }
 
@@ -322,19 +340,28 @@ func (c *Client) readLoop() {
 }
 
 func main() {
+	flag.DurationVar(&gBenchDur, "d", time.Millisecond, "duration for bench")
+
+	var (
+		localAddr  = flag.String("l", "", "local udp address, eg: ip:port")
+		serverAddr = flag.String("h", "", "server udp address, eg: ip:port")
+		concurent  = flag.Int("c", 1, "concurent client number")
+	)
+	flag.Parse()
+
 	log.SetFlags(log.Flags() | log.Lshortfile)
-	if len(os.Args) < 2 {
-		fmt.Printf("Usage: %v server-ip:server-port local-ip:local-port\n", os.Args[0])
+	if len(*localAddr) == 0 || len(*serverAddr) == 0 {
+		flag.Usage()
 		return
 	}
-	server, err := net.ResolveUDPAddr("udp", os.Args[1])
+	server, err := net.ResolveUDPAddr("udp", *serverAddr)
 	if err != nil {
-		fmt.Printf("Resolve server addr %s failed: %v\n", os.Args[1], err)
+		fmt.Printf("Resolve server addr %s failed: %v\n", *serverAddr, err)
 		return
 	}
-	local, err := net.ResolveUDPAddr("udp", os.Args[2])
+	local, err := net.ResolveUDPAddr("udp", *localAddr)
 	if err != nil {
-		fmt.Printf("Resolve local addr %s failed: %v\n", os.Args[2], err)
+		fmt.Printf("Resolve local addr %s failed: %v\n", *localAddr, err)
 		return
 	}
 	socket, err := net.ListenUDP("udp", local)
@@ -343,27 +370,38 @@ func main() {
 		return
 	}
 
-	c := Client{
-		Name:        "deviceName",
-		ProduceTime: time.Now(),
-		DeviceType:  0xFFFE,
-		Sid:         make([]byte, 16),
-		Socket:      socket,
-		ServerAddr:  server,
-		rch:         make(chan []byte, 128),
+	for i := 0; i < *concurent; i++ {
+		c := Client{
+			Name:        "deviceName",
+			ProduceTime: time.Now(),
+			DeviceType:  0xFFFE,
+			Sid:         make([]byte, 16),
+			Socket:      socket,
+			ServerAddr:  server,
+			rch:         make(chan []byte, 128),
+		}
+		binary.LittleEndian.PutUint32(c.SN[11:15], uint32(i))
+		binary.LittleEndian.PutUint32(c.MAC[3:7], uint32(i))
+		//n, err := rand.Read(c.SN[:])
+		//if n != 16 || err != nil {
+		//	fmt.Println("crypto/rand on SN failed:", n, err)
+		//	return
+		//}
+		//n, err = rand.Read(c.MAC[:])
+		//if n != 8 || err != nil {
+		//	fmt.Println("crypto/rand on MAC failed:", n, err)
+		//	return
+		//}
+		log.Printf("Client started, mac: %v, sn: %v", hex.EncodeToString(c.MAC[:]), hex.EncodeToString(c.SN[:]))
+		go c.Run()
 	}
-	c.SN[15] = 1
-	c.MAC[7] = 1
-	//n, err := rand.Read(c.SN[:])
-	//if n != 16 || err != nil {
-	//	fmt.Println("crypto/rand on SN failed:", n, err)
-	//	return
-	//}
-	//n, err = rand.Read(c.MAC[:])
-	//if n != 8 || err != nil {
-	//	fmt.Println("crypto/rand on MAC failed:", n, err)
-	//	return
-	//}
-	log.Printf("Client started, mac: %v, sn: %v", hex.EncodeToString(c.MAC[:]), hex.EncodeToString(c.SN[:]))
-	c.Run()
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+
+	for sig := range c {
+		switch sig {
+		case syscall.SIGINT, syscall.SIGTERM:
+			return
+		}
+	}
 }
