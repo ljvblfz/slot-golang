@@ -2,19 +2,25 @@ package main
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"cloud-base/atomic"
-	"github.com/golang/glog"
 	"cloud-base/zk"
+	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
 )
 
 var (
-	zkConn		*zookeeper.Conn
-	zkConnOk	atomic.AtomicBoolean
-	zkReportCh	chan zookeeper.Event
-	zkRoot		string
+	zkConn     *zookeeper.Conn
+	zkConnOk   atomic.AtomicBoolean
+	zkReportCh chan zookeeper.Event
+	zkRoot     string
+
+	gPath string
+	gMu   sync.Mutex
+
+	gData []byte
 )
 
 func init() {
@@ -42,13 +48,15 @@ func InitZK(zkAddrs []string, rootName string) {
 		glog.Fatalf("[zk] root name for rabbitmq cannot be empty")
 	}
 	var (
-		err   error
-		conn  *zookeeper.Conn
+		err  error
+		conn *zookeeper.Conn
 	)
+
+	gData = []byte(fmt.Sprintf("%s,MsgTopic", gAddr))
 
 	zkRoot = "/" + rootName
 
-	conn, err = zk.Connect(zkAddrs, 60 * time.Second, onConnStatus)
+	conn, err = zk.Connect(zkAddrs, 60*time.Second, onConnStatus)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -58,13 +66,11 @@ func InitZK(zkAddrs []string, rootName string) {
 	if err != nil {
 		glog.Infof("[zk] create connection error: %v", err)
 	}
-
 	go handleEvent()
 }
 
 func handleEvent() {
-	glog.Infof("Loop started")
-	data := fmt.Sprintf("%s:%d,MsgTopic", gZkIp, gPort)
+	glog.Infof("Start watching zookeeper")
 
 	for event := range zkReportCh {
 		glog.Infof("Get zk event: %v", event)
@@ -74,17 +80,62 @@ func handleEvent() {
 		if !zkConnOk.Get() || event.State != zookeeper.StateHasSession {
 			continue
 		}
-		tpath, err := zkConn.Create(zkRoot + "/", []byte(data),
-			zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
-		if err != nil {
-			glog.Errorf("create comet node %s with data %s on zk failed: %v", zkRoot, data, err)
-			break
+
+		gMu.Lock()
+		tp := gPath
+		gMu.Unlock()
+		if len(tp) == 0 {
+			continue
 		}
-		if len(tpath) == 0 {
-			glog.Errorf("create empty comet node %s with data %s", zkRoot, data)
-			break
-		}
+
+		OnlineRmq()
+		//gMu.Lock()
+
+		//if gPath == "" {
+		//	gMu.Unlock()
+		//	continue
+		//}
+		//tpath, err := createNode()
+		//if err != nil {
+		//	gMu.Unlock()
+		//	glog.Error(err)
+		//	break
+		//}
+		//gPath = tpath
+		//gMu.Unlock()
 	}
+}
+
+func createNode() (string, error) {
+	tpath, err := zkConn.Create(zkRoot+"/", gData, zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
+	if err != nil {
+		return "", fmt.Errorf("create comet node %s with data %s on zk failed: %v", zkRoot, gData, err)
+	}
+	return tpath, nil
+}
+
+func OnlineRmq() {
+	gMu.Lock()
+	tpath, err := createNode()
+	if err != nil {
+		gMu.Unlock()
+		glog.Error(err)
+		return
+	}
+	gPath = tpath
+	gMu.Unlock()
+}
+
+func OfflineRmq() {
+	gMu.Lock()
+	if len(gPath) != 0 {
+		err := zkConn.Delete(gPath, -1)
+		if err != nil {
+			glog.Errorf("Delete node from zookeeper failed: %v", err)
+		}
+		gPath = ""
+	}
+	gMu.Unlock()
 }
 
 func CloseZK() {
