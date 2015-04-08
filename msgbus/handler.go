@@ -71,8 +71,6 @@ func MainHandle(srcMsg []byte) {
 			if err != nil {
 				statIncDownStreamOutBad()
 				glog.Errorf("[msg|ack] ACK to [%d] error: %v", id, err)
-			} else {
-				statIncRmqCount()
 			}
 
 			return
