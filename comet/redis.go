@@ -2,24 +2,28 @@ package main
 
 import (
 	"fmt"
-	"github.com/garyburd/redigo/redis"
-	"github.com/golang/glog"
 	"strconv"
 	"strings"
 	"sync"
+	//"time"
+
+	"github.com/garyburd/redigo/redis"
+	"github.com/golang/glog"
 )
 
 const (
-	HostUsers = "Host:%s" // (1, 2, 3)
-	PubKey    = "PubKey"
-	SubDeviceUsersKey = "PubDeviceUsers"
+	HostUsers            = "Host:%s" // (1, 2, 3)
+	PubKey               = "PubKey"
+	SubDeviceUsersKey    = "PubDeviceUsers"
 	SubModifiedPasswdKey = "PubModifiedPasswdUser"
 
-    RedisDeviceUsers = "bind:device"
+	RedisDeviceUsers = "bind:device"
 	RedisUserDevices = "bind:user"
 
 	// 用户正在使用的手机id
 	RedisUserMobiles = "user:mobileid"
+
+	RedisSessionDevice = "sess:dev:%s"
 )
 const (
 	_SetUserOnline = iota
@@ -30,6 +34,9 @@ const (
 	_ReturnMobileId
 	_SubDeviceUsersKey
 	_SubModifiedPasswd
+	_GetDeviceSession
+	_SetDeviceSession
+	_ExpireDeviceSession
 	_Max
 
 	// eval, script, 2, htable, id, PubKey, cometIP
@@ -64,13 +71,13 @@ var (
 	Redix   []redis.Conn
 	RedixMu []*sync.Mutex
 
-	ScriptOnline *redis.Script
-	ScriptOffline *redis.Script
+	ScriptOnline         *redis.Script
+	ScriptOffline        *redis.Script
 	ScriptSelectMobileId *redis.Script
 )
 var redisAddr string
 
-func initRedix(addr string) {
+func InitRedix(addr string) {
 	Redix = make([]redis.Conn, _Max)
 	RedixMu = make([]*sync.Mutex, _Max)
 
@@ -204,8 +211,8 @@ func GetDeviceUsers(deviceId int64) ([]int64, error) {
 		return nil, err
 	}
 	bindedIds := make([]int64, 0, len(users))
-    for _, user_id := range users {
-        u_id, err := strconv.ParseInt(user_id, 10, 64)
+	for _, user_id := range users {
+		u_id, err := strconv.ParseInt(user_id, 10, 64)
 		if err != nil {
 			continue
 		}
@@ -217,7 +224,6 @@ func GetDeviceUsers(deviceId int64) ([]int64, error) {
 	return bindedIds, err
 }
 
-
 func GetUserDevices(userId int64) ([]int64, error) {
 	r := Redix[_GetUserDevices]
 	RedixMu[_GetUserDevices].Lock()
@@ -228,8 +234,8 @@ func GetUserDevices(userId int64) ([]int64, error) {
 		return nil, err
 	}
 	bindedIds := make([]int64, 0, len(idStrs))
-    for _, v := range idStrs {
-        id, err := strconv.ParseInt(v, 10, 64)
+	for _, v := range idStrs {
+		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil {
 			continue
 		}
@@ -368,5 +374,48 @@ func ReturnMobileId(userId int64, mid byte) error {
 
 	_, err := r.Do("srem", fmt.Sprintf("%s:%d", RedisUserMobiles, userId), mid)
 
+	return err
+}
+
+func GetDeviceSession(sid string) ([]byte, error) {
+	r := Redix[_GetDeviceSession]
+	RedixMu[_GetDeviceSession].Lock()
+	defer RedixMu[_GetDeviceSession].Unlock()
+
+	res, err := r.Do("get", fmt.Sprintf(RedisSessionDevice, sid))
+	return res.([]byte), err
+}
+
+func SetDeviceSession(sid string, expire int, data []byte) error {
+	r := Redix[_SetDeviceSession]
+	RedixMu[_SetDeviceSession].Lock()
+	defer RedixMu[_SetDeviceSession].Unlock()
+
+	err := r.Send("set", fmt.Sprintf(RedisSessionDevice, sid), data)
+	if err != nil {
+		return err
+	}
+	err = r.Send("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
+	if err != nil {
+		return err
+	}
+	err = r.Flush()
+	if err != nil {
+		return err
+	}
+	_, err = r.Receive()
+	if err != nil {
+		return err
+	}
+	_, err = r.Receive()
+	return err
+}
+
+func ExpireDeviceSession(sid string, expire int) error {
+	r := Redix[_ExpireDeviceSession]
+	RedixMu[_ExpireDeviceSession].Lock()
+	defer RedixMu[_ExpireDeviceSession].Unlock()
+
+	_, err := r.Do("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
 	return err
 }

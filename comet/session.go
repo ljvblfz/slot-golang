@@ -1,11 +1,15 @@
 package main
 
 import (
-	"cloud-base/websocket"
+	"fmt"
+	"net"
+	"sync"
+	"time"
+
 	"cloud-base/hlist"
 	"cloud-socket/msgs"
 	"github.com/golang/glog"
-	"sync"
+	uuid "github.com/nu7hatch/gouuid"
 	//"strings"
 	//"strconv"
 )
@@ -13,6 +17,8 @@ import (
 var (
 	BlockSize int64 = 128
 	MapSize   int64 = 1024
+
+	ErrSessNotExist = fmt.Errorf("session not exists")
 )
 
 func getBlockID(uid int64) int64 {
@@ -25,11 +31,11 @@ func getBlockID(uid int64) int64 {
 
 type Session struct {
 	Uid       int64
-	BindedIds []int64	// Uid为手机:包含所有已绑定的板子id;Uid为板子时，包含所有已绑定的用户id
-	Conn      *websocket.Conn
+	BindedIds []int64 // Uid为手机:包含所有已绑定的板子id;Uid为板子时，包含所有已绑定的用户id
+	Conn      Connection
 }
 
-func NewSession(uid int64, bindedIds []int64, conn *websocket.Conn) *Session {
+func NewWsSession(uid int64, bindedIds []int64, conn Connection) *Session {
 	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn}
 }
 
@@ -40,7 +46,7 @@ func (this *Session) Close() {
 func (this *Session) isBinded(id int64) bool {
 	if this.Uid < 0 {
 		// 当this代表板子时，检查id是否属于已绑定用户下的手机
-		id = id - id % int64(kUseridUnit)
+		id = id - id%int64(kUseridUnit)
 	}
 	for _, v := range this.BindedIds {
 		if v == id {
@@ -58,7 +64,7 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 		} else {
 			for i, ci := 0, len(this.BindedIds); i < ci; i++ {
 				for j := int64(1); j < int64(kUseridUnit); j++ {
-					destIds = append(destIds, this.BindedIds[i] + j)
+					destIds = append(destIds, this.BindedIds[i]+j)
 				}
 			}
 		}
@@ -68,9 +74,9 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", this.Uid, toId, this.BindedIds)
 			return nil
 		}
-		if this.Uid < 0 && toId % int64(kUseridUnit) == 0 {
-			destIds = make([]int64, kUseridUnit - 1)
-			for i, c := 0, int(kUseridUnit - 1); i < c; i++ {
+		if this.Uid < 0 && toId%int64(kUseridUnit) == 0 {
+			destIds = make([]int64, kUseridUnit-1)
+			for i, c := 0, int(kUseridUnit-1); i < c; i++ {
 				toId++
 				destIds[i] = toId
 			}
@@ -88,7 +94,7 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 //	for {
 //		done := false
 //		select {
-//		case s := <-this.TaskChan:
+//		case s := <-this.MsgChan:
 //			newIds = s
 //			idsChanged = true
 //		default:
@@ -115,38 +121,146 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 //	}
 //}
 
+type UdpSession struct {
+	Session
+	Addr          string
+	LastHeartbeat time.Time
+
+	Sidx uint16 // 自身的包序号
+	Ridx uint16 // 收取的包序号
+
+	mu *sync.Mutex
+}
+
+func NewUdpSession(conn Connection, mac []byte, sn []byte, peerAddr string) *UdpSession {
+	return &UdpSession{
+		Session: Session{
+			Conn: conn,
+		},
+		Addr:          peerAddr,
+		LastHeartbeat: time.Now(),
+		mu:            &sync.Mutex{},
+	}
+}
+
+// Caller should have lock on UdpSession
+func (s *UdpSession) Update(addr *net.UDPAddr) error {
+	if s.Addr != addr.String() {
+		s.Addr = addr.String()
+	}
+	s.LastHeartbeat = time.Now()
+	return nil
+}
+
 type SessionList struct {
-	mu []*sync.Mutex
-	kv []map[int64]*hlist.Hlist
+	onlined   []map[int64]*hlist.Hlist
+	onlinedMu []*sync.Mutex
+
+	udps   map[uuid.UUID]*UdpSession // key: unique token
+	d2s    map[int64]uuid.UUID       // reverse relation in udps
+	udpsMu *sync.RWMutex
 }
 
 func InitSessionList() *SessionList {
 	sl := &SessionList{
-		mu: make([]*sync.Mutex, BlockSize),
-		kv: make([]map[int64]*hlist.Hlist, BlockSize),
+		onlined:   make([]map[int64]*hlist.Hlist, BlockSize),
+		onlinedMu: make([]*sync.Mutex, BlockSize),
+		udps:      make(map[uuid.UUID]*UdpSession),
+		d2s:       make(map[int64]uuid.UUID),
+		udpsMu:    &sync.RWMutex{},
 	}
 
 	for i := int64(0); i < BlockSize; i++ {
-		sl.mu[i] = &sync.Mutex{}
-		sl.kv[i] = make(map[int64]*hlist.Hlist, MapSize)
+		sl.onlined[i] = make(map[int64]*hlist.Hlist, MapSize)
+		sl.onlinedMu[i] = &sync.Mutex{}
 	}
 	return sl
 }
 
+func (this *SessionList) AddUdpSession(sid *uuid.UUID, s *UdpSession) error {
+	this.udpsMu.Lock()
+	defer this.udpsMu.Unlock()
+	if exist, ok := this.udps[*sid]; ok {
+		return fmt.Errorf("session [%s] exists with connection: %v", sid, exist.Conn)
+	}
+	this.udps[*sid] = s
+	this.d2s[s.Uid] = *sid
+	return nil
+}
+
+func (this *SessionList) RemoveUdpSession(sid *uuid.UUID) error {
+	this.udpsMu.Lock()
+	defer this.udpsMu.Unlock()
+	exist, ok := this.udps[*sid]
+	if !ok {
+		return ErrSessNotExist
+	}
+	delete(this.udps, *sid)
+	delete(this.d2s, exist.Uid)
+	return nil
+}
+
+func (this *SessionList) GetDeviceIdAndDstIds(sid *uuid.UUID) (int64, []int64, error) {
+	this.udpsMu.RLock()
+	defer this.udpsMu.RUnlock()
+	s, ok := this.udps[*sid]
+	if !ok {
+		return 0, nil, fmt.Errorf("session [%s] not exists", sid)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	binds := s.Session.calcDestIds(0)
+	return s.Session.Uid, binds, nil
+}
+
+func (this *SessionList) GetUdpSession(sid *uuid.UUID) (*UdpSession, error) {
+	this.udpsMu.RLock()
+	s, ok := this.udps[*sid]
+	if !ok {
+		this.udpsMu.RUnlock()
+		return nil, fmt.Errorf("session [%s] not exists", sid)
+	}
+	s.mu.Lock()
+
+	this.udpsMu.RUnlock()
+
+	return s, nil
+}
+
+func (this *SessionList) ReleaseUdpSession(s *UdpSession) error {
+	s.mu.Unlock()
+	return nil
+}
+
+//func (this *SessionList) UpdateSession(sid *uuid.UUID, id int64, addr *net.UDPAddr) error {
+//	this.udpsMu.Lock()
+//	defer this.udpsMu.Unlock()
+//	s, ok := this.udps[*sid]
+//	if !ok {
+//		return fmt.Errorf("session [%s] not exists", sid)
+//	}
+//	s.mu.Lock()
+//	defer s.mu.Unlock()
+//	if s.Uid != id {
+//		return fmt.Errorf("session [%s] not match with id: %v", sid, id)
+//	}
+//	return s.update(addr)
+//}
+
 func (this *SessionList) AddSession(s *Session) *hlist.Element {
 	// 能想到的错误返回值是同一用户，同一mac多次登录，但这可能不算错误
 	blockId := getBlockID(s.Uid)
-	this.mu[blockId].Lock()
-	h, ok := this.kv[blockId][s.Uid]
+	this.onlinedMu[blockId].Lock()
+	h, ok := this.onlined[blockId][s.Uid]
 	var e *hlist.Element
 	if ok {
 		e = h.PushFront(s)
 	} else {
 		h = hlist.New()
-		this.kv[blockId][s.Uid] = h
+		this.onlined[blockId][s.Uid] = h
 		e = h.PushFront(s)
 	}
-	this.mu[blockId].Unlock()
+	this.onlinedMu[blockId].Unlock()
 	return e
 }
 
@@ -156,21 +270,21 @@ func (this *SessionList) RemoveSession(e *hlist.Element) {
 	if s.Conn != nil {
 		s.Close()
 	}
-	this.mu[blockId].Lock()
-	list, ok := this.kv[blockId][s.Uid]
+	this.onlinedMu[blockId].Lock()
+	list, ok := this.onlined[blockId][s.Uid]
 	if ok {
 		list.Remove(e)
 		if list.Len() == 0 {
-			delete(this.kv[blockId], s.Uid)
+			delete(this.onlined[blockId], s.Uid)
 		}
 	}
-	this.mu[blockId].Unlock()
+	this.onlinedMu[blockId].Unlock()
 }
 
 func (this *SessionList) GetBindedIds(session *Session, ids *[]int64) {
 	blockId := getBlockID(session.Uid)
 
-	lock := this.mu[blockId]
+	lock := this.onlinedMu[blockId]
 	lock.Lock()
 	*ids = session.BindedIds
 	lock.Unlock()
@@ -178,13 +292,13 @@ func (this *SessionList) GetBindedIds(session *Session, ids *[]int64) {
 
 func (this *SessionList) CalcDestIds(s *Session, toId int64) []int64 {
 	blockId := getBlockID(s.Uid)
-	this.mu[blockId].Lock()
-	_, ok := this.kv[blockId][s.Uid]
+	this.onlinedMu[blockId].Lock()
+	_, ok := this.onlined[blockId][s.Uid]
 	var ids []int64
 	if ok {
 		ids = s.calcDestIds(toId)
 	}
-	this.mu[blockId].Unlock()
+	this.onlinedMu[blockId].Unlock()
 	return ids
 }
 
@@ -193,9 +307,9 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 	// add or remove deviceId from mobileIds session
 	for _, mid := range mids {
 		blockId := getBlockID(mid)
-		lock := this.mu[blockId]
+		lock := this.onlinedMu[blockId]
 		lock.Lock()
-		if list, ok := this.kv[blockId][mid]; ok {
+		if list, ok := this.onlined[blockId][mid]; ok {
 			for e := list.Front(); e != nil; e = e.Next() {
 				s, ok := e.Value.(*Session)
 				if !ok {
@@ -226,10 +340,10 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 
 	// add or remove mobile id from deviceId's session
 	blockId := getBlockID(deviceId)
-	lock := this.mu[blockId]
+	lock := this.onlinedMu[blockId]
 	foundDevice := false
 	lock.Lock()
-	if list, ok := this.kv[blockId][deviceId]; ok {
+	if list, ok := this.onlined[blockId][deviceId]; ok {
 		foundDevice = true
 		for e := list.Front(); e != nil; e = e.Next() {
 			s, ok := e.Value.(*Session)
@@ -273,17 +387,17 @@ func (this *SessionList) KickOffline(uid int64) {
 	kickMsg := msgs.NewAppMsg(0, 0, msgs.MIDKickout)
 	for _, id := range ids {
 		blockId := getBlockID(id)
-		lock := this.mu[blockId]
+		lock := this.onlinedMu[blockId]
 		kickMsg.SetDstId(id)
 		msgBody := kickMsg.MarshalBytes()
 		lock.Lock()
-		if list, ok := this.kv[blockId][id]; ok {
+		if list, ok := this.onlined[blockId][id]; ok {
 			for e := list.Front(); e != nil; e = e.Next() {
 				s, ok := e.Value.(*Session)
 				if !ok {
 					break
 				}
-				err := websocket.Message.Send(s.Conn, msgBody)
+				_, err := s.Conn.Send(msgBody)
 				if err != nil && glog.V(2) {
 					glog.Warningf("[kick|send] mid: %d, user: %d, error: %v", s.Uid, id, err)
 				}
@@ -301,10 +415,10 @@ func (this *SessionList) KickOffline(uid int64) {
 func (this *SessionList) PushMsg(uid int64, data []byte) {
 	blockId := getBlockID(uid)
 
-	lock := this.mu[blockId]
+	lock := this.onlinedMu[blockId]
 	lock.Lock()
 
-	if list, ok := this.kv[blockId][uid]; ok {
+	if list, ok := this.onlined[blockId][uid]; ok {
 		for e := list.Front(); e != nil; e = e.Next() {
 			if session, ok := e.Value.(*Session); !ok {
 				lock.Unlock()
@@ -313,7 +427,7 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 				if len(data) < 24 {
 					glog.Errorf("[invalid data] [uid: %d] length less than 24 (%d)%v", uid, len(data), data)
 				}
-				err := websocket.Message.Send(session.Conn, data)
+				_, err := session.Conn.Send(data)
 				if err != nil {
 					// 不要在这里移除用户session，用户的websocket连接会处理这个情况
 					if glog.V(1) {
@@ -327,4 +441,19 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 		}
 	}
 	lock.Unlock()
+}
+
+func (this *SessionList) PushUdpMsg(uid int64, msg []byte) error {
+	this.udpsMu.RLock()
+	defer this.udpsMu.RUnlock()
+
+	sid, ok := this.d2s[uid]
+	if !ok {
+		return fmt.Errorf("no such device")
+	}
+	if this.udps[sid].Conn == nil {
+		return fmt.Errorf("nil connection")
+	}
+	_, err := this.udps[sid].Conn.Send(msg)
+	return err
 }
