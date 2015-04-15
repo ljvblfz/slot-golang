@@ -28,7 +28,6 @@ func main() {
 	cType := flag.String("type", "ws", "comet服务类型，可选:1)ws, 2)udp, 3)ws,udp")
 
 	addr := flag.String("hudp", ":7999", "UDP监听地址")
-	handlerCount := flag.Int("hc", 1024, "处理消息的线程数")
 	apiUrl := flag.String("hurl", "", "HTTP服务器根URL(eg: http://127.0.0.1:8080)")
 	serveUdpAddr := flag.String("hhttp", ":8081", "UDP服务器提供HTTP服务的地址")
 
@@ -77,8 +76,9 @@ func main() {
 				glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
 			}
 
-			handler := NewHandler(*handlerCount, *apiUrl, *serveUdpAddr)
+			handler := NewHandler(*apiUrl, *serveUdpAddr)
 			server := NewUdpServer(*addr, handler)
+			handler.Server = server
 			go server.RunLoop()
 
 		default:

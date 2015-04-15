@@ -32,12 +32,10 @@ type Handler struct {
 	Server     *UdpServer
 	listenAddr string
 
-	kApiUrls    map[uint16]string
-	workerCount int
-	msgQueue    chan *UdpMsg
+	kApiUrls map[uint16]string
 }
 
-func NewHandler(workerCount int, apiServerUrl string, listenAddr string) *Handler {
+func NewHandler(apiServerUrl string, listenAddr string) *Handler {
 	urls := make(map[uint16]string)
 	urls[CmdRegister] = apiServerUrl + UrlRegister
 	urls[CmdLogin] = apiServerUrl + UrlLogin
@@ -45,26 +43,10 @@ func NewHandler(workerCount int, apiServerUrl string, listenAddr string) *Handle
 	urls[CmdRename] = apiServerUrl + UrlChangeName
 
 	h := &Handler{
-		listenAddr:  listenAddr,
-		kApiUrls:    urls,
-		workerCount: workerCount,
-		msgQueue:    make(chan *UdpMsg, 1024*128),
+		listenAddr: listenAddr,
+		kApiUrls:   urls,
 	}
 	return h
-}
-
-func (h *Handler) Go() {
-	for i := 0; i < h.workerCount; i++ {
-		go h.processer()
-	}
-	// 现在业务流程不使用这个绑定步骤
-	//mux := http.NewServeMux()
-	//mux.HandleFunc("/api/binding", h.OnBindingRequest)
-	//go func() {
-	//	if e := http.ListenAndServe(h.listenAddr, mux); e != nil {
-	//		glog.Errorf("[handler|server] ListenAndServe error: %v", e)
-	//	}
-	//}()
 }
 
 // accept request from api server
@@ -153,18 +135,16 @@ func (h *Handler) Process(peer *net.UDPAddr, msg []byte) {
 		Output: make(map[string]string),
 	}
 
-	h.msgQueue <- t
+	go h.process(t)
 }
 
-func (h *Handler) processer() {
-	for t := range h.msgQueue {
-		err := h.handle(t)
-		if err != nil {
-			if glog.V(1) {
-				glog.Errorf("[handler] handle msg (len[%d] %v) error: %v", len(t.Msg), t.Msg, err)
-			} else {
-				glog.Errorf("[handler] handle msg (len[%d] %v) error: %v", len(t.Msg), t.Msg[:5], err)
-			}
+func (h *Handler) process(t *UdpMsg) {
+	err := h.handle(t)
+	if err != nil {
+		if glog.V(1) {
+			glog.Errorf("[handler] handle msg (len[%d] %v) error: %v", len(t.Msg), t.Msg, err)
+		} else {
+			glog.Errorf("[handler] handle msg (len[%d] %v) error: %v", len(t.Msg), t.Msg[:5], err)
 		}
 	}
 }

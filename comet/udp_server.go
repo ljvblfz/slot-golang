@@ -24,8 +24,6 @@ func NewUdpServer(addr string, handler *Handler) *UdpServer {
 		handler:  handler,
 		socketMu: &sync.Mutex{},
 	}
-	handler.Server = s
-	handler.Go()
 	return s
 }
 
