@@ -1,15 +1,11 @@
 package main
 
 import (
-	"fmt"
-	"net"
 	"sync"
-	"time"
 
 	"cloud-base/hlist"
 	"cloud-socket/msgs"
 	"github.com/golang/glog"
-	uuid "github.com/nu7hatch/gouuid"
 	//"strings"
 	//"strconv"
 )
@@ -17,8 +13,6 @@ import (
 var (
 	BlockSize int64 = 128
 	MapSize   int64 = 1024
-
-	ErrSessNotExist = fmt.Errorf("session not exists")
 )
 
 func getBlockID(uid int64) int64 {
@@ -121,53 +115,15 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 //	}
 //}
 
-type UdpSession struct {
-	Session
-	Addr          string
-	LastHeartbeat time.Time
-
-	Sidx uint16 // 自身的包序号
-	Ridx uint16 // 收取的包序号
-
-	mu *sync.Mutex
-}
-
-func NewUdpSession(conn Connection, mac []byte, sn []byte, peerAddr string) *UdpSession {
-	return &UdpSession{
-		Session: Session{
-			Conn: conn,
-		},
-		Addr:          peerAddr,
-		LastHeartbeat: time.Now(),
-		mu:            &sync.Mutex{},
-	}
-}
-
-// Caller should have lock on UdpSession
-func (s *UdpSession) Update(addr *net.UDPAddr) error {
-	if s.Addr != addr.String() {
-		s.Addr = addr.String()
-	}
-	s.LastHeartbeat = time.Now()
-	return nil
-}
-
 type SessionList struct {
 	onlined   []map[int64]*hlist.Hlist
 	onlinedMu []*sync.Mutex
-
-	udps   map[uuid.UUID]*UdpSession // key: unique token
-	d2s    map[int64]uuid.UUID       // reverse relation in udps
-	udpsMu *sync.RWMutex
 }
 
 func InitSessionList() *SessionList {
 	sl := &SessionList{
 		onlined:   make([]map[int64]*hlist.Hlist, BlockSize),
 		onlinedMu: make([]*sync.Mutex, BlockSize),
-		udps:      make(map[uuid.UUID]*UdpSession),
-		d2s:       make(map[int64]uuid.UUID),
-		udpsMu:    &sync.RWMutex{},
 	}
 
 	for i := int64(0); i < BlockSize; i++ {
@@ -176,76 +132,6 @@ func InitSessionList() *SessionList {
 	}
 	return sl
 }
-
-func (this *SessionList) AddUdpSession(sid *uuid.UUID, s *UdpSession) error {
-	this.udpsMu.Lock()
-	defer this.udpsMu.Unlock()
-	if exist, ok := this.udps[*sid]; ok {
-		return fmt.Errorf("session [%s] exists with connection: %v", sid, exist.Conn)
-	}
-	this.udps[*sid] = s
-	this.d2s[s.Uid] = *sid
-	return nil
-}
-
-func (this *SessionList) RemoveUdpSession(sid *uuid.UUID) error {
-	this.udpsMu.Lock()
-	defer this.udpsMu.Unlock()
-	exist, ok := this.udps[*sid]
-	if !ok {
-		return ErrSessNotExist
-	}
-	delete(this.udps, *sid)
-	delete(this.d2s, exist.Uid)
-	return nil
-}
-
-func (this *SessionList) GetDeviceIdAndDstIds(sid *uuid.UUID) (int64, []int64, error) {
-	this.udpsMu.RLock()
-	defer this.udpsMu.RUnlock()
-	s, ok := this.udps[*sid]
-	if !ok {
-		return 0, nil, fmt.Errorf("session [%s] not exists", sid)
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	binds := s.Session.calcDestIds(0)
-	return s.Session.Uid, binds, nil
-}
-
-func (this *SessionList) GetUdpSession(sid *uuid.UUID) (*UdpSession, error) {
-	this.udpsMu.RLock()
-	s, ok := this.udps[*sid]
-	if !ok {
-		this.udpsMu.RUnlock()
-		return nil, fmt.Errorf("session [%s] not exists", sid)
-	}
-	s.mu.Lock()
-
-	this.udpsMu.RUnlock()
-
-	return s, nil
-}
-
-func (this *SessionList) ReleaseUdpSession(s *UdpSession) error {
-	s.mu.Unlock()
-	return nil
-}
-
-//func (this *SessionList) UpdateSession(sid *uuid.UUID, id int64, addr *net.UDPAddr) error {
-//	this.udpsMu.Lock()
-//	defer this.udpsMu.Unlock()
-//	s, ok := this.udps[*sid]
-//	if !ok {
-//		return fmt.Errorf("session [%s] not exists", sid)
-//	}
-//	s.mu.Lock()
-//	defer s.mu.Unlock()
-//	if s.Uid != id {
-//		return fmt.Errorf("session [%s] not match with id: %v", sid, id)
-//	}
-//	return s.update(addr)
-//}
 
 func (this *SessionList) AddSession(s *Session) *hlist.Element {
 	// 能想到的错误返回值是同一用户，同一mac多次登录，但这可能不算错误
@@ -441,19 +327,4 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 		}
 	}
 	lock.Unlock()
-}
-
-func (this *SessionList) PushUdpMsg(uid int64, msg []byte) error {
-	this.udpsMu.RLock()
-	defer this.udpsMu.RUnlock()
-
-	sid, ok := this.d2s[uid]
-	if !ok {
-		return fmt.Errorf("no such device")
-	}
-	if this.udps[sid].Conn == nil {
-		return fmt.Errorf("nil connection")
-	}
-	_, err := this.udps[sid].Conn.Send(msg)
-	return err
 }

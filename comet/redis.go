@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
+	"github.com/hjr265/redsync.go/redsync"
 )
 
 const (
@@ -23,7 +25,8 @@ const (
 	// 用户正在使用的手机id
 	RedisUserMobiles = "user:mobileid"
 
-	RedisSessionDevice = "sess:dev:%s"
+	RedisSessionDevice       = "sess:dev:%s"
+	RedisSessionDeviceLocker = "sess:dev:%s:locker"
 )
 const (
 	_SetUserOnline = iota
@@ -36,7 +39,8 @@ const (
 	_SubModifiedPasswd
 	_GetDeviceSession
 	_SetDeviceSession
-	_ExpireDeviceSession
+	_DeleteDeviceSession
+	//_ExpireDeviceSession
 	_Max
 
 	// eval, script, 2, htable, id, PubKey, cometIP
@@ -71,6 +75,9 @@ var (
 	Redix   []redis.Conn
 	RedixMu []*sync.Mutex
 
+	RedixAddr     string
+	RedixAddrPool []net.Addr
+
 	ScriptOnline         *redis.Script
 	ScriptOffline        *redis.Script
 	ScriptSelectMobileId *redis.Script
@@ -90,6 +97,14 @@ func InitRedix(addr string) {
 		RedixMu[i] = &sync.Mutex{}
 		glog.Infof("RedisPool[%d] Init OK on %s\n", i, addr)
 	}
+
+	RedixAddr = addr
+	netAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		panic(err)
+	}
+	RedixAddrPool = []net.Addr{netAddr}
+
 	ScriptSelectMobileId = redis.NewScript(1, _scriptSelectMobileId)
 	ScriptSelectMobileId.Load(Redix[_SelectMobileId])
 	ScriptOnline = redis.NewScript(2, _scriptOnline)
@@ -377,16 +392,28 @@ func ReturnMobileId(userId int64, mid byte) error {
 	return err
 }
 
-func GetDeviceSession(sid string) ([]byte, error) {
+type Locker interface {
+	Lock() error
+	Unlock()
+}
+
+func NewDeviceSessionLocker(sid string) Locker {
+	locker, err := redsync.NewMutex(fmt.Sprintf(RedisSessionDeviceLocker, sid), RedixAddrPool)
+	if err != nil {
+		panic(err)
+	}
+	return locker
+}
+
+func GetDeviceSession(sid string) (string, error) {
 	r := Redix[_GetDeviceSession]
 	RedixMu[_GetDeviceSession].Lock()
 	defer RedixMu[_GetDeviceSession].Unlock()
 
-	res, err := r.Do("get", fmt.Sprintf(RedisSessionDevice, sid))
-	return res.([]byte), err
+	return redis.String(r.Do("get", fmt.Sprintf(RedisSessionDevice, sid)))
 }
 
-func SetDeviceSession(sid string, expire int, data []byte) error {
+func SetDeviceSession(sid string, expire int, data string) error {
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
@@ -411,11 +438,20 @@ func SetDeviceSession(sid string, expire int, data []byte) error {
 	return err
 }
 
-func ExpireDeviceSession(sid string, expire int) error {
-	r := Redix[_ExpireDeviceSession]
-	RedixMu[_ExpireDeviceSession].Lock()
-	defer RedixMu[_ExpireDeviceSession].Unlock()
+func DeleteDeviceSession(sid string) error {
+	r := Redix[_DeleteDeviceSession]
+	RedixMu[_DeleteDeviceSession].Lock()
+	defer RedixMu[_DeleteDeviceSession].Unlock()
 
-	_, err := r.Do("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
+	_, err := r.Do("del", fmt.Sprintf(RedisSessionDevice, sid))
 	return err
 }
+
+//func ExpireDeviceSession(sid string, expire int) error {
+//	r := Redix[_ExpireDeviceSession]
+//	RedixMu[_ExpireDeviceSession].Lock()
+//	defer RedixMu[_ExpireDeviceSession].Unlock()
+//
+//	_, err := r.Do("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
+//	return err
+//}

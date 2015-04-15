@@ -1,10 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
-	//"encoding/json"
-	"bytes"
 	"fmt"
 	"net"
 	"net/http"
@@ -58,83 +57,85 @@ func (h *Handler) Go() {
 	for i := 0; i < h.workerCount; i++ {
 		go h.processer()
 	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/binding", h.OnBindingRequest)
-	go func() {
-		if e := http.ListenAndServe(h.listenAddr, mux); e != nil {
-			glog.Errorf("[handler|server] ListenAndServe error: %v", e)
-		}
-	}()
+	// 现在业务流程不使用这个绑定步骤
+	//mux := http.NewServeMux()
+	//mux.HandleFunc("/api/binding", h.OnBindingRequest)
+	//go func() {
+	//	if e := http.ListenAndServe(h.listenAddr, mux); e != nil {
+	//		glog.Errorf("[handler|server] ListenAndServe error: %v", e)
+	//	}
+	//}()
 }
 
 // accept request from api server
-func (h *Handler) OnBindingRequest(w http.ResponseWriter, r *http.Request) {
-	var (
-		deviceId  int64
-		userId    int64
-		deviceMac []byte
-
-		seqNum    uint16
-		cmdSeqNum uint8
-	)
-	// TODO get seqNum and cmdSeqNum
-
-	// make a message
-	req := make([]byte, FrameHeaderLen+DataHeaderLen+16)
-	// frame header
-	frame := req[:FrameHeaderLen]
-	frame[0] = 1<<7 | 0x2
-	binary.LittleEndian.PutUint16(frame[2:4], seqNum)
-	binary.LittleEndian.PutUint32(frame[4:8], uint32(time.Now().Unix()))
-	binary.LittleEndian.PutUint64(frame[8:16], uint64(deviceId))
-	// data header
-	header := req[FrameHeaderLen : FrameHeaderLen+DataHeaderLen]
-	header[1] = cmdSeqNum
-	binary.LittleEndian.PutUint16(header[4:6], 0xE4)
-	header[6] = msgs.ChecksumHeader(req, FrameHeaderLen+8)
-	// data body
-	copy(req[FrameHeaderLen+DataHeaderLen:], deviceMac)
-	binary.LittleEndian.PutUint64(req[FrameHeaderLen+DataHeaderLen+8:], uint64(userId))
-
-	//header[7] = msgs.ChecksumBody(req[FrameHeaderLen+DataHeaderLen:], 16)
-
-	// send message
-
-	err := gSessionList.PushUdpMsg(deviceId, req)
-	if err != nil {
-		w.WriteHeader(200)
-		// timeout
-		w.Write([]byte("{\"status\":2}"))
-		return
-	}
-
-	c := make(chan error)
-	err = AppendBindingRequest(c, deviceId, userId)
-	if err != nil {
-		w.WriteHeader(200)
-		w.Write([]byte("{\"status\":3}"))
-		return
-	}
-	// wait for async response on a chan
-	select {
-	case err := <-c:
-		if err != nil {
-			// if write response into HTTP
-			w.WriteHeader(200)
-			// parse
-			w.Write([]byte("{\"status\":4}"))
-		} else {
-			// if write response into HTTP
-			w.WriteHeader(200)
-			// parse
-			w.Write([]byte("{\"status\":0}"))
-		}
-	case <-time.After(2 * time.Minute):
-		w.WriteHeader(200)
-		// timeout
-		w.Write([]byte("{\"status\":1}"))
-	}
-}
+// DON'T need it any more
+//func (h *Handler) OnBindingRequest(w http.ResponseWriter, r *http.Request) {
+//	var (
+//		deviceId  int64
+//		userId    int64
+//		deviceMac []byte
+//
+//		seqNum    uint16
+//		cmdSeqNum uint8
+//	)
+//	// TODO get seqNum and cmdSeqNum
+//
+//	// make a message
+//	req := make([]byte, FrameHeaderLen+DataHeaderLen+16)
+//	// frame header
+//	frame := req[:FrameHeaderLen]
+//	frame[0] = 1<<7 | 0x2
+//	binary.LittleEndian.PutUint16(frame[2:4], seqNum)
+//	binary.LittleEndian.PutUint32(frame[4:8], uint32(time.Now().Unix()))
+//	binary.LittleEndian.PutUint64(frame[8:16], uint64(deviceId))
+//	// data header
+//	header := req[FrameHeaderLen : FrameHeaderLen+DataHeaderLen]
+//	header[1] = cmdSeqNum
+//	binary.LittleEndian.PutUint16(header[4:6], 0xE4)
+//	header[6] = msgs.ChecksumHeader(req, FrameHeaderLen+8)
+//	// data body
+//	copy(req[FrameHeaderLen+DataHeaderLen:], deviceMac)
+//	binary.LittleEndian.PutUint64(req[FrameHeaderLen+DataHeaderLen+8:], uint64(userId))
+//
+//	//header[7] = msgs.ChecksumBody(req[FrameHeaderLen+DataHeaderLen:], 16)
+//
+//	// send message
+//
+//	err := gUdpSessions.PushMsg(deviceId, req)
+//	if err != nil {
+//		w.WriteHeader(200)
+//		// timeout
+//		w.Write([]byte("{\"status\":2}"))
+//		return
+//	}
+//
+//	c := make(chan error)
+//	err = AppendBindingRequest(c, deviceId, userId)
+//	if err != nil {
+//		w.WriteHeader(200)
+//		w.Write([]byte("{\"status\":3}"))
+//		return
+//	}
+//	// wait for async response on a chan
+//	select {
+//	case err := <-c:
+//		if err != nil {
+//			// if write response into HTTP
+//			w.WriteHeader(200)
+//			// parse
+//			w.Write([]byte("{\"status\":4}"))
+//		} else {
+//			// if write response into HTTP
+//			w.WriteHeader(200)
+//			// parse
+//			w.Write([]byte("{\"status\":0}"))
+//		}
+//	case <-time.After(2 * time.Minute):
+//		w.WriteHeader(200)
+//		// timeout
+//		w.Write([]byte("{\"status\":1}"))
+//	}
+//}
 
 // 获取指定设备的外网UDP地址
 // TODO 暂未实现
@@ -198,9 +199,10 @@ func (h *Handler) handle(t *UdpMsg) error {
 		c := binary.LittleEndian.Uint16(t.Msg[28:30])
 
 		var (
-			sess *UdpSession
-			sid  *uuid.UUID
-			err  error
+			sess   *UdpSession
+			sid    *uuid.UUID
+			err    error
+			locker Locker
 		)
 		// 34 = FrameHeaderLen + 10
 		sidIndex := 34
@@ -210,17 +212,22 @@ func (h *Handler) handle(t *UdpMsg) error {
 				return fmt.Errorf("parse session id error: %v", err)
 			}
 
-			sess, err = gSessionList.GetUdpSession(sid)
+			locker = NewDeviceSessionLocker(sid.String())
+			err = locker.Lock()
 			if err != nil {
+				return fmt.Errorf("lock session id [%s] failed: %v", sid, err)
+			}
+			sess, err = gUdpSessions.GetSession(sid)
+			if err != nil {
+				locker.Unlock()
 				return fmt.Errorf("cmd: %X, sid: [%v], error: %v", c, sid, err)
 			}
-			//glog.Infof("seq num: %v", packNum)
 			err = h.VerifySession(sess, packNum)
 			if err != nil {
 				if err == ErrSessTimeout {
-					gSessionList.RemoveUdpSession(sid)
+					gUdpSessions.DeleteSession(sid)
 				}
-				gSessionList.ReleaseUdpSession(sess)
+				locker.Unlock()
 				return fmt.Errorf("cmd: %X, verify session error: %v", c, err)
 			}
 		}
@@ -268,7 +275,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		default:
 			glog.Warningf("invalid command type %v", c)
 			if sess != nil {
-				gSessionList.ReleaseUdpSession(sess)
+				locker.Unlock()
 			}
 			// don't reply on wrong msgid
 
@@ -287,7 +294,8 @@ func (h *Handler) handle(t *UdpMsg) error {
 			return nil
 		}
 		if sess != nil {
-			gSessionList.ReleaseUdpSession(sess)
+			gUdpSessions.SaveSession(sid, sess)
+			locker.Unlock()
 		}
 		if err != nil {
 			if glog.V(1) {
@@ -362,22 +370,23 @@ func (h *Handler) onGetToken(t *UdpMsg, body []byte) ([]byte, error) {
 	// }
 
 	sid := NewUuid()
-	s := NewUdpSession(NewUdpConnection(h.Server.socket, t.Peer), mac, sn, t.Peer.String())
-	err = gSessionList.AddUdpSession(sid, s)
+	locker := NewDeviceSessionLocker(sid.String())
+	err = locker.Lock()
 	if err != nil {
-		glog.Fatalf("[onGetToken] AddSession failed: %v", err)
+		e := fmt.Errorf("Lock redis failed on new session id [%s], error: %v", sid, err)
+		glog.Error(e)
+		return nil, e
+	}
+	defer locker.Unlock()
+
+	s := NewUdpSession(t.Peer)
+	err = gUdpSessions.SaveSession(sid, s)
+	if err != nil {
+		glog.Fatalf("[onGetToken] SaveSession failed: %v", err)
 	}
 	output := make([]byte, 20)
 	binary.LittleEndian.PutUint32(output[:4], 0)
 	copy(output[4:20], sid[:16])
-
-	// TODO we don't need save session into redis now
-	//sd, err := json.Marshal(s)
-	//if err != nil {
-	//	glog.Errorf("Marshal session into json failed: %v", err)
-	//	return nil, err
-	//}
-	//err = SetDeviceSession(sid, sd)
 
 	return output, nil
 }
@@ -540,29 +549,4 @@ func (h *Handler) onHearBeat(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 // TODO 下线消息的业务逻辑还未详细定义
 func (h *Handler) onSubDeviceOffline(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
 	return nil, fmt.Errorf("[onSubDeviceOffline]NOT IMPLEMENTED API: onSubDeviceOffline")
-	//err := h.VerifySession(sid)
-	//if err != nil {
-	//	if err == ErrSessTimeout {
-	//		gSessionList.RemoveUdpSession(sid)
-	//	}
-	//	return nil, fmt.Errorf("[session] verify session error: %v", err)
-	//}
-
-	//mac := int64(binary.LittleEndian.Uint64(body[:8]))
-	//id, dstIds, err := gSessionList.GetDeviceIdAndDstIds(sid)
-	//if err == nil {
-	//	// TODO
-	//	//destIds := gSessionList.GetDeviceIdAndBinding(mac)
-	//	offlineMsg := msgs.NewAppMsg(0, id, msgs.MIDOffline)
-	//	GMsgBusManager.Push2Backend(id, destIds, offlineMsg.MarshalBytes())
-	//}
-
-	//output := make([]byte, 12)
-	//copy(output[4:12], body[:8])
-	//if err != nil {
-	//	binary.LittleEndian.PutUint32(output[16:20], 1)
-	//} else {
-	//	binary.LittleEndian.PutUint32(output[16:20], 0)
-	//}
-	//return output, nil
 }
