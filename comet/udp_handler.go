@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,7 +25,7 @@ const (
 )
 
 var (
-	ErrSessTimeout = fmt.Errorf("session timeout")
+	//ErrSessTimeout = fmt.Errorf("session timeout")
 	ErrSessPackSeq = fmt.Errorf("wrong package sequence number")
 )
 
@@ -122,6 +123,29 @@ func NewHandler(apiServerUrl string, listenAddr string) *Handler {
 // 获取指定设备的外网UDP地址
 // TODO 暂未实现
 func (h *Handler) OnBackendGetDeviceAddr(w http.ResponseWriter, r *http.Request) {
+	if strings.ToUpper(r.Method) != "GET" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	r.ParseForm()
+	id, err := strconv.ParseInt(r.FormValue("deviceId"), 10, 64)
+	if err != nil {
+		w.WriteHeader(404)
+		return
+	}
+	addr, err := GetDeviceAddr(id)
+	response := make(map[string]interface{})
+	if err == nil {
+		response["status"] = 0
+		response["deviceAddr"] = addr
+	} else {
+		response["status"] = 1
+	}
+	buf, err := json.Marshal(response)
+	if err != nil {
+		glog.Fatal("Marshal response %v to json failed: %v", response, err)
+	}
+	w.Write(buf)
 }
 
 func (h *Handler) Process(peer *net.UDPAddr, msg []byte) {
@@ -204,9 +228,9 @@ func (h *Handler) handle(t *UdpMsg) error {
 			}
 			err = h.VerifySession(sess, packNum)
 			if err != nil {
-				if err == ErrSessTimeout {
-					gUdpSessions.DeleteSession(sid)
-				}
+				//if err == ErrSessTimeout {
+				//	gUdpSessions.DeleteSession(sid)
+				//}
 				locker.Unlock()
 				return fmt.Errorf("cmd: %X, verify session error: %v", c, err)
 			}
@@ -313,9 +337,10 @@ func (h *Handler) handle(t *UdpMsg) error {
 
 // check pack number and other things in session here
 func (h *Handler) VerifySession(s *UdpSession, packNum uint16) error {
-	if time.Now().Sub(s.LastHeartbeat) > 2*kHeartBeat {
-		return ErrSessTimeout
-	}
+	// 现在由redis负责超时
+	//if time.Now().Sub(s.LastHeartbeat) > 2*kHeartBeat {
+	//	return ErrSessTimeout
+	//}
 	// pack number
 	switch {
 	case packNum > s.Ridx:
@@ -421,6 +446,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 				return output, nil
 			}
 			binary.LittleEndian.PutUint64(output[4:12], uint64(id))
+			sess.DeviceId = id
 		}
 	}
 	return output, nil

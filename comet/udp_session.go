@@ -20,21 +20,31 @@ var (
 
 type UdpSession struct {
 	//Session
-	Sid           *uuid.UUID   `json:"Sid"`
+	Sid           string       `json:"-"`
+	DeviceId      int64        `json:"DeviceID"`
 	Addr          *net.UDPAddr `json:"Addr"`
 	LastHeartbeat time.Time    `json:"LastHeartbeat"`
 
 	// 自身的包序号
-	Sidx uint16 `json:"Sidx"`
+	// 暂时不使用到该包序号，只有当服务器会主动推送消息给设备时才需要
+	//Sidx uint16 `json:"Sidx"`
 
 	// 收取的包序号
 	Ridx uint16 `json:"Ridx"`
 }
 
 func NewUdpSession(addr *net.UDPAddr) *UdpSession {
-	u := &UdpSession{
-		Addr:          addr,
-		LastHeartbeat: time.Now(),
+	var u *UdpSession
+	if addr == nil {
+		u = &UdpSession{
+			Addr:          &net.UDPAddr{},
+			LastHeartbeat: time.Now(),
+		}
+	} else {
+		u = &UdpSession{
+			Addr:          addr,
+			LastHeartbeat: time.Now(),
+		}
 	}
 	return u
 }
@@ -68,28 +78,33 @@ func NewUdpSessionList() *UdpSessionList {
 	return sl
 }
 
+// Get existed session from DB
 func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 	// Get from DB
 	data, err := GetDeviceSession(sid.String())
 	if err != nil {
 		return nil, err
 	}
-	s := &UdpSession{}
+	s := &UdpSession{
+		Addr: &net.UDPAddr{},
+	}
 	err = s.FromString(data)
 	if err != nil {
 		return nil, err
 	}
+	s.Sid = sid.String()
 	return s, nil
 }
 
-func (this *UdpSessionList) DeleteSession(sid *uuid.UUID) error {
-	// Delete from DB
-	return DeleteDeviceSession(sid.String())
-}
+// Delete from DB
+// 现在还没有需要调用该接口的地方
+//func (this *UdpSessionList) DeleteSession(sid *uuid.UUID) error {
+//	return DeleteDeviceSession(sid.String())
+//}
 
+// Save to DB
 func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
-	// Save to DB
-	return SetDeviceSession(sid.String(), gUdpTimeout, s.String())
+	return SetDeviceSession(sid.String(), gUdpTimeout, s.String(), s.DeviceId, s.Addr)
 }
 
 //func (this *UdpSessionList) PushMsg(uid int64, msg []byte) error {

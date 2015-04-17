@@ -26,6 +26,7 @@ const (
 	RedisUserMobiles = "user:mobileid"
 
 	RedisSessionDevice       = "sess:dev:%s"
+	RedisSessionDeviceAddr   = "sess:dev:addr:%d"
 	RedisSessionDeviceLocker = "sess:dev:%s:locker"
 )
 const (
@@ -413,7 +414,7 @@ func GetDeviceSession(sid string) (string, error) {
 	return redis.String(r.Do("get", fmt.Sprintf(RedisSessionDevice, sid)))
 }
 
-func SetDeviceSession(sid string, expire int, data string) error {
+func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr *net.UDPAddr) error {
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
@@ -426,6 +427,16 @@ func SetDeviceSession(sid string, expire int, data string) error {
 	if err != nil {
 		return err
 	}
+	if deviceId == 0 {
+		err = r.Send("set", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), addr.String())
+		if err != nil {
+			return err
+		}
+		err = r.Send("expire", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), expire)
+		if err != nil {
+			return err
+		}
+	}
 	err = r.Flush()
 	if err != nil {
 		return err
@@ -435,7 +446,25 @@ func SetDeviceSession(sid string, expire int, data string) error {
 		return err
 	}
 	_, err = r.Receive()
+	if err != nil {
+		return err
+	}
+	if deviceId == 0 {
+		_, err = r.Receive()
+		if err != nil {
+			return err
+		}
+		_, err = r.Receive()
+	}
 	return err
+}
+
+func GetDeviceAddr(deviceId int64) (string, error) {
+	r := Redix[_SetDeviceSession]
+	RedixMu[_SetDeviceSession].Lock()
+	defer RedixMu[_SetDeviceSession].Unlock()
+
+	return redis.String(r.Do("get", fmt.Sprintf(RedisSessionDeviceAddr, deviceId)))
 }
 
 func DeleteDeviceSession(sid string) error {
