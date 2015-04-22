@@ -427,7 +427,9 @@ func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr 
 	if err != nil {
 		return err
 	}
-	if deviceId == 0 {
+	// 对于刚刚建立，还未调用过注册或登录接口的会话，deviceId是0，不要为这个状态的
+	// session设置deviceId和UDP地址的表映射，因为这个状态的session还不满足P2P的业务功能
+	if deviceId != 0 {
 		err = r.Send("set", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), addr.String())
 		if err != nil {
 			return err
@@ -449,7 +451,7 @@ func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr 
 	if err != nil {
 		return err
 	}
-	if deviceId == 0 {
+	if deviceId != 0 {
 		_, err = r.Receive()
 		if err != nil {
 			return err
