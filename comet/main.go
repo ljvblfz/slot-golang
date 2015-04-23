@@ -12,12 +12,20 @@ import (
 	"github.com/golang/glog"
 )
 
+type CometType int
+
+const (
+	CometWs CometType = iota
+	CometUdp
+)
+
 var (
 	gSessionList *SessionList
 	gLocalAddr   string
 	gStatusAddr  string
 	gMsgbusRoot  string
 	gCometRoot   string
+	gCometType   CometType
 )
 
 func main() {
@@ -25,7 +33,7 @@ func main() {
 	if os.Getenv("GOMAXPROCS") == "" {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
-	cType := flag.String("type", "ws", "comet服务类型，可选:1)ws, 2)udp, 3)ws,udp")
+	cType := flag.String("type", "ws", "comet服务类型，可选:1)ws, 2)udp")
 
 	addr := flag.String("hudp", ":7999", "UDP监听地址")
 	apiUrl := flag.String("hurl", "", "HTTP服务器根URL(eg: http://127.0.0.1:8080)")
@@ -47,6 +55,13 @@ func main() {
 		return
 	}
 
+	switch *cType {
+	case "ws":
+		gCometType = CometWs
+	case "udp":
+		gCometType = CometUdp
+	}
+
 	defer glog.Flush()
 
 	glog.CopyStandardLogTo("INFO")
@@ -62,28 +77,26 @@ func main() {
 
 	gSessionList = InitSessionList()
 
-	types := strings.Split(*cType, ",")
-	for _, t := range types {
-		switch t {
-		case "ws":
-			if len(gLocalAddr) == 0 {
-				glog.Fatalf("必须指定本机IP")
-			}
-			StartHttp(strings.Split(*lHost, ","))
-
-		case "udp":
-			if _, e := url.Parse(*apiUrl); len(*apiUrl) == 0 || e != nil {
-				glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
-			}
-
-			handler := NewHandler(*apiUrl, *serveUdpAddr)
-			server := NewUdpServer(*addr, handler)
-			handler.Server = server
-			go server.RunLoop()
-
-		default:
-			glog.Fatalf("undifined argument for \"-type\"")
+	switch gCometType {
+	case CometWs:
+		if len(gLocalAddr) == 0 {
+			glog.Fatalf("必须指定本机IP")
 		}
+		StartHttp(strings.Split(*lHost, ","))
+
+	case CometUdp:
+		if _, e := url.Parse(*apiUrl); len(*apiUrl) == 0 || e != nil {
+			glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
+		}
+
+		handler := NewHandler(*apiUrl, *serveUdpAddr)
+		server := NewUdpServer(*addr, handler)
+		handler.Server = server
+		go handler.Run()
+		go server.RunLoop()
+
+	default:
+		glog.Fatalf("undifined argument for \"-type\"")
 	}
 
 	handleSignal(func() {

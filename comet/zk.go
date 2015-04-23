@@ -4,26 +4,26 @@ import (
 	"fmt"
 	"time"
 
-	"cloud-base/zk"
 	"cloud-base/atomic"
+	"cloud-base/zk"
+	stat "github.com/c9s/goprocinfo/linux"
+	"github.com/dream0411/procinfo"
 	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
-	"github.com/dream0411/procinfo"
-	stat "github.com/c9s/goprocinfo/linux"
 )
 
 var (
-	zkConn		*zookeeper.Conn
-	zkConnOk	atomic.AtomicBoolean
+	zkConn   *zookeeper.Conn
+	zkConnOk atomic.AtomicBoolean
 	//zkReportCh	chan cometStat
-	zkReportCh	chan zookeeper.Event
-	zkCometRoot	string
+	zkReportCh  chan zookeeper.Event
+	zkCometRoot string
 )
 
 type cometStat struct {
-	Ok		bool
-	Path	string
-	Url		string
+	Ok   bool
+	Path string
+	Url  string
 }
 
 func init() {
@@ -61,7 +61,7 @@ func InitZK(zkAddrs []string, msgbusName string, cometName string) {
 		addr  string
 		watch <-chan zookeeper.Event
 	)
-	conn, err = zk.Connect(zkAddrs, 60 * time.Second, onConnStatus)
+	conn, err = zk.Connect(zkAddrs, 60*time.Second, onConnStatus)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func InitZK(zkAddrs []string, msgbusName string, cometName string) {
 		}
 		var addrs []string = make([]string, 0, len(nodes))
 		for _, n := range nodes {
-			addr, err = zk.GetNodeData(conn, zkMsgBusRoot + "/" + n)
+			addr, err = zk.GetNodeData(conn, zkMsgBusRoot+"/"+n)
 			if err != nil {
 				glog.Errorf("[%s] cannot get", addr)
 				continue
@@ -143,10 +143,15 @@ func ReportUsage() {
 				if !zkConnOk.Get() {
 					break
 				}
-				urls := GetCometUrl()
+				var urls []string
+				if gCometType == CometWs {
+					urls = GetCometWsUrl()
+				} else if gCometType == CometUdp {
+					urls = append(urls, GetCometUdpUrl())
+				}
 				for _, u := range urls {
-					data := calcZkData(u, 0.0, 0, 0, 0)
-					tpath, err := zkConn.Create(zkCometRoot + "/", []byte(data),
+					data := onWriteZkData(u, 0.0, 0, 0, 0)
+					tpath, err := zkConn.Create(zkCometRoot+"/", []byte(data),
 						zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
 					if err != nil {
 						glog.Errorf("[zk|comet] create comet node %s with data %s on zk failed: %v", zkCometRoot, data, err)
@@ -188,7 +193,7 @@ func ReportUsage() {
 			//glog.Infof("[stat|log] get cpu: %f", cpu.Usage)
 
 		case t := <-ticker.C:
-			if t.Sub(lastTickerTime) > time.Second * 3 {
+			if t.Sub(lastTickerTime) > time.Second*3 {
 				glog.Warningf("[stat|ticker] ticker happened too late, %v after last time", t.Sub(lastTickerTime))
 			}
 			lastTickerTime = t
@@ -211,7 +216,7 @@ func ReportUsage() {
 					glog.Warning("[zk] write zk but conn was broken")
 					continue
 				}
-				data := calcZkData(s.Url, cpuUsage, memTotal, memUsage, onlineCount)
+				data := onWriteZkData(s.Url, cpuUsage, memTotal, memUsage, onlineCount)
 				_, err := zkConn.Set(path, []byte(data), -1)
 				if err != nil {
 					glog.Errorf("[zk|comet] set zk node [%s] with comet's status [%s] failed: %v", s.Path, data, err)
@@ -222,6 +227,6 @@ func ReportUsage() {
 	}
 }
 
-func calcZkData(url string, cpu float64, memTotal uint64, memUsage uint64, online uint64) string {
+func onWriteZkData(url string, cpu float64, memTotal uint64, memUsage uint64, online uint64) string {
 	return fmt.Sprintf("%s,%f,%d,%d,%d", url, cpu, memTotal, memUsage, online)
 }

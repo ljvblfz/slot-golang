@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"cloud-base/atomic"
 	"cloud-socket/msgs"
 	"github.com/golang/glog"
 	uuid "github.com/nu7hatch/gouuid"
@@ -22,12 +23,20 @@ const (
 	DataHeaderLen  = 16
 
 	kHeartBeat = 20 * time.Second
+
+	kApiGetUAddr = "/api/device/udpaddr"
 )
 
 var (
 	//ErrSessTimeout = fmt.Errorf("session timeout")
 	ErrSessPackSeq = fmt.Errorf("wrong package sequence number")
+
+	udpUrlPort atomic.AtomicInt32
 )
+
+func GetCometUdpUrl() string {
+	return fmt.Sprintf("http://%s:%d%s", gLocalAddr, udpUrlPort.Get(), kApiGetUAddr)
+}
 
 type Handler struct {
 	Server     *UdpServer
@@ -43,11 +52,32 @@ func NewHandler(apiServerUrl string, listenAddr string) *Handler {
 	urls[CmdDoBind] = apiServerUrl + UrlBind
 	urls[CmdRename] = apiServerUrl + UrlChangeName
 
+	_, p, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		glog.Fatalf("Parse TCP address for API server failed: %v", err)
+	}
+	port, _ := strconv.Atoi(p)
+	udpUrlPort.Set(int32(port))
 	h := &Handler{
 		listenAddr: listenAddr,
 		kApiUrls:   urls,
 	}
 	return h
+}
+
+func (h *Handler) Run() {
+	mux := http.NewServeMux()
+	mux.HandleFunc(kApiGetUAddr, h.OnBackendGetDeviceAddr)
+
+	s := &http.Server{
+		Addr:    h.listenAddr,
+		Handler: mux,
+	}
+	glog.Infof("Start API server on %s", s.Addr)
+	err := s.ListenAndServe()
+	if err != nil {
+		glog.Fatalf("Start HTTP for UDP server failed: %v", err)
+	}
 }
 
 // accept request from api server
@@ -127,7 +157,6 @@ func (h *Handler) OnBackendGetDeviceAddr(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	r.ParseForm()
 	id, err := strconv.ParseInt(r.FormValue("deviceId"), 10, 64)
 	if err != nil {
 		w.WriteHeader(404)
@@ -145,6 +174,7 @@ func (h *Handler) OnBackendGetDeviceAddr(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		glog.Fatal("Marshal response %v to json failed: %v", response, err)
 	}
+	w.Header()["Content-Type"] = []string{"application/json; charset=utf-8"}
 	w.Write(buf)
 }
 

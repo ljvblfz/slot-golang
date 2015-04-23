@@ -73,7 +73,7 @@ type ErrorCode struct {
 }
 
 // 获取本comet可接受websocket连接的所有地址
-func GetCometUrl() []string {
+func GetCometWsUrl() []string {
 	urlLock.Lock()
 	urls := make([]string, len(websocketUrl))
 	copy(urls, websocketUrl)
