@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
+	"github.com/hjr265/redsync.go/redsync"
 )
 
 const (
@@ -23,7 +25,9 @@ const (
 	// 用户正在使用的手机id
 	RedisUserMobiles = "user:mobileid"
 
-	RedisSessionDevice = "sess:dev:%s"
+	RedisSessionDevice       = "sess:dev:%s"
+	RedisSessionDeviceAddr   = "sess:dev:addr:%d"
+	RedisSessionDeviceLocker = "sess:dev:%s:locker"
 )
 const (
 	_SetUserOnline = iota
@@ -36,7 +40,8 @@ const (
 	_SubModifiedPasswd
 	_GetDeviceSession
 	_SetDeviceSession
-	_ExpireDeviceSession
+	_DeleteDeviceSession
+	//_ExpireDeviceSession
 	_Max
 
 	// eval, script, 2, htable, id, PubKey, cometIP
@@ -71,6 +76,9 @@ var (
 	Redix   []redis.Conn
 	RedixMu []*sync.Mutex
 
+	RedixAddr     string
+	RedixAddrPool []net.Addr
+
 	ScriptOnline         *redis.Script
 	ScriptOffline        *redis.Script
 	ScriptSelectMobileId *redis.Script
@@ -90,6 +98,14 @@ func InitRedix(addr string) {
 		RedixMu[i] = &sync.Mutex{}
 		glog.Infof("RedisPool[%d] Init OK on %s\n", i, addr)
 	}
+
+	RedixAddr = addr
+	netAddr, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		panic(err)
+	}
+	RedixAddrPool = []net.Addr{netAddr}
+
 	ScriptSelectMobileId = redis.NewScript(1, _scriptSelectMobileId)
 	ScriptSelectMobileId.Load(Redix[_SelectMobileId])
 	ScriptOnline = redis.NewScript(2, _scriptOnline)
@@ -377,16 +393,28 @@ func ReturnMobileId(userId int64, mid byte) error {
 	return err
 }
 
-func GetDeviceSession(sid string) ([]byte, error) {
+type Locker interface {
+	Lock() error
+	Unlock()
+}
+
+func NewDeviceSessionLocker(sid string) Locker {
+	locker, err := redsync.NewMutex(fmt.Sprintf(RedisSessionDeviceLocker, sid), RedixAddrPool)
+	if err != nil {
+		panic(err)
+	}
+	return locker
+}
+
+func GetDeviceSession(sid string) (string, error) {
 	r := Redix[_GetDeviceSession]
 	RedixMu[_GetDeviceSession].Lock()
 	defer RedixMu[_GetDeviceSession].Unlock()
 
-	res, err := r.Do("get", fmt.Sprintf(RedisSessionDevice, sid))
-	return res.([]byte), err
+	return redis.String(r.Do("get", fmt.Sprintf(RedisSessionDevice, sid)))
 }
 
-func SetDeviceSession(sid string, expire int, data []byte) error {
+func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr *net.UDPAddr) error {
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
@@ -399,6 +427,18 @@ func SetDeviceSession(sid string, expire int, data []byte) error {
 	if err != nil {
 		return err
 	}
+	// 对于刚刚建立，还未调用过注册或登录接口的会话，deviceId是0，不要为这个状态的
+	// session设置deviceId和UDP地址的表映射，因为这个状态的session还不满足P2P的业务功能
+	if deviceId != 0 {
+		err = r.Send("set", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), addr.String())
+		if err != nil {
+			return err
+		}
+		err = r.Send("expire", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), expire)
+		if err != nil {
+			return err
+		}
+	}
 	err = r.Flush()
 	if err != nil {
 		return err
@@ -408,14 +448,41 @@ func SetDeviceSession(sid string, expire int, data []byte) error {
 		return err
 	}
 	_, err = r.Receive()
+	if err != nil {
+		return err
+	}
+	if deviceId != 0 {
+		_, err = r.Receive()
+		if err != nil {
+			return err
+		}
+		_, err = r.Receive()
+	}
 	return err
 }
 
-func ExpireDeviceSession(sid string, expire int) error {
-	r := Redix[_ExpireDeviceSession]
-	RedixMu[_ExpireDeviceSession].Lock()
-	defer RedixMu[_ExpireDeviceSession].Unlock()
+func GetDeviceAddr(deviceId int64) (string, error) {
+	r := Redix[_SetDeviceSession]
+	RedixMu[_SetDeviceSession].Lock()
+	defer RedixMu[_SetDeviceSession].Unlock()
 
-	_, err := r.Do("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
+	return redis.String(r.Do("get", fmt.Sprintf(RedisSessionDeviceAddr, deviceId)))
+}
+
+func DeleteDeviceSession(sid string) error {
+	r := Redix[_DeleteDeviceSession]
+	RedixMu[_DeleteDeviceSession].Lock()
+	defer RedixMu[_DeleteDeviceSession].Unlock()
+
+	_, err := r.Do("del", fmt.Sprintf(RedisSessionDevice, sid))
 	return err
 }
+
+//func ExpireDeviceSession(sid string, expire int) error {
+//	r := Redix[_ExpireDeviceSession]
+//	RedixMu[_ExpireDeviceSession].Lock()
+//	defer RedixMu[_ExpireDeviceSession].Unlock()
+//
+//	_, err := r.Do("expire", fmt.Sprintf(RedisSessionDevice, sid), expire)
+//	return err
+//}

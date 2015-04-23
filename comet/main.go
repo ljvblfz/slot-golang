@@ -12,12 +12,20 @@ import (
 	"github.com/golang/glog"
 )
 
+type CometType int
+
+const (
+	CometWs CometType = iota
+	CometUdp
+)
+
 var (
 	gSessionList *SessionList
 	gLocalAddr   string
 	gStatusAddr  string
 	gMsgbusRoot  string
 	gCometRoot   string
+	gCometType   CometType
 )
 
 func main() {
@@ -25,10 +33,9 @@ func main() {
 	if os.Getenv("GOMAXPROCS") == "" {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
-	cType := flag.String("type", "ws", "comet服务类型，可选:1)ws, 2)udp, 3)ws,udp")
+	cType := flag.String("type", "ws", "comet服务类型，可选:1)ws, 2)udp")
 
 	addr := flag.String("hudp", ":7999", "UDP监听地址")
-	handlerCount := flag.Int("hc", 1024, "处理消息的线程数")
 	apiUrl := flag.String("hurl", "", "HTTP服务器根URL(eg: http://127.0.0.1:8080)")
 	serveUdpAddr := flag.String("hhttp", ":8081", "UDP服务器提供HTTP服务的地址")
 
@@ -39,12 +46,20 @@ func main() {
 	flag.StringVar(&gStatusAddr, "sh", ":29999", "程序状态http服务端口")
 	flag.StringVar(&gMsgbusRoot, "zkroot", "MsgBusServers", "zookeeper服务中msgbus所在的根节点名")
 	flag.StringVar(&gCometRoot, "zkrootc", "CometServers", "zookeeper服务中comet所在的根节点名")
+	flag.IntVar(&gUdpTimeout, "uto", gUdpTimeout, "客户端UDP端口失效时长（秒)")
 	printVer := flag.Bool("ver", false, "Comet版本")
 	flag.Parse()
 
 	if *printVer {
 		fmt.Printf("Comet %s, 插座后台代理服务器.\n", ver.Version)
 		return
+	}
+
+	switch *cType {
+	case "ws":
+		gCometType = CometWs
+	case "udp":
+		gCometType = CometUdp
 	}
 
 	defer glog.Flush()
@@ -62,27 +77,26 @@ func main() {
 
 	gSessionList = InitSessionList()
 
-	types := strings.Split(*cType, ",")
-	for _, t := range types {
-		switch t {
-		case "ws":
-			if len(gLocalAddr) == 0 {
-				glog.Fatalf("必须指定本机IP")
-			}
-			StartHttp(strings.Split(*lHost, ","))
-
-		case "udp":
-			if _, e := url.Parse(*apiUrl); len(*apiUrl) == 0 || e != nil {
-				glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
-			}
-
-			handler := NewHandler(*handlerCount, *apiUrl, *serveUdpAddr)
-			server := NewUdpServer(*addr, handler)
-			go server.RunLoop()
-
-		default:
-			glog.Fatalf("undifined argument for \"-type\"")
+	switch gCometType {
+	case CometWs:
+		if len(gLocalAddr) == 0 {
+			glog.Fatalf("必须指定本机IP")
 		}
+		StartHttp(strings.Split(*lHost, ","))
+
+	case CometUdp:
+		if _, e := url.Parse(*apiUrl); len(*apiUrl) == 0 || e != nil {
+			glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
+		}
+
+		handler := NewHandler(*apiUrl, *serveUdpAddr)
+		server := NewUdpServer(*addr, handler)
+		handler.Server = server
+		go handler.Run()
+		go server.RunLoop()
+
+	default:
+		glog.Fatalf("undifined argument for \"-type\"")
 	}
 
 	handleSignal(func() {

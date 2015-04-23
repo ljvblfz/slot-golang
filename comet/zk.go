@@ -143,9 +143,14 @@ func ReportUsage() {
 				if !zkConnOk.Get() {
 					break
 				}
-				urls := GetCometUrl()
+				var urls []string
+				if gCometType == CometWs {
+					urls = GetCometWsUrl()
+				} else if gCometType == CometUdp {
+					urls = append(urls, GetCometUdpUrl())
+				}
 				for _, u := range urls {
-					data := calcZkData(u, 0.0, 0, 0, 0)
+					data := onWriteZkData(u, 0.0, 0, 0, 0)
 					tpath, err := zkConn.Create(zkCometRoot+"/", []byte(data),
 						zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
 					if err != nil {
@@ -211,7 +216,7 @@ func ReportUsage() {
 					glog.Warning("[zk] write zk but conn was broken")
 					continue
 				}
-				data := calcZkData(s.Url, cpuUsage, memTotal, memUsage, onlineCount)
+				data := onWriteZkData(s.Url, cpuUsage, memTotal, memUsage, onlineCount)
 				_, err := zkConn.Set(path, []byte(data), -1)
 				if err != nil {
 					glog.Errorf("[zk|comet] set zk node [%s] with comet's status [%s] failed: %v", s.Path, data, err)
@@ -222,6 +227,6 @@ func ReportUsage() {
 	}
 }
 
-func calcZkData(url string, cpu float64, memTotal uint64, memUsage uint64, online uint64) string {
+func onWriteZkData(url string, cpu float64, memTotal uint64, memUsage uint64, online uint64) string {
 	return fmt.Sprintf("%s,%f,%d,%d,%d", url, cpu, memTotal, memUsage, online)
 }

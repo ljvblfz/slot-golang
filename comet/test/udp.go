@@ -63,8 +63,8 @@ type testCase struct {
 func (c *Client) Run() {
 	go c.readLoop()
 
-	c.testBenchmark()
-	// testApi()
+	//c.testBenchmark()
+	c.testApi()
 }
 
 func (c *Client) testBenchmark() {
@@ -122,7 +122,7 @@ func (c *Client) testApi() {
 		result, err := t.fn()
 		log.Printf("--- %s ---", t.name)
 		if err != nil {
-			log.Printf("[%v] error: %v", err)
+			log.Printf("[%v] error: %v", t.name, err)
 		}
 		if result == nil {
 			continue
@@ -364,13 +364,17 @@ func main() {
 		fmt.Printf("Resolve local addr %s failed: %v\n", *localAddr, err)
 		return
 	}
-	socket, err := net.ListenUDP("udp", local)
-	if err != nil {
-		fmt.Printf("Listen on local addr %v failed: %v\n", local, err)
-		return
-	}
 
-	for i := 0; i < *concurent; i++ {
+	firstPort := local.Port
+	// 跳过监听失败的端口
+	for p, n := 0, 0; n < *concurent; p++ {
+		local.Port = firstPort + p
+		socket, err := net.ListenUDP("udp", local)
+		if err != nil {
+			fmt.Printf("Listen on local addr %v failed: %v\n", local, err)
+			continue
+		}
+		n++
 		c := Client{
 			Name:        "deviceName",
 			ProduceTime: time.Now(),
@@ -380,18 +384,8 @@ func main() {
 			ServerAddr:  server,
 			rch:         make(chan []byte, 128),
 		}
-		binary.LittleEndian.PutUint32(c.SN[11:15], uint32(i))
-		binary.LittleEndian.PutUint32(c.MAC[3:7], uint32(i))
-		//n, err := rand.Read(c.SN[:])
-		//if n != 16 || err != nil {
-		//	fmt.Println("crypto/rand on SN failed:", n, err)
-		//	return
-		//}
-		//n, err = rand.Read(c.MAC[:])
-		//if n != 8 || err != nil {
-		//	fmt.Println("crypto/rand on MAC failed:", n, err)
-		//	return
-		//}
+		binary.LittleEndian.PutUint32(c.SN[11:15], uint32(n))
+		binary.LittleEndian.PutUint32(c.MAC[3:7], uint32(n))
 		log.Printf("Client started, mac: %v, sn: %v", hex.EncodeToString(c.MAC[:]), hex.EncodeToString(c.SN[:]))
 		go c.Run()
 	}
