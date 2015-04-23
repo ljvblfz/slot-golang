@@ -120,7 +120,7 @@ func (a *AppMsg) MarshalBytes() []byte {
 	return a.buf
 }
 
-// 计算数据头中前n字节的头校验和
+// 数据头中校验位的校验算法
 // 实现协议：智能家居通讯协议V2.3.2
 func ChecksumHeader(msg []byte, n int) byte {
 	var headerCheck uint8

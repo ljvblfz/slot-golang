@@ -230,6 +230,9 @@ func (h *Handler) handle(t *UdpMsg) error {
 			return fmt.Errorf("wrong body length in data header")
 		}
 		// TODO check data body, need check algorithm
+		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[FrameHeaderLen+9:], len(t.Msg)-FrameHeaderLen+10) {
+			return fmt.Errorf("checksum data error")
+		}
 
 		// parse data(udp)
 		// 28 = FrameHeaderLen + 4
