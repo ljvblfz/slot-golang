@@ -226,17 +226,23 @@ func (h *Handler) handle(t *UdpMsg) error {
 		if t.Msg[FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+8) {
 			return fmt.Errorf("checksum header error")
 		}
-		if bodyLen != len(t.Msg[FrameHeaderLen+6+2:]) {
-			return fmt.Errorf("wrong body length in data header")
-		}
-		// TODO check data body, need check algorithm
-		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[FrameHeaderLen+9:], len(t.Msg)-FrameHeaderLen+10) {
-			return fmt.Errorf("checksum data error")
-		}
 
 		// parse data(udp)
 		// 28 = FrameHeaderLen + 4
 		c := binary.LittleEndian.Uint16(t.Msg[28:30])
+
+		// 34 = FrameHeaderLen + 10
+		sidIndex := 34
+		bodyIndex := sidIndex + 16
+		if bodyLen != len(t.Msg[bodyIndex:]) {
+			return fmt.Errorf("wrong body length in data header: %d != %d", bodyLen, len(t.Msg[bodyIndex:]))
+		}
+		body := t.Msg[bodyIndex : bodyIndex+bodyLen]
+
+		// check data body
+		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[sidIndex:], bodyLen) {
+			return fmt.Errorf("checksum data error")
+		}
 
 		var (
 			sess   *UdpSession
@@ -244,8 +250,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 			err    error
 			locker Locker
 		)
-		// 34 = FrameHeaderLen + 10
-		sidIndex := 34
+
 		if c != CmdGetToken {
 			sid, err = uuid.Parse(t.Msg[sidIndex : sidIndex+16])
 			if err != nil {
@@ -271,8 +276,6 @@ func (h *Handler) handle(t *UdpMsg) error {
 				return fmt.Errorf("cmd: %X, verify session error: %v", c, err)
 			}
 		}
-		bodyIndex := sidIndex + 16
-		body := t.Msg[bodyIndex : bodyIndex+bodyLen]
 
 		output := make([]byte, bodyIndex, 128)
 		// copy same packNum into this ACK response

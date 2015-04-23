@@ -24,7 +24,8 @@ const (
 	FlagAck  = 1 << 6
 	FlagRead = 1 << 7
 
-	kPoly = 0x66
+	// 协议定义为0x131，但go编译器禁止长类型强制转换为短类型，所以手动强制转换结果为0x31
+	kPoly = 0x31
 )
 
 type AppMsg struct {
