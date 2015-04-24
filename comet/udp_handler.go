@@ -240,7 +240,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		body := t.Msg[bodyIndex : bodyIndex+bodyLen]
 
 		// check data body
-		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[sidIndex:], bodyLen) {
+		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[sidIndex:], 16+bodyLen) {
 			return fmt.Errorf("checksum data error")
 		}
 
@@ -349,9 +349,6 @@ func (h *Handler) handle(t *UdpMsg) error {
 			output = append(output, res...)
 		}
 
-		if glog.V(2) {
-			glog.Infof("UDP SEND: %d, %v", len(output), output)
-		}
 		output[FrameHeaderLen+8] = msgs.ChecksumHeader(output, FrameHeaderLen+8)
 		output[FrameHeaderLen] |= (msgs.FlagAck | msgs.FlagRead)
 		h.Server.Send(t.Peer, output)
