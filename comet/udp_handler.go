@@ -240,7 +240,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		body := t.Msg[bodyIndex : bodyIndex+bodyLen]
 
 		// check data body
-		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[sidIndex:], bodyLen) {
+		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[sidIndex:], 16+bodyLen) {
 			return fmt.Errorf("checksum data error")
 		}
 

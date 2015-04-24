@@ -7,19 +7,18 @@ import (
 
 const (
 	// 消息头各部分的长度
-	kHeadForward = 20
-	kHeadFrame   = 24
-	kHeadData    = 12
+	kFrameHeaderLen = 24
+	kHeadForward    = kFrameHeaderLen
+	kHeadFrame      = kFrameHeaderLen
+	kHeadData       = 12
 
 	// 转发头中的标记字节
 	kForwardFlagOffset = 16
 
 	// 应用层协议的消息ID
-	MIDKickout = 0x23
-	MIDOnline  = 0x35
-	MIDOffline = 0x36
-	MIDBind    = 0x37
-	MIDUnbind  = 0x38
+	MIDOnlineOffline = 0x34
+	MIDBindUnbind    = 0x35
+	MIDStatus        = 0x36
 
 	FlagAck  = 1 << 6
 	FlagRead = 1 << 7
@@ -28,17 +27,201 @@ const (
 	kPoly = 0x31
 )
 
-type AppMsg struct {
+type frameHeader struct {
+	Fin    bool
+	Mask   bool
+	Ver    byte
+	Opcode byte
+
+	Reserve byte
+
+	Sequence uint16
+
+	Time uint32
+
 	DstId int64
+
 	SrcId int64
+
+	// this is non-empty only if opcode is 3
+	Guid []byte
+}
+
+func (f *frameHeader) marshalBytes() []byte {
+	buf := make([]byte, kFrameHeaderLen)
+	// byte 0
+	if f.Fin {
+		buf[0] |= 0x80 // 1<<7
+	}
+	if f.Mask {
+		buf[0] |= 0x40 // 1<<6
+	}
+	if f.Ver != 0 {
+		buf[0] |= (f.Ver & 0x7) << 3
+	}
+	buf[0] |= f.opcode & 0x7
+
+	// byte 1
+	buf[1] = f.Reserve
+
+	// byte [2:4]
+	binary.LittleEndian.PutUint16(buf[2:4], f.Sequence)
+
+	// byte [4:8]
+	binary.LittleEndian.PutUint16(buf[4:8], f.Time)
+
+	// byte [8:16]
+	binary.LittleEndian.PutUint16(buf[8:16], uint64(f.DstId))
+
+	// byte [16:24]
+	binary.LittleEndian.PutUint16(buf[16:24], uint64(f.SrcId))
+
+	// byte [24:24+16], optional
+	if guid != nil {
+		buf = append(buf, guid)
+	}
+	return buf
+}
+
+type dataHeader struct {
+	Read        bool
+	Ack         bool
+	DataFormat  byte
+	KeyLevel    byte
+	EncryptType byte
+
+	DataSeq byte
+
+	DevType uint16
+
 	MsgId uint16
+
+	Length uint16
+
+	HeadCheck byte
+
+	Check byte
+
+	// this is 16 bytes only if this message is used between devices and servers
+	SessionId1 uint16
+	SessionId2 [16]byte
+}
+
+func (d *dataHeader) marshalBytes(dataLen int, opcode int) (buf []byte, headCheckPos int, bodyCheckPos int) {
+	buf = make([]byte, 26)
+	// byte 0
+	if d.Read {
+		buf[0] |= 0x80 // 1<<7
+	}
+	if d.Ack {
+		buf[0] |= 0x40 // 1<<6
+	}
+	if d.DataFormat != 0 {
+		buf[0] |= (d.DataFormat & 0x3) << 4
+	}
+	if d.KeyLevel != 0 {
+		buf[0] |= (d.KeyLevel & 0x3) << 2
+	}
+	if d.EncryptType != 0 {
+		buf[0] |= d.EncryptType & 0x3
+	}
+
+	// byte 1
+	buf[1] = d.DataSeq
+
+	// byte [2:4]
+	binary.LittleEndian.PutUint16(buf[2:4], d.DevType)
+
+	// byte [4:6]
+	binary.LittleEndian.PutUint16(buf[4:6], d.MsgId)
+
+	// byte [6:8]
+	binary.LittleEndian.PutUint16(buf[6:8], uint16(dataLen))
+
+	// byte 9
+	headCheckPos = 9
+
+	// byte 10
+	bodyCheckPos = 10
+
+	// byte [10:10+(2 or 16)]
+	if opcode {
+		binary.LittleEndian.PutUint16(buf[10:12], d.SessionId1)
+		buf = buf[:12]
+	} else {
+		copy(buf[10:26], d.SessionId2)
+	}
+	return buf, headCheckPos, bodyCheckPos
+}
+
+type AppMsg2 struct {
+	ForwardHeader *frameHeader
+	FrameHeader   frameHeader
+	DataHeader    dataHeader
+	Data          []byte
+}
+
+func NewMsg2(data []byte) *AppMsg2 {
+	m := &AppMsg2{
+		ForwardHeader: &frameHeader{},
+		FrameHeader:   frameHeader{},
+		DataHeader: dataHeader{
+			Read: true,
+		},
+		Data: data,
+	}
+	return m
+}
+
+func NewAckMsg2() *AppMsg2 {
+	m := &AppMsg2{
+		ForwardHeader: &frameHeader{},
+		FrameHeader:   frameHeader{},
+		DataHeader: dataHeader{
+			Ack: true,
+		},
+		Data: data,
+	}
+	return m
+}
+
+// 编码消息至字节流，并更新帧头中的时间戳至当前时间
+func (a *AppMsg2) MarshalBytes() []byte {
+	a.FrameHeader.Time = uint32(time.Now().Unix())
+
+	var buf []byte
+	if a.ForwardHeader != nil {
+		buf = a.ForwardHeader.marshalBytes()
+	}
+	buf = append(buf, a.FrameHeader.marshalBytes())
+
+	bufFrame, hcheckPos, checkPos := a.DataHeader.marshalBytes()
+	hcheckPos += len(buf)
+	checkPos += len(buf)
+
+	buf = append(buf, bufFrame)
+
+	if len(a.Data) != 0 {
+		buf = append(buf, a.Data)
+	}
+
+	buf[hcheckPos] = ChecksumHeader(buf, hcheckPos)
+	buf[checkPos] = ChecksumHeader(buf[checkPos+1:], len(buf)-checkPos-1)
+
+	return buf
+}
+
+type AppMsg struct {
+	dstId int64
+	srcId int64
+	msgId uint16
 
 	buf []byte
 }
 
-func NewAppMsg(dstId int64, srcId int64, msgId uint16) *AppMsg {
+func NewAppMsg(dstId int64, srcId int64, msgId uint16, msgBody []byte) *AppMsg {
 	a := &AppMsg{
-		buf: make([]byte, kHeadForward+kHeadFrame+kHeadData),
+		buf: make([]byte, kHeadForward+kHeadFrame+kHeadData+len(msgBody)),
 	}
 	for i, _ := range a.buf {
 		a.buf[i] = 0
@@ -50,6 +233,9 @@ func NewAppMsg(dstId int64, srcId int64, msgId uint16) *AppMsg {
 	a.SetDstId(dstId)
 	a.SetSrcId(srcId)
 	a.SetMsgId(msgId)
+
+	copy(a.buf[kHeadForward+kHeadFrame+kHeadData:], msgBody)
+
 	return a
 }
 
@@ -64,25 +250,25 @@ func NewAckMsg(srcId int64, message []byte) *AppMsg {
 }
 
 func (a *AppMsg) SetDstId(dstId int64) {
-	a.DstId = dstId
+	a.dstId = dstId
 	// 转发头
-	binary.LittleEndian.PutUint64(a.buf[:], uint64(a.DstId))
+	binary.LittleEndian.PutUint64(a.buf[:], uint64(a.dstId))
 	// 帧头
-	binary.LittleEndian.PutUint64(a.buf[kHeadForward+8:], uint64(a.DstId))
+	binary.LittleEndian.PutUint64(a.buf[kHeadForward+8:], uint64(a.dstId))
 	// 数据头
 	a.buf[kHeadForward+kHeadFrame] = byte(1 << 7)
 }
 
 func (a *AppMsg) SetSrcId(srcId int64) {
-	a.SrcId = srcId
+	a.srcId = srcId
 	// 帧头
-	binary.LittleEndian.PutUint64(a.buf[kHeadForward+16:], uint64(a.SrcId))
+	binary.LittleEndian.PutUint64(a.buf[kHeadForward+16:], uint64(a.srcId))
 }
 
 func (a *AppMsg) SetMsgId(msgId uint16) {
-	a.MsgId = msgId
+	a.msgId = msgId
 	// 数据头
-	binary.LittleEndian.PutUint16(a.buf[kHeadForward+kHeadFrame+4:], a.MsgId)
+	binary.LittleEndian.PutUint16(a.buf[kHeadForward+kHeadFrame+4:], a.msgId)
 }
 
 func (a *AppMsg) MarshalBytes() []byte {

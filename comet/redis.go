@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	HostUsers            = "Host:%s" // (1, 2, 3)
-	PubKey               = "PubKey"
-	SubDeviceUsersKey    = "PubDeviceUsers"
-	SubModifiedPasswdKey = "PubModifiedPasswdUser"
+	HostUsers             = "Host:%s" // (1, 2, 3)
+	PubKey                = "PubKey"
+	SubDeviceUsersKey     = "PubDeviceUsers"
+	SubModifiedPasswdKey  = "PubModifiedPasswdUser"
+	SubCommonMsgKeyPrefix = "PubCommonMsg:"
+	SubCommonMsgKey       = SubCommonMsgKeyPrefix + "*"
 
 	RedisDeviceUsers = "bind:device"
 	RedisUserDevices = "bind:user"
@@ -38,6 +40,7 @@ const (
 	_ReturnMobileId
 	_SubDeviceUsersKey
 	_SubModifiedPasswd
+	_SubCommonMsg
 	_GetDeviceSession
 	_SetDeviceSession
 	_DeleteDeviceSession
@@ -118,6 +121,10 @@ func InitRedix(addr string) {
 		panic(err)
 	}
 	err = SubModifiedPasswd()
+	if err != nil {
+		panic(err)
+	}
+	err = SubCommonMsg()
 	if err != nil {
 		panic(err)
 	}
@@ -371,6 +378,71 @@ func HandleModifiedPasswd(ch <-chan []byte) {
 			continue
 		}
 		go gSessionList.KickOffline(userId)
+	}
+}
+
+func SubCommonMsg() error {
+	r := Redix[_SubCommonMsg]
+	RedixMu[_SubCommonMsg].Lock()
+	defer RedixMu[_SubCommonMsg].Unlock()
+
+	psc := redis.PubSubConn{Conn: r}
+	err := psc.PSubscribe(SubCommonMsgKey)
+	if err != nil {
+		return err
+	}
+	ch := make(chan redis.PMessage, 128)
+	go func() {
+		defer psc.Close()
+		for {
+			data := psc.Receive()
+			switch m := data.(type) {
+			case redis.PMessage:
+				ch <- m
+			case redis.Subscription:
+				if m.Count == 0 {
+					glog.Fatalf("Subscription: %s %s %d, %v\n", m.Kind, m.Channel, m.Count, m)
+					return
+				}
+			case error:
+				glog.Errorf("[modifypwd|redis] sub of error: %v\n", m)
+				return
+			}
+		}
+	}()
+	go HandleCommonMsg(ch)
+	return nil
+}
+
+func HandleCommonMsg(ch <-chan redis.PMessage) {
+	for m := range ch {
+		msgid := strings.TrimPrefix(m.Channel, SubCommonMsgKeyPrefix)
+		if len(msgid) == 0 {
+			continue
+		}
+		mid, err := strconv.ParseUint(msgid, 0, 16)
+		if err != nil {
+			glog.Errorf("[common msg] Cannot parse wrong MsgId %s, error: %v", msgid, err)
+			continue
+		}
+
+		fields := strings.SplitN(string(m.Data), "|", 2)
+		if len(fields) != 2 || len(fields) == 0 {
+			glog.Errorf("[common msg] invalid pub-sub msg format: %s", string(m.Data))
+			continue
+		}
+
+		ids := strings.Split(fields[0], ",")
+		dstIds := make([]int64, 0, len(ids))
+		for _, i := range ids {
+			id, err := strconv.ParseInt(i, 10, 64)
+			if err != nil {
+				glog.Errorf("[common msg] invalid dest id %s, error: %v", i, err)
+				continue
+			}
+			dstIds = append(dstIds, id)
+		}
+		go gSessionList.PushCommonMsg(uint16(mid), dstIds, []byte(fields[1]))
 	}
 }
 

@@ -268,6 +268,42 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 	}
 }
 
+func (this *SessionList) PushCommonMsg(msgid uint16, dstIds []int64, msgBody []byte) {
+	for _, dstId := range dstIds {
+		ids := TransId(dstId)
+		// TODO make message
+		msg := msgs.NewAppMsg(0, 0, msgid)
+
+		for _, id := range ids {
+			blockId := getBlockID(id)
+			lock := this.onlinedMu[blockId]
+			msg.SetDstId(id)
+			msgBytes := msg.MarshalBytes()
+			lock.Lock()
+			if list, ok := this.onlined[blockId][id]; ok {
+				for e := list.Front(); e != nil; e = e.Next() {
+					s, ok := e.Value.(*Session)
+					if !ok {
+						break
+					}
+					_, err := s.Conn.Send(msgBytes)
+					if err != nil && glog.V(2) {
+						glog.Warningf("[CommonMsg|send] mid: %d, user: %d, error: %v", s.Uid, id, err)
+					}
+					err = s.Conn.Close()
+					if err != nil && glog.V(2) {
+						glog.Warningf("[CommonMsg|close] mid: %d, user: %d, error: %v", s.Uid, id, err)
+					}
+					if glog.V(1) {
+						glog.Infof("[CommonMsg] mid: %d, user %d modified password", s.Uid, id)
+					}
+				}
+			}
+			lock.Unlock()
+		}
+	}
+}
+
 func (this *SessionList) KickOffline(uid int64) {
 	ids := TransId(uid)
 	kickMsg := msgs.NewAppMsg(0, 0, msgs.MIDKickout)
