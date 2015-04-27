@@ -271,13 +271,14 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 func (this *SessionList) PushCommonMsg(msgid uint16, dstIds []int64, msgBody []byte) {
 	for _, dstId := range dstIds {
 		ids := TransId(dstId)
-		// TODO make message
-		msg := msgs.NewAppMsg(0, 0, msgid)
+		msg := msgs.NewMsg(msgBody, nil)
+		msg.FrameHeader.Opcode = 2
+		msg.DataHeader.MsgId = msgid
 
 		for _, id := range ids {
 			blockId := getBlockID(id)
 			lock := this.onlinedMu[blockId]
-			msg.SetDstId(id)
+			msg.FrameHeader.DstId = id
 			msgBytes := msg.MarshalBytes()
 			lock.Lock()
 			if list, ok := this.onlined[blockId][id]; ok {
@@ -288,14 +289,14 @@ func (this *SessionList) PushCommonMsg(msgid uint16, dstIds []int64, msgBody []b
 					}
 					_, err := s.Conn.Send(msgBytes)
 					if err != nil && glog.V(2) {
-						glog.Warningf("[CommonMsg|send] mid: %d, user: %d, error: %v", s.Uid, id, err)
+						glog.Warningf("[CommonMsg|send] id: %d, MsgId %d, error: %v", id, msgid, err)
 					}
 					err = s.Conn.Close()
 					if err != nil && glog.V(2) {
-						glog.Warningf("[CommonMsg|close] mid: %d, user: %d, error: %v", s.Uid, id, err)
+						glog.Warningf("[CommonMsg|close] id: %d, MsgId: %d, error: %v", id, msgid, err)
 					}
 					if glog.V(1) {
-						glog.Infof("[CommonMsg] mid: %d, user %d modified password", s.Uid, id)
+						glog.Infof("[CommonMsg] id: %d, MsgID %d ", id, msgid)
 					}
 				}
 			}
@@ -306,11 +307,19 @@ func (this *SessionList) PushCommonMsg(msgid uint16, dstIds []int64, msgBody []b
 
 func (this *SessionList) KickOffline(uid int64) {
 	ids := TransId(uid)
-	kickMsg := msgs.NewAppMsg(0, 0, msgs.MIDKickout)
+
+	body := msgs.MsgStatus{}
+	body.Type = msgs.MSTKickOff
+	kickMsg := msgs.NewMsg(nil, nil)
+	kickMsg.FrameHeader.Opcode = 2
+	kickMsg.DataHeader.MsgId = msgs.MIDStatus
+
 	for _, id := range ids {
 		blockId := getBlockID(id)
 		lock := this.onlinedMu[blockId]
-		kickMsg.SetDstId(id)
+		body.Id = id
+		kickMsg.FrameHeader.DstId = id
+		kickMsg.Data, _ = body.Marshal()
 		msgBody := kickMsg.MarshalBytes()
 		lock.Lock()
 		if list, ok := this.onlined[blockId][id]; ok {

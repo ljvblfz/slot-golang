@@ -299,8 +299,17 @@ func WsHandler(ws *websocket.Conn) {
 
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
-		onlineMsg := msgs.NewAppMsg(0, id, msgs.MIDOnline)
-		GMsgBusManager.Push2Backend(id, destIds, onlineMsg.MarshalBytes())
+
+		body := msgs.MsgStatus{}
+		body.Type = msgs.MSTDeviceOnline
+		body.Id = id
+		m := msgs.NewMsg(nil, nil)
+		m.FrameHeader.Opcode = 2
+		m.FrameHeader.SrcId = id
+		m.DataHeader.MsgId = msgs.MIDStatus
+		m.Data, _ = body.Marshal()
+
+		GMsgBusManager.Push2Backend(id, destIds, m.MarshalBytes())
 	}
 
 	if timeout <= 0 {
@@ -357,8 +366,17 @@ func WsHandler(ws *websocket.Conn) {
 	}
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
-		offlineMsg := msgs.NewAppMsg(0, id, msgs.MIDOffline)
-		GMsgBusManager.Push2Backend(id, destIds, offlineMsg.MarshalBytes())
+
+		body := msgs.MsgStatus{}
+		body.Type = msgs.MSTDeviceOffline
+		body.Id = id
+		m := msgs.NewMsg(nil, nil)
+		m.FrameHeader.Opcode = 2
+		m.FrameHeader.SrcId = id
+		m.DataHeader.MsgId = msgs.MIDStatus
+		m.Data, _ = body.Marshal()
+
+		GMsgBusManager.Push2Backend(id, destIds, m.MarshalBytes())
 	}
 	gSessionList.RemoveSession(selement)
 	return

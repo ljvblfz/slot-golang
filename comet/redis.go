@@ -124,9 +124,11 @@ func InitRedix(addr string) {
 	if err != nil {
 		panic(err)
 	}
-	err = SubCommonMsg()
-	if err != nil {
-		panic(err)
+	if gCometType == CometUdp && gCometPushUdp {
+		err = SubCommonMsg()
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 

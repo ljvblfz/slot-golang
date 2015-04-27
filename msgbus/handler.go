@@ -61,12 +61,13 @@ func MainHandle(srcMsg []byte) {
 			}
 
 			id := msgs.ForwardSrcId(data)
-			m := msgs.NewAckMsg(id, data)
-			ackMsg := m.MarshalBytes()
+
+			ackMsg := msgs.NewAckMsg(data)
 			pushBuf := make([]byte, 2+8+len(ackMsg))
 			binary.LittleEndian.PutUint16(pushBuf[:8], 1)
 			binary.LittleEndian.PutUint64(pushBuf[2:2+8], uint64(id))
 			copy(pushBuf[2+8:], ackMsg)
+
 			err := GUserMap.PushToComet(id, pushBuf)
 			if err != nil {
 				statIncDownStreamOutBad()
