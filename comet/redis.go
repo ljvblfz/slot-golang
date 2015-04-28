@@ -454,9 +454,10 @@ func HandleCommonMsg(ch <-chan redis.PMessage) {
 
 func PushMsg(msgId uint16, dstIds []int64, msgBody []byte) {
 	for _, id := range dstIds {
-		if id > 0 {
+		// 整数为手机，负数为板子
+		if gCometType == CometWs {
 			gSessionList.PushCommonMsg(msgId, id, msgBody)
-		} else if id < 0 {
+		} else if gCometType == CometUdp {
 			gUdpSessions.PushCommonMsg(msgId, id, msgBody)
 		}
 	}
