@@ -28,7 +28,7 @@ const (
 	RedisUserMobiles = "user:mobileid"
 
 	RedisSessionDevice       = "sess:dev:%s"
-	RedisSessionDeviceAddr   = "sess:dev:addr:%d"
+	RedisSessionDeviceAddr   = "sess:dev:sid:%d"
 	RedisSessionDeviceLocker = "sess:dev:%s:locker"
 )
 const (
@@ -444,7 +444,17 @@ func HandleCommonMsg(ch <-chan redis.PMessage) {
 			}
 			dstIds = append(dstIds, id)
 		}
-		go gSessionList.PushCommonMsg(uint16(mid), dstIds, []byte(fields[1]))
+		go PushMsg(uint16(mid), dstIds, []byte(fields[1]))
+	}
+}
+
+func PushMsg(msgId uint16, dstIds []int64, msgBody []byte) {
+	for _, id := range dstIds {
+		if id > 0 {
+			gSessionList.PushCommonMsg(msgId, id, msgBody)
+		} else if id < 0 {
+			gUdpSessions.PushCommonMsg(msgId, id, msgBody)
+		}
 	}
 }
 
@@ -504,7 +514,7 @@ func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr 
 	// 对于刚刚建立，还未调用过注册或登录接口的会话，deviceId是0，不要为这个状态的
 	// session设置deviceId和UDP地址的表映射，因为这个状态的session还不满足P2P的业务功能
 	if deviceId != 0 {
-		err = r.Send("set", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), addr.String())
+		err = r.Send("set", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), sid)
 		if err != nil {
 			return err
 		}
@@ -535,7 +545,7 @@ func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr 
 	return err
 }
 
-func GetDeviceAddr(deviceId int64) (string, error) {
+func GetDeviceSid(deviceId int64) (string, error) {
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()

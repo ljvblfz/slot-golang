@@ -268,40 +268,39 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 	}
 }
 
-func (this *SessionList) PushCommonMsg(msgid uint16, dstIds []int64, msgBody []byte) {
-	for _, dstId := range dstIds {
-		ids := TransId(dstId)
-		msg := msgs.NewMsg(msgBody, nil)
-		msg.FrameHeader.Opcode = 2
-		msg.DataHeader.MsgId = msgid
+func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte) {
+	msg := msgs.NewMsg(msgBody, nil)
+	msg.FrameHeader.Opcode = 2
+	msg.DataHeader.MsgId = msgid
 
-		for _, id := range ids {
-			blockId := getBlockID(id)
-			lock := this.onlinedMu[blockId]
-			msg.FrameHeader.DstId = id
-			msgBytes := msg.MarshalBytes()
-			lock.Lock()
-			if list, ok := this.onlined[blockId][id]; ok {
-				for e := list.Front(); e != nil; e = e.Next() {
-					s, ok := e.Value.(*Session)
-					if !ok {
-						break
-					}
-					_, err := s.Conn.Send(msgBytes)
-					if err != nil && glog.V(2) {
-						glog.Warningf("[CommonMsg|send] id: %d, MsgId %d, error: %v", id, msgid, err)
-					}
-					err = s.Conn.Close()
-					if err != nil && glog.V(2) {
-						glog.Warningf("[CommonMsg|close] id: %d, MsgId: %d, error: %v", id, msgid, err)
-					}
-					if glog.V(1) {
-						glog.Infof("[CommonMsg] id: %d, MsgID %d ", id, msgid)
-					}
+	ids := TransId(dstId)
+
+	for _, id := range ids {
+		blockId := getBlockID(id)
+		lock := this.onlinedMu[blockId]
+		msg.FrameHeader.DstId = id
+		msgBytes := msg.MarshalBytes()
+		lock.Lock()
+		if list, ok := this.onlined[blockId][id]; ok {
+			for e := list.Front(); e != nil; e = e.Next() {
+				s, ok := e.Value.(*Session)
+				if !ok {
+					break
+				}
+				_, err := s.Conn.Send(msgBytes)
+				if err != nil && glog.V(2) {
+					glog.Warningf("[CommonMsg|send] id: %d, MsgId %d, error: %v", id, msgid, err)
+				}
+				err = s.Conn.Close()
+				if err != nil && glog.V(2) {
+					glog.Warningf("[CommonMsg|close] id: %d, MsgId: %d, error: %v", id, msgid, err)
+				}
+				if glog.V(1) {
+					glog.Infof("[CommonMsg] id: %d, MsgID %d ", id, msgid)
 				}
 			}
-			lock.Unlock()
 		}
+		lock.Unlock()
 	}
 }
 

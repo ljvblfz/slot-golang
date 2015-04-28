@@ -27,6 +27,7 @@ var (
 	gCometRoot    string
 	gCometType    CometType
 	gCometPushUdp bool
+	gUdpTimeout   = 40
 )
 
 func main() {
@@ -94,6 +95,7 @@ func main() {
 		handler := NewHandler(*apiUrl, *serveUdpAddr)
 		server := NewUdpServer(*addr, handler)
 		handler.Server = server
+		gUdpSessions.server = server
 		go handler.Run()
 		go server.RunLoop()
 
