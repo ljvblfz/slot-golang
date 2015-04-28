@@ -152,7 +152,6 @@ func (h *Handler) Run() {
 //}
 
 // 获取指定设备的外网UDP地址
-// TODO 暂未实现
 func (h *Handler) OnBackendGetDeviceAddr(w http.ResponseWriter, r *http.Request) {
 	if strings.ToUpper(r.Method) != "GET" {
 		w.WriteHeader(http.StatusMethodNotAllowed)
