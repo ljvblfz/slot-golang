@@ -20,9 +20,10 @@ import (
 
 const (
 	FrameHeaderLen = 24
-	DataHeaderLen  = 16
+	DataHeaderLen  = 12
 
-	kHeartBeat = 20 * time.Second
+	kHeartBeatSec = 20
+	kHeartBeat    = kHeartBeatSec * time.Second
 
 	kApiGetUAddr = "/api/device/udpaddr"
 )
@@ -162,7 +163,7 @@ func (h *Handler) OnBackendGetDeviceAddr(w http.ResponseWriter, r *http.Request)
 		w.WriteHeader(404)
 		return
 	}
-	addr, err := GetDeviceAddr(id)
+	addr, err := gUdpSessions.GetDeviceAddr(id)
 	response := make(map[string]interface{})
 	if err == nil {
 		response["status"] = 0
@@ -227,32 +228,32 @@ func (h *Handler) handle(t *UdpMsg) error {
 			return fmt.Errorf("checksum header error")
 		}
 
+		// check data body
+		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[FrameHeaderLen+10:], 2+bodyLen) {
+			return fmt.Errorf("checksum data error")
+		}
+
 		// parse data(udp)
 		// 28 = FrameHeaderLen + 4
 		c := binary.LittleEndian.Uint16(t.Msg[28:30])
 
-		// 34 = FrameHeaderLen + 10
-		sidIndex := 34
-		bodyIndex := sidIndex + 16
+		var (
+			sess      *UdpSession
+			sid       *uuid.UUID
+			err       error
+			locker    Locker
+			body      []byte
+			bodyIndex int
+		)
+
+		bodyIndex = FrameHeaderLen + DataHeaderLen
 		if bodyLen != len(t.Msg[bodyIndex:]) {
 			return fmt.Errorf("wrong body length in data header: %d != %d", bodyLen, len(t.Msg[bodyIndex:]))
 		}
-		body := t.Msg[bodyIndex : bodyIndex+bodyLen]
-
-		// check data body
-		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[sidIndex:], 16+bodyLen) {
-			return fmt.Errorf("checksum data error")
-		}
-
-		var (
-			sess   *UdpSession
-			sid    *uuid.UUID
-			err    error
-			locker Locker
-		)
+		body = t.Msg[bodyIndex : bodyIndex+bodyLen]
 
 		if c != CmdGetToken {
-			sid, err = uuid.Parse(t.Msg[sidIndex : sidIndex+16])
+			sid, err = uuid.Parse(t.Msg[bodyIndex : bodyIndex+16])
 			if err != nil {
 				return fmt.Errorf("parse session id error: %v", err)
 			}
@@ -269,15 +270,12 @@ func (h *Handler) handle(t *UdpMsg) error {
 			}
 			err = h.VerifySession(sess, packNum)
 			if err != nil {
-				//if err == ErrSessTimeout {
-				//	gUdpSessions.DeleteSession(sid)
-				//}
 				locker.Unlock()
 				return fmt.Errorf("cmd: %X, verify session error: %v", c, err)
 			}
 		}
 
-		output := make([]byte, bodyIndex, 128)
+		output := make([]byte, bodyIndex)
 		// copy same packNum into this ACK response
 		copy(output[:bodyIndex], t.Msg[:bodyIndex])
 
@@ -302,10 +300,10 @@ func (h *Handler) handle(t *UdpMsg) error {
 			t.Url = h.kApiUrls[c]
 			res, err = h.onRename(t, sess, body)
 
-		case CmdDoBind:
-			t.CmdType = c
-			t.Url = h.kApiUrls[c]
-			res, err = h.onDoBind(t, sess, body)
+		//case CmdDoBind:
+		//	t.CmdType = c
+		//	t.Url = h.kApiUrls[c]
+		//	res, err = h.onDoBind(t, sess, body)
 
 		case CmdHeartBeat:
 			t.CmdType = c
@@ -345,12 +343,18 @@ func (h *Handler) handle(t *UdpMsg) error {
 				glog.Errorf("[handle] cmd: %X, error: %v", c, err)
 			}
 		}
+		if c != CmdGetToken {
+			copy(res[4:20], t.Msg[bodyIndex:bodyIndex+16])
+			copy(res[4:20], sid[:])
+		}
 		if res != nil {
 			output = append(output, res...)
 		}
 
-		output[FrameHeaderLen+8] = msgs.ChecksumHeader(output, FrameHeaderLen+8)
 		output[FrameHeaderLen] |= (msgs.FlagAck | msgs.FlagRead)
+		binary.LittleEndian.PutUint16(output[FrameHeaderLen+6:], uint16(len(res)))
+		output[FrameHeaderLen+8] = msgs.ChecksumHeader(output, FrameHeaderLen+8)
+		output[FrameHeaderLen+9] = msgs.ChecksumHeader(output[FrameHeaderLen+10:], 2+len(res))
 		h.Server.Send(t.Peer, output)
 
 	} else {
@@ -384,8 +388,6 @@ func (h *Handler) VerifySession(s *UdpSession, packNum uint16) error {
 	default:
 		return ErrSessPackSeq
 	}
-
-	// TODO cmd number
 
 	// all ok
 	s.Ridx = packNum
@@ -425,7 +427,7 @@ func (h *Handler) onGetToken(t *UdpMsg, body []byte) ([]byte, error) {
 	if err != nil {
 		glog.Fatalf("[onGetToken] SaveSession failed: %v", err)
 	}
-	output := make([]byte, 20)
+	output := make([]byte, 28)
 	binary.LittleEndian.PutUint32(output[:4], 0)
 	copy(output[4:20], sid[:16])
 
@@ -433,18 +435,20 @@ func (h *Handler) onGetToken(t *UdpMsg, body []byte) ([]byte, error) {
 }
 
 func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	if len(body) < 31 {
+	if len(body) < 310 {
 		return nil, fmt.Errorf("[onRegister] bad body length %d", len(body))
 	}
 
-	dv := body[0:2]
-	mac := base64.StdEncoding.EncodeToString(body[2:10])
-	produceTime := binary.LittleEndian.Uint32(body[10:14])
-	sn := body[14:30]
-	nameLen := body[30]
+	dv := body[16:18]
+	//comType := body[18:20] // HTTP接口暂未实现
+	produceTime := binary.LittleEndian.Uint32(body[20:24])
+	mac := base64.StdEncoding.EncodeToString(body[24:32])
+	sn := body[32:48]
+	//sign := body[48:308] // HTTP接口暂未实现
+	nameLen := body[308]
 	var name []byte
 	if nameLen > 0 {
-		name = body[31 : 31+nameLen]
+		name = body[309 : 309+int(nameLen)]
 	}
 
 	t.Input["mac"] = mac
@@ -454,7 +458,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	t.Input["sn"] = fmt.Sprintf("%x", sn)
 	t.Input["name"] = fmt.Sprintf("%x", name)
 
-	output := make([]byte, 76)
+	output := make([]byte, 92)
 	httpStatus, rep, err := t.DoHTTPTask()
 	if err != nil {
 		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
@@ -470,7 +474,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	if c, ok := rep["cookie"]; ok {
 		if cookie, ok := c.(string); ok {
 			//fmt.Println(mac, len(cookie), cookie)
-			copy(output[12:76], []byte(cookie))
+			copy(output[28:92], []byte(cookie))
 			ss := strings.SplitN(cookie, "|", 2)
 			if len(ss) == 0 {
 				binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
@@ -481,7 +485,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 				binary.LittleEndian.PutUint32(output[0:4], uint32(DAckServerError))
 				return output, nil
 			}
-			binary.LittleEndian.PutUint64(output[4:12], uint64(id))
+			binary.LittleEndian.PutUint64(output[20:28], uint64(id))
 			sess.DeviceId = id
 		}
 	}
@@ -489,19 +493,19 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 }
 
 func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	if len(body) != 72 {
+	if len(body) != 88 {
 		return nil, fmt.Errorf("[onLogin] bad body length %v", len(body))
 	}
 
-	mac := base64.StdEncoding.EncodeToString(body[0:8])
+	mac := base64.StdEncoding.EncodeToString(body[16:24])
 	// C program sent cookie string without trim zero bytes
-	cookie := string(bytes.TrimRight(body[8:72], "\x00"))
+	cookie := string(bytes.TrimRight(body[24:88], "\x00"))
 	t.Input["mac"] = mac
 	t.Input["cookie"] = cookie
 	//fmt.Println(mac, len(cookie), cookie)
 	//glog.Infof("LOGIN: mac: %s, cookie: %v", mac, string(cookie))
 
-	output := make([]byte, 4)
+	output := make([]byte, 21)
 	httpStatus, rep, err := t.DoHTTPTask()
 	if err != nil {
 		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
@@ -514,19 +518,20 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 		}
 	}
 	binary.LittleEndian.PutUint32(output[0:4], uint32(status))
+	output[20] = kHeartBeatSec
 	return output, nil
 }
 
 func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	mac := base64.StdEncoding.EncodeToString(body[:8])
-	nameLen := body[8]
-	name := body[9 : 9+nameLen]
+	mac := base64.StdEncoding.EncodeToString(body[16:24])
+	nameLen := body[24]
+	name := body[25 : 25+nameLen]
 
 	t.Input["name"] = string(name)
 	t.Input["mac"] = mac
 
-	output := make([]byte, 12)
-	copy(output[4:12], body[:8])
+	output := make([]byte, 28)
+	copy(output[20:28], body[16:24])
 
 	httpStatus, rep, err := t.DoHTTPTask()
 	if err != nil {
@@ -547,38 +552,38 @@ func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 	return output, nil
 }
 
-// TODO 业务流程未定义
-func (h *Handler) onDoBind(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	uid := body[16:24]
-	result := binary.LittleEndian.Uint32(body[24:28])
-
-	t.Input["uid"] = fmt.Sprintf("%d", uid)
-	t.Input["result"] = fmt.Sprintf("%d", result)
-
-	output := make([]byte, 4)
-
-	httpStatus, rep, err := t.DoHTTPTask()
-	if err != nil {
-		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
-		return output, err
-	}
-
-	// TODO status not in protocol
-	if s, ok := rep["status"]; ok {
-		if status, ok := s.(float64); ok {
-			binary.LittleEndian.PutUint32(output[0:4], uint32(int32(status)))
-			if status != 0 {
-				return output, nil
-			}
-		}
-	}
-	return output, nil
-}
+// 绑定过程不涉及板子
+//func (h *Handler) onDoBind(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
+//	uid := body[16:24]
+//	result := binary.LittleEndian.Uint32(body[24:28])
+//
+//	t.Input["uid"] = fmt.Sprintf("%d", uid)
+//	t.Input["result"] = fmt.Sprintf("%d", result)
+//
+//	output := make([]byte, 4)
+//
+//	httpStatus, rep, err := t.DoHTTPTask()
+//	if err != nil {
+//		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
+//		return output, err
+//	}
+//
+//	// TODO status not in protocol
+//	if s, ok := rep["status"]; ok {
+//		if status, ok := s.(float64); ok {
+//			binary.LittleEndian.PutUint32(output[0:4], uint32(int32(status)))
+//			if status != 0 {
+//				return output, nil
+//			}
+//		}
+//	}
+//	return output, nil
+//}
 
 func (h *Handler) onHearBeat(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
 	err := sess.Update(t.Peer)
 
-	output := make([]byte, 4)
+	output := make([]byte, 20)
 	if err != nil {
 		binary.LittleEndian.PutUint32(output[:4], 1)
 	} else {
@@ -588,7 +593,7 @@ func (h *Handler) onHearBeat(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	return output, err
 }
 
-// TODO 下线消息的业务逻辑还未详细定义
+// TODO 下线消息的业务逻辑还未详细定义，收到消息后是应该用websocket还是udp转发该消息至手机？
 func (h *Handler) onSubDeviceOffline(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
 	return nil, fmt.Errorf("[onSubDeviceOffline]NOT IMPLEMENTED API: onSubDeviceOffline")
 }

@@ -97,12 +97,31 @@ func (this *MsgBusManager) Push2Backend(srcId int64, ids []int64, msg []byte) {
 }
 
 func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []int64, unbindIds []int64) {
-	m := msgs.NewAppMsg(0, deviceId, msgs.MIDBind)
+	// new code
+	body := msgs.MsgStatus{}
+	body.Id = deviceId
+	m := msgs.NewMsg(nil, nil)
+	m.FrameHeader.SrcId = deviceId
+	m.FrameHeader.Opcode = 2
+	m.DataHeader.MsgId = msgs.MIDStatus
 	if len(newBindIds) > 0 {
+		body.Type = msgs.MSTBinded
+		m.Data, _ = body.Marshal()
 		GMsgBusManager.Push2Backend(0, newBindIds, m.MarshalBytes())
 	}
 	if len(unbindIds) > 0 {
-		m.SetMsgId(msgs.MIDUnbind)
+		body.Type = msgs.MSTUnbinded
+		m.Data, _ = body.Marshal()
 		GMsgBusManager.Push2Backend(0, unbindIds, m.MarshalBytes())
 	}
+
+	// old code
+	//m := msgs.NewAppMsg(0, deviceId, msgs.MIDBind)
+	//if len(newBindIds) > 0 {
+	//	GMsgBusManager.Push2Backend(0, newBindIds, m.MarshalBytes())
+	//}
+	//if len(unbindIds) > 0 {
+	//	m.SetMsgId(msgs.MIDUnbind)
+	//	GMsgBusManager.Push2Backend(0, unbindIds, m.MarshalBytes())
+	//}
 }

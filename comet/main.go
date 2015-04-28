@@ -20,12 +20,14 @@ const (
 )
 
 var (
-	gSessionList *SessionList
-	gLocalAddr   string
-	gStatusAddr  string
-	gMsgbusRoot  string
-	gCometRoot   string
-	gCometType   CometType
+	gSessionList  *SessionList
+	gLocalAddr    string
+	gStatusAddr   string
+	gMsgbusRoot   string
+	gCometRoot    string
+	gCometType    CometType
+	gCometPushUdp bool
+	gUdpTimeout   = 40
 )
 
 func main() {
@@ -47,6 +49,7 @@ func main() {
 	flag.StringVar(&gMsgbusRoot, "zkroot", "MsgBusServers", "zookeeper服务中msgbus所在的根节点名")
 	flag.StringVar(&gCometRoot, "zkrootc", "CometServers", "zookeeper服务中comet所在的根节点名")
 	flag.IntVar(&gUdpTimeout, "uto", gUdpTimeout, "客户端UDP端口失效时长（秒)")
+	flag.BoolVar(&gCometPushUdp, "up", false, "UDP服务器是否向设备推送消息（系统中应该有一个并且唯一的推送UDP消息的Comet服务器）")
 	printVer := flag.Bool("ver", false, "Comet版本")
 	flag.Parse()
 
@@ -92,6 +95,7 @@ func main() {
 		handler := NewHandler(*apiUrl, *serveUdpAddr)
 		server := NewUdpServer(*addr, handler)
 		handler.Server = server
+		gUdpSessions.server = server
 		go handler.Run()
 		go server.RunLoop()
 

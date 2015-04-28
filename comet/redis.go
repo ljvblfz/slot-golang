@@ -14,10 +14,12 @@ import (
 )
 
 const (
-	HostUsers            = "Host:%s" // (1, 2, 3)
-	PubKey               = "PubKey"
-	SubDeviceUsersKey    = "PubDeviceUsers"
-	SubModifiedPasswdKey = "PubModifiedPasswdUser"
+	HostUsers             = "Host:%s" // (1, 2, 3)
+	PubKey                = "PubKey"
+	SubDeviceUsersKey     = "PubDeviceUsers"
+	SubModifiedPasswdKey  = "PubModifiedPasswdUser"
+	SubCommonMsgKeyPrefix = "PubCommonMsg:"
+	SubCommonMsgKey       = SubCommonMsgKeyPrefix + "*"
 
 	RedisDeviceUsers = "bind:device"
 	RedisUserDevices = "bind:user"
@@ -26,7 +28,7 @@ const (
 	RedisUserMobiles = "user:mobileid"
 
 	RedisSessionDevice       = "sess:dev:%s"
-	RedisSessionDeviceAddr   = "sess:dev:addr:%d"
+	RedisSessionDeviceAddr   = "sess:dev:sid:%d"
 	RedisSessionDeviceLocker = "sess:dev:%s:locker"
 )
 const (
@@ -38,6 +40,7 @@ const (
 	_ReturnMobileId
 	_SubDeviceUsersKey
 	_SubModifiedPasswd
+	_SubCommonMsg
 	_GetDeviceSession
 	_SetDeviceSession
 	_DeleteDeviceSession
@@ -120,6 +123,12 @@ func InitRedix(addr string) {
 	err = SubModifiedPasswd()
 	if err != nil {
 		panic(err)
+	}
+	if gCometType != CometUdp || gCometPushUdp {
+		err = SubCommonMsg()
+		if err != nil {
+			panic(err)
+		}
 	}
 }
 
@@ -374,6 +383,85 @@ func HandleModifiedPasswd(ch <-chan []byte) {
 	}
 }
 
+func SubCommonMsg() error {
+	r := Redix[_SubCommonMsg]
+	RedixMu[_SubCommonMsg].Lock()
+	defer RedixMu[_SubCommonMsg].Unlock()
+
+	psc := redis.PubSubConn{Conn: r}
+	err := psc.PSubscribe(SubCommonMsgKey)
+	if err != nil {
+		return err
+	}
+	ch := make(chan redis.PMessage, 128)
+	go func() {
+		defer psc.Close()
+		for {
+			data := psc.Receive()
+			switch m := data.(type) {
+			case redis.PMessage:
+				ch <- m
+			case redis.Subscription:
+				if m.Count == 0 {
+					glog.Fatalf("Subscription: %s %s %d, %v\n", m.Kind, m.Channel, m.Count, m)
+					return
+				}
+			case error:
+				glog.Errorf("[modifypwd|redis] sub of error: %v\n", m)
+				return
+			}
+		}
+	}()
+	go HandleCommonMsg(ch)
+	return nil
+}
+
+func HandleCommonMsg(ch <-chan redis.PMessage) {
+	for m := range ch {
+		msgid := strings.TrimPrefix(m.Channel, SubCommonMsgKeyPrefix)
+		if len(msgid) == 0 {
+			continue
+		}
+		mid, err := strconv.ParseUint(msgid, 0, 16)
+		if err != nil {
+			glog.Errorf("[common msg] Cannot parse wrong MsgId %s, error: %v", msgid, err)
+			continue
+		}
+
+		fields := strings.SplitN(string(m.Data), "|", 2)
+		if len(fields) != 2 || len(fields) == 0 {
+			glog.Errorf("[common msg] invalid pub-sub msg format: %s", string(m.Data))
+			continue
+		}
+
+		ids := strings.Split(fields[0], ",")
+		dstIds := make([]int64, 0, len(ids))
+		for _, i := range ids {
+			id, err := strconv.ParseInt(i, 10, 64)
+			if err != nil {
+				glog.Errorf("[common msg] invalid dest id %s, error: %v", i, err)
+				continue
+			}
+			dstIds = append(dstIds, id)
+		}
+		msgBody := []byte(fields[1])
+		//if glog.V(2) {
+		//	glog.Infof("[common msg] pushing [%d] message to %v, message: len(%d)%v", mid, dstIds, len(msgBody), msgBody)
+		//}
+		go PushMsg(uint16(mid), dstIds, msgBody)
+	}
+}
+
+func PushMsg(msgId uint16, dstIds []int64, msgBody []byte) {
+	for _, id := range dstIds {
+		if id > 0 {
+			gSessionList.PushCommonMsg(msgId, id, msgBody)
+		} else if id < 0 {
+			gUdpSessions.PushCommonMsg(msgId, id, msgBody)
+		}
+	}
+}
+
 // 为用户uid挑选一个1到15内的未使用的手机子id
 func SelectMobileId(uid int64) (int, error) {
 	r := Redix[_SelectMobileId]
@@ -430,7 +518,7 @@ func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr 
 	// 对于刚刚建立，还未调用过注册或登录接口的会话，deviceId是0，不要为这个状态的
 	// session设置deviceId和UDP地址的表映射，因为这个状态的session还不满足P2P的业务功能
 	if deviceId != 0 {
-		err = r.Send("set", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), addr.String())
+		err = r.Send("set", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), sid)
 		if err != nil {
 			return err
 		}
@@ -461,7 +549,7 @@ func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr 
 	return err
 }
 
-func GetDeviceAddr(deviceId int64) (string, error) {
+func GetDeviceSid(deviceId int64) (string, error) {
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
