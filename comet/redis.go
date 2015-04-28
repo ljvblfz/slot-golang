@@ -124,7 +124,7 @@ func InitRedix(addr string) {
 	if err != nil {
 		panic(err)
 	}
-	if gCometType == CometUdp && gCometPushUdp {
+	if gCometType != CometUdp || gCometPushUdp {
 		err = SubCommonMsg()
 		if err != nil {
 			panic(err)
@@ -444,7 +444,11 @@ func HandleCommonMsg(ch <-chan redis.PMessage) {
 			}
 			dstIds = append(dstIds, id)
 		}
-		go PushMsg(uint16(mid), dstIds, []byte(fields[1]))
+		msgBody := []byte(fields[1])
+		//if glog.V(2) {
+		//	glog.Infof("[common msg] pushing [%d] message to %v, message: len(%d)%v", mid, dstIds, len(msgBody), msgBody)
+		//}
+		go PushMsg(uint16(mid), dstIds, msgBody)
 	}
 }
 
