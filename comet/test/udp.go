@@ -3,6 +3,7 @@ package main
 
 import (
 	//"crypto/rand"
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -46,6 +47,7 @@ type Client struct {
 	Name        string
 	ProduceTime time.Time
 	DeviceType  uint16
+	Signature   [260]byte
 
 	Sidx uint16 // 自身的包序号
 	Ridx uint16 // 收取的包序号
@@ -131,26 +133,26 @@ func (c *Client) testApi() {
 			log.Printf("%s=%v", k, v)
 		}
 		time.Sleep(time.Millisecond)
-		//log.Println("---")
 	}
+	log.Println("--- All done ---")
 }
 
-func (c *Client) packBody(msgId uint16, sid []byte, body []byte) []byte {
+func (c *Client) packBody(msgId uint16, otherBody []byte) []byte {
 	frameHeader := make([]byte, 24)
 	frameHeader[0] = (frameHeader[0] &^ 0x7) | 0x2
 	c.Sidx++
 	binary.LittleEndian.PutUint16(frameHeader[2:4], c.Sidx)
 
-	dataHeader := make([]byte, 10)
+	dataHeader := make([]byte, 12)
 	binary.LittleEndian.PutUint16(dataHeader[4:6], msgId)
-	binary.LittleEndian.PutUint16(dataHeader[6:8], uint16(len(body)))
+	binary.LittleEndian.PutUint16(dataHeader[6:8], uint16(len(otherBody)))
 
 	output := append(frameHeader, dataHeader...)
-	output = append(output, sid...)
-	output = append(output, body...)
+	output = append(output, otherBody...)
 
 	// sum header
 	output[24+8] = msgs.ChecksumHeader(output, 24+8)
+	output[24+9] = msgs.ChecksumHeader(output[24+10:], 2+len(otherBody))
 	// TODO sum body
 	return output
 }
@@ -172,16 +174,19 @@ func (c *Client) Query(request []byte) ([]byte, error) {
 			time.Sleep(time.Second * 3)
 			continue
 		}
-		// ignore 50 header bytes
-		if n < 50 {
-			return nil, fmt.Errorf("response less than header count(50 bytes)")
+		twoHeaderLen := 24 + 12
+		// ignore twoHeaderLen header bytes
+		if n < twoHeaderLen {
+			return nil, fmt.Errorf("response less than header count(twoHeaderLen bytes)")
 		}
-		nidx := binary.LittleEndian.Uint16(request[2:4])
+		bodyLen := binary.LittleEndian.Uint16(response[24+6 : 24+6+2])
+		nidx := binary.LittleEndian.Uint16(response[2:4])
 		if nidx != idx {
 			return nil, fmt.Errorf("wrong seqNum in ACK message")
 		}
-		//log.Printf("rep: len(%d) %v", n, response[:n])
-		return response[50:n], err
+		log.Printf("%d + %d(%v) = %d ?", twoHeaderLen, bodyLen, response[24+6:24+6+2], len(response))
+		log.Printf("header: %v, body: %v", response[:twoHeaderLen], response[twoHeaderLen:])
+		return response[twoHeaderLen : twoHeaderLen+int(bodyLen)], err
 	}
 	return nil, ErrNoReply
 }
@@ -191,7 +196,7 @@ func (c *Client) doNewSession() (map[string]interface{}, error) {
 	copy(body[:8], c.MAC[:])
 	copy(body[8:24], c.SN[:])
 
-	req := c.packBody(CmdGetToken, c.Sid, body)
+	req := c.packBody(CmdGetToken, body)
 	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
@@ -200,6 +205,7 @@ func (c *Client) doNewSession() (map[string]interface{}, error) {
 	ok := binary.LittleEndian.Uint32(rep[:4])
 	m["code"] = ok
 	m["sid"] = hex.EncodeToString(rep[4:20])
+	m["platformKey"] = rep[20:28]
 	copy(c.Sid[:], rep[4:20])
 	if ok != 0 {
 		log.Fatalf("doNewSession failed: %v", m)
@@ -209,40 +215,52 @@ func (c *Client) doNewSession() (map[string]interface{}, error) {
 
 func (c *Client) doRegister() (map[string]interface{}, error) {
 	name := []byte(c.Name)
-	body := make([]byte, 31+len(name))
-	binary.LittleEndian.PutUint16(body[:2], c.DeviceType)
-	copy(body[2:10], c.MAC[:])
-	binary.LittleEndian.PutUint32(body[10:14], uint32(int32(c.ProduceTime.Unix())))
-	copy(body[14:30], c.SN[:])
-	body[30] = byte(len(name))
+	body := make([]byte, 309+len(name))
+	copy(body, c.Sid)
+	binary.LittleEndian.PutUint16(body[16:18], c.DeviceType)
+	binary.LittleEndian.PutUint16(body[18:20], 0)
+	binary.LittleEndian.PutUint32(body[20:24], uint32(int32(c.ProduceTime.Unix())))
+	copy(body[24:32], c.MAC[:])
+	copy(body[32:48], c.SN[:])
+	copy(body[48:308], c.Signature[:])
+	body[308] = byte(len(name))
 	copy(body[31:31+len(name)], name)
 
-	req := c.packBody(CmdRegister, c.Sid, body)
+	req := c.packBody(CmdRegister, body)
 	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
 	m["code"] = binary.LittleEndian.Uint32(rep[:4])
-	m["id"] = int64(binary.LittleEndian.Uint64(rep[4:12]))
-	copy(c.Id[:], rep[4:12])
-	m["cookie"] = string(rep[12:76])
-	copy(c.Cookie[:64], rep[12:76])
+	sid2 := rep[4:20]
+	m["id"] = int64(binary.LittleEndian.Uint64(rep[20:28]))
+	copy(c.Id[:], rep[20:28])
+	m["cookie"] = string(rep[28:92])
+	copy(c.Cookie[:64], rep[28:92])
+	if bytes.Compare(c.Sid, sid2) != 0 {
+		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
+	}
 	return m, nil
 }
 
 func (c *Client) doLogin() (map[string]interface{}, error) {
-	body := make([]byte, 72)
-	copy(body[0:8], c.MAC[:])
-	copy(body[8:72], c.Cookie[:])
+	body := make([]byte, 88)
+	copy(body, c.Sid)
+	copy(body[16:24], c.MAC[:])
+	copy(body[24:88], c.Cookie[:])
 
-	req := c.packBody(CmdLogin, c.Sid, body)
+	req := c.packBody(CmdLogin, body)
 	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
 	m["code"] = binary.LittleEndian.Uint32(rep[:4])
+	sid2 := rep[4:20]
+	if bytes.Compare(c.Sid, sid2) != 0 {
+		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
+	}
 	return m, nil
 }
 
@@ -250,71 +268,82 @@ func (c *Client) doRename() (map[string]interface{}, error) {
 	c.Name += "2"
 	name := []byte(c.Name)
 	body := make([]byte, 25+len(name))
-	copy(body[:8], c.MAC[:])
-	body[8] = byte(len(name))
-	copy(body[9:9+len(name)], name)
+	copy(body, c.Sid)
+	copy(body[16:24], c.MAC[:])
+	body[24] = byte(len(name))
+	copy(body[25:25+len(name)], name)
 
 	//log.Printf("SID: %v", c.Sid)
-	req := c.packBody(CmdChangeName, c.Sid, body)
+	req := c.packBody(CmdChangeName, body)
 	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
 	m["code"] = binary.LittleEndian.Uint32(rep[:4])
+	sid2 := rep[4:20]
+	if bytes.Compare(c.Sid, sid2) != 0 {
+		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
+	}
 	m["mac"] = hex.EncodeToString(rep[4:12])
 	return m, nil
 }
 
-func (c *Client) doDoBind() (map[string]interface{}, error) {
-	body := make([]byte, 32)
-	copy(body[0:16], c.Sid[:])
-	copy(body[16:24], c.MAC[:])
-	copy(body[24:32], c.Id[:])
-
-	req := c.packBody(CmdDoBind, c.Sid, body)
-	rep, err := c.Query(req)
-	if err != nil {
-		return nil, err
-	}
-	m := make(map[string]interface{})
-	m["sid"] = hex.EncodeToString(rep[:16])
-	copy(c.Sid[:], rep[:16])
-	m["mac"] = hex.EncodeToString(rep[16:24])
-	m["code"] = binary.LittleEndian.Uint32(rep[24:28])
-	return m, nil
-}
+//func (c *Client) doDoBind() (map[string]interface{}, error) {
+//	body := make([]byte, 32)
+//	copy(body[0:16], c.Sid[:])
+//	copy(body[16:24], c.MAC[:])
+//	copy(body[24:32], c.Id[:])
+//
+//	req := c.packBody(CmdDoBind, c.Sid, body)
+//	rep, err := c.Query(req)
+//	if err != nil {
+//		return nil, err
+//	}
+//	m := make(map[string]interface{})
+//	m["sid"] = hex.EncodeToString(rep[:16])
+//	copy(c.Sid[:], rep[:16])
+//	m["mac"] = hex.EncodeToString(rep[16:24])
+//	m["code"] = binary.LittleEndian.Uint32(rep[24:28])
+//	return m, nil
+//}
 
 func (c *Client) doHeartbeat() (map[string]interface{}, error) {
-	body := make([]byte, 8)
-	copy(body[:8], c.Id[:8])
+	body := make([]byte, 24)
+	copy(body, c.Sid)
+	copy(body[16:24], c.Id[:])
 
-	req := c.packBody(CmdHeartBeat, c.Sid, body)
+	req := c.packBody(CmdHeartBeat, body)
 	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
 	m["code"] = binary.LittleEndian.Uint32(rep[:4])
-	return m, nil
-}
-
-func (c *Client) doOfflineSub() (map[string]interface{}, error) {
-	body := make([]byte, 24)
-	copy(body[0:16], c.Sid[:])
-	copy(body[16:24], c.MAC[:])
-
-	req := c.packBody(CmdSubDeviceOffline, c.Sid, body)
-	rep, err := c.Query(req)
-	if err != nil {
-		return nil, err
+	sid2 := rep[4:20]
+	if bytes.Compare(c.Sid, sid2) != 0 {
+		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
 	}
-	m := make(map[string]interface{})
-	m["sid"] = hex.EncodeToString(rep[:16])
-	copy(c.Sid[:], rep[:16])
-	m["mac"] = hex.EncodeToString(rep[16:24])
 	return m, nil
 }
+
+//func (c *Client) doOfflineSub() (map[string]interface{}, error) {
+//	body := make([]byte, 24)
+//	copy(body, c.Sid)
+//	copy(body[0:16], c.Sid[:])
+//	copy(body[16:24], c.MAC[:])
+//
+//	req := c.packBody(CmdSubDeviceOffline, c.Sid, body)
+//	rep, err := c.Query(req)
+//	if err != nil {
+//		return nil, err
+//	}
+//	m := make(map[string]interface{})
+//	m["sid"] = hex.EncodeToString(rep[:16])
+//	copy(c.Sid[:], rep[:16])
+//	m["mac"] = hex.EncodeToString(rep[16:24])
+//	return m, nil
+//}
 
 func (c *Client) read() ([]byte, error) {
 	select {
