@@ -162,14 +162,12 @@ func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 	this.mu[bn].Lock()
 	hostlist, ok := this.kv[bn][uid]
 	if !ok {
-		// TODO Error log
 		this.mu[bn].Unlock()
 		return fmt.Errorf("user %d not found", uid)
 	}
 	var err error
 	for e := hostlist.Front(); e != nil; e = e.Next() {
 		if h, ok := e.Value.(string); !ok {
-			// TODO error log
 			this.mu[bn].Unlock()
 			return fmt.Errorf("wrong type error [%v] uid[%d]", e.Value, uid)
 		} else {

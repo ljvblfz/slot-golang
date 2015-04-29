@@ -267,7 +267,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 				locker.Unlock()
 				return fmt.Errorf("cmd: %X, sid: [%v], error: %v", c, sid, err)
 			}
-			err = h.VerifySession(sess, packNum)
+			err = sess.VerifySession(packNum)
 			if err != nil {
 				locker.Unlock()
 				return fmt.Errorf("cmd: %X, verify session error: %v", c, err)
@@ -311,6 +311,9 @@ func (h *Handler) handle(t *UdpMsg) error {
 		case CmdSubDeviceOffline:
 			t.CmdType = c
 			res, err = h.onSubDeviceOffline(t, sess, body)
+
+		case CmdSyncState:
+			GMsgBusManager.Push2Backend(0, nil, t.Msg)
 
 		default:
 			glog.Warningf("invalid command type %v", c)
@@ -356,41 +359,75 @@ func (h *Handler) handle(t *UdpMsg) error {
 		output[FrameHeaderLen+9] = msgs.ChecksumHeader(output[FrameHeaderLen+10:], 2+len(res))
 		h.Server.Send(t.Peer, output)
 
-	} else {
-		if mlen < FrameHeaderLen+FrameHeaderLen+12 {
+	} else if op == 0x3 {
+		if mlen < FrameHeaderLen+kSidLen+FrameHeaderLen+DataHeaderLen {
 			return fmt.Errorf("[protocol] invalid message length for protocol")
 		}
+		packNum := binary.LittleEndian.Uint16(t.Msg[2:4])
+		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+6:]))
 		// discard msg if found checking error
-		if t.Msg[FrameHeaderLen+FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+FrameHeaderLen+8) {
+		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+kSidLen+FrameHeaderLen+8) {
 			return fmt.Errorf("checksum header error")
 		}
-		// TODO check data body
 
-		// TODO transfer message to dest id
-		// maybe it needn't check pack number, because it belongs to dest mobile?
+		// check data body
+		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+10:], 2+bodyLen) {
+			return fmt.Errorf("checksum data error")
+		}
+
+		var (
+			sess   *UdpSession
+			sid    *uuid.UUID
+			err    error
+			locker Locker
+		)
+
+		//bodyIndex = FrameHeaderLen + DataHeaderLen
+		//if bodyLen != len(t.Msg[bodyIndex:]) {
+		//	return fmt.Errorf("wrong body length in data header: %d != %d", bodyLen, len(t.Msg[bodyIndex:]))
+		//}
+		//body = t.Msg[bodyIndex : bodyIndex+bodyLen]
+
+		sid, err = uuid.Parse(t.Msg[FrameHeaderLen : FrameHeaderLen+kSidLen])
+		if err != nil {
+			return fmt.Errorf("parse session id error: %v", err)
+		}
+
+		locker = NewDeviceSessionLocker(sid.String())
+		err = locker.Lock()
+		if err != nil {
+			return fmt.Errorf("lock session id [%s] failed: %v", sid, err)
+		}
+		sess, err = gUdpSessions.GetSession(sid)
+		if err != nil {
+			locker.Unlock()
+			return fmt.Errorf("[ForwardMsg] sid: [%v], error: %v", sid, err)
+		}
+		err = sess.VerifySession(packNum)
+		if err != nil {
+			locker.Unlock()
+			return fmt.Errorf("[ForwardMsg] verify session error: %v", err)
+		}
+
+		toId := int64(binary.LittleEndian.Uint64(t.Msg[8:16]))
+		srcId := int64(binary.LittleEndian.Uint64(t.Msg[16:24]))
+
+		// check binded ids
+		destIds := sess.CalcDestIds(toId)
+
+		locker.Unlock()
+
+		if glog.V(3) {
+			glog.Infof("[msg|in] %d <- %d udp, calc to: %v, data: (len: %d)%v...", toId, srcId, destIds, len(t.Msg), t.Msg)
+		} else if glog.V(2) {
+			glog.Infof("[msg|in] %d <- %d udp, calc to: %v, data: (len: %d)%v...", toId, srcId, sess.BindedUsers, destIds, len(t.Msg), t.Msg[0:kDstIdEnd])
+		}
+
+		GMsgBusManager.Push2Backend(srcId, destIds, t.Msg)
+		// transfer message to dest id
 
 		return fmt.Errorf("[protocol] NOT IMPLEMENTED for transfer messages")
 	}
-	return nil
-}
-
-// check pack number and other things in session here
-func (h *Handler) VerifySession(s *UdpSession, packNum uint16) error {
-	// 现在由redis负责超时
-	//if time.Now().Sub(s.LastHeartbeat) > 2*kHeartBeat {
-	//	return ErrSessTimeout
-	//}
-	// pack number
-	switch {
-	case packNum > s.Ridx:
-	case packNum < s.Ridx && packNum < 10 && s.Ridx > uint16(65530):
-	default:
-		return ErrSessPackSeq
-	}
-
-	// all ok
-	s.Ridx = packNum
-
 	return nil
 }
 
@@ -514,6 +551,15 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 	if s, ok := rep["status"]; ok {
 		if n, ok := s.(float64); ok {
 			status = int32(n)
+
+			if n == 0 {
+				bindedIds, err := GetDeviceUsers(sess.DeviceId)
+				if err != nil {
+					glog.Errorf("[online|getIds] id [%d] get ids error: %v, ids: %v", sess.DeviceId, err, bindedIds)
+				} else {
+					sess.BindedUsers = bindedIds
+				}
+			}
 		}
 	}
 	binary.LittleEndian.PutUint32(output[0:4], uint32(status))

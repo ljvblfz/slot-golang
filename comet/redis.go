@@ -117,9 +117,11 @@ func InitRedix(addr string) {
 	ScriptOffline = redis.NewScript(2, _scriptOffline)
 	ScriptOffline.Load(Redix[_SetUserOffline])
 
-	err = SubDeviceUsers()
-	if err != nil {
-		panic(err)
+	if gCometType != msgs.CometUdp || gCometUdpSubBindingEvent {
+		err = SubDeviceUsers()
+		if err != nil {
+			panic(err)
+		}
 	}
 	err = SubModifiedPasswd()
 	if err != nil {
@@ -332,7 +334,11 @@ func HandleDeviceUsers(ch <-chan []byte) {
 			glog.Errorf("[binded id] invalid bind type %s, error: %v", strs[2], err)
 			continue
 		}
-		go gSessionList.UpdateIds(deviceId, userId, msgType != 0)
+		// new code for udp
+		go gUdpSessions.UpdateIds(deviceId, userId, msgType != 0)
+
+		// old code for websocket
+		//go gSessionList.UpdateIds(deviceId, userId, msgType != 0)
 	}
 }
 

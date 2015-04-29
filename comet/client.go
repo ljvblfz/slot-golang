@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/binary"
+
+	"cloud-socket/msgs"
 	"github.com/golang/glog"
 )
 
@@ -14,9 +16,17 @@ func HandleMsg(msg []byte) {
 	msg = msg[2:]
 	data := msg[size*8:]
 
-	for i := uint16(0); i < size; i++ {
-		start := i * 8
-		uid := binary.LittleEndian.Uint64(msg[start : start+8])
-		gSessionList.PushMsg(int64(uid), data)
+	if gCometType == msgs.CometWs {
+		for i := uint16(0); i < size; i++ {
+			start := i * 8
+			id := binary.LittleEndian.Uint64(msg[start : start+8])
+			gSessionList.PushMsg(int64(id), data)
+		}
+	} else if gCometType == msgs.CometUdp {
+		for i := uint16(0); i < size; i++ {
+			start := i * 8
+			id := binary.LittleEndian.Uint64(msg[start : start+8])
+			gUdpSessions.PushMsg(int64(id), data)
+		}
 	}
 }

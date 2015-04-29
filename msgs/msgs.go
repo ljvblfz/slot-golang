@@ -9,6 +9,7 @@ const (
 	// 消息头各部分的长度
 	kFrameHeaderLen = 24
 	kHeadForward    = kFrameHeaderLen
+	kSidLen         = 16
 	kHeadFrame      = kFrameHeaderLen
 	kHeadData       = 12
 
@@ -244,6 +245,16 @@ func IsForwardType(msg []byte) bool {
 
 func ForwardSrcId(msg []byte) int64 {
 	return int64(binary.LittleEndian.Uint64(msg[16:18]))
+}
+
+func GetMsgId(msg []byte) uint16 {
+	offset := 0
+	if IsForwardType(msg) {
+		offset = kHeadForward + kSidLen + kHeadFrame + 4
+	} else {
+		offset = kHeadFrame + 4
+	}
+	return uint16(binary.LittleEndian.Uint16(msg[offset : offset+2]))
 }
 
 // old protocol

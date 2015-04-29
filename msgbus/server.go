@@ -3,11 +3,14 @@ package main
 import (
 	// "bufio"
 	"encoding/binary"
-	"github.com/golang/glog"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
 	"sync"
+
+	"cloud-socket/msgs"
+	"github.com/golang/glog"
 )
 
 const (
@@ -45,6 +48,25 @@ func (this *Server) Start() error {
 	return nil
 }
 
+func (this *Server) login(conn *net.TCPConn) (msgs.CometType, error) {
+	buf := make([]byte, 1)
+	n, err := conn.Read(buf)
+	if err != nil || n != 1 {
+		return 0, fmt.Errorf("Read info error [%s]<-[%s] [%s]\n", conn.LocalAddr(), conn.RemoteAddr(), err.Error())
+	}
+	switch msgs.CometType(buf[0]) {
+	case msgs.CometWs:
+	case msgs.CometUdp:
+	default:
+		return 0, fmt.Errorf("wrong CometType %v", buf[0])
+	}
+	_, err = conn.Write(buf)
+	if err != nil {
+		return 0, fmt.Errorf("Send ack error [%s]->[%s] [%s]\n", conn.LocalAddr(), conn.RemoteAddr(), err.Error())
+	}
+	return msgs.CometType(buf[0]), nil
+}
+
 func (this *Server) handleClient(conn *net.TCPConn) {
 	defer this.wg.Done()
 	defer conn.Close()
@@ -53,7 +75,15 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 		glog.Errorf("ResolveTCPAddr failed [%v], %v", conn.RemoteAddr(), err)
 		return
 	}
-	GComets.AddServer(addr.IP.String(), conn)
+
+	// check login
+	cometType, err := this.login(conn)
+	if err != nil {
+		glog.Errorf("Login comet failed [%v], %v", conn.RemoteAddr(), err)
+		return
+	}
+
+	GComets.AddServer(addr.IP.String(), conn, cometType)
 	glog.Infof("New comet [%s]", addr.IP.String())
 	header := make([]byte, HEADER_SIZE)
 	var bufLen uint32 = INIT_MAX

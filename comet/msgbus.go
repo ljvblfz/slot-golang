@@ -54,6 +54,19 @@ func (this *MsgBusServer) Dail() error {
 		glog.Errorf("Dail [%s]->[%s] [%s]\n", this.localAddr, this.remoteAddr, err.Error())
 		return err
 	}
+	buf := make([]byte, 1)
+	buf[0] = byte(gCometType)
+	_, err = this.conn.Write(buf)
+	if err != nil {
+		glog.Errorf("Send info error [%s]->[%s] [%s]\n", this.localAddr, this.remoteAddr, err.Error())
+		return err
+	}
+	n, err := this.conn.Read(buf)
+	if err != nil || n != 1 {
+		glog.Errorf("Read ack error [%s]<-[%s] [%s]\n", this.localAddr, this.remoteAddr, err.Error())
+		return err
+	}
+
 	// glog.Infof("Dail to [%s] ok\n", this.addr)
 	return nil
 }

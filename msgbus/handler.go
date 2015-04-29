@@ -55,10 +55,8 @@ func MainHandle(srcMsg []byte) {
 
 		// Write into rabbitmq
 		if !shouldForward {
-			if len(data) >= kMsgIdEnd {
-				msgId := int(binary.LittleEndian.Uint16(data[kMsgIdOffset:kMsgIdEnd]))
-				GRmqs.Push(data, msgId)
-			}
+			msgId := msgs.GetMsgId(data)
+			GRmqs.Push(data, int(msgId))
 
 			id := msgs.ForwardSrcId(data)
 
@@ -80,56 +78,95 @@ func MainHandle(srcMsg []byte) {
 
 	if idsSize == 1 {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
-		err := GUserMap.PushToComet(uid, msg)
+		var err error
+		if uid > 0 {
+			err = GUserMap.PushToComet(uid, msg)
+		} else if uid < 0 {
+			err = GComets.PushUdpMsg(msg)
+			if err == nil {
+				if glog.V(3) {
+					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg)
+				} else if glog.V(2) {
+					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
+				}
+			}
+		}
 		if err != nil {
 			statIncDownStreamOutBad()
 			glog.Errorf("Push to comet failed, [%d] %v", uid, err)
 		}
 		return
 	}
-	smap := make(map[string]*hlist.Hlist, idsSize)
+
+	// key: cometName, value: idList
+	wsCometToIds := make(map[string]*hlist.Hlist, idsSize)
+	var udpIds *hlist.Hlist
 
 	for i := uint16(0); i < idsSize; i++ {
-		uid := int64(binary.LittleEndian.Uint64(toIds[i*8 : i*8+8]))
-		cometHosts, err := GUserMap.GetUserComet(uid)
-		if err != nil {
-			if glog.V(4) {
-				glog.Errorf("id: %d, error: %v", uid, err)
+		id := int64(binary.LittleEndian.Uint64(toIds[i*8 : i*8+8]))
+		if id > 0 {
+			cometHosts, err := GUserMap.GetUserComet(id)
+			if err != nil {
+				if glog.V(4) {
+					glog.Errorf("id: %d, error: %v", id, err)
+				}
+				continue
 			}
-			continue
-		}
-		for e := cometHosts.Front(); e != nil; e = e.Next() {
-			haddr, _ := e.Value.(string)
-			hl, ok := smap[haddr]
-			if !ok {
-				hl = hlist.New()
-				smap[haddr] = hl
+			for e := cometHosts.Front(); e != nil; e = e.Next() {
+				haddr, _ := e.Value.(string)
+				hl, ok := wsCometToIds[haddr]
+				if !ok {
+					hl = hlist.New()
+					wsCometToIds[haddr] = hl
+				}
+				hl.PushFront(id)
 			}
-			hl.PushFront(uid)
+		} else if id < 0 {
+			if udpIds == nil {
+				udpIds = hlist.New()
+			}
+			udpIds.PushFront(id)
 		}
 	}
-	for k, v := range smap {
+	for k, v := range wsCometToIds {
 		vSize := uint16(v.Len())
 		pushData := make([]byte, 2+vSize*8+uint16(len(data)))
 		binary.LittleEndian.PutUint16(pushData[:2], vSize)
-		i := 0
-		var idsDebug []int64
-		for e := v.Front(); e != nil; e = e.Next() {
-			id, _ := e.Value.(int64)
-			binary.LittleEndian.PutUint64(pushData[2+i*8:2+i*8+8], uint64(id))
-			idsDebug = append(idsDebug, id)
-			i++
-		}
+		//i := 0
+		//var idsDebug []int64
+		//for e := v.Front(); e != nil; e = e.Next() {
+		//	id, _ := e.Value.(int64)
+		//	binary.LittleEndian.PutUint64(pushData[2+i*8:2+i*8+8], uint64(id))
+		//	idsDebug = append(idsDebug, id)
+		//	i++
+		//}
 		copy(pushData[2+vSize*8:], data)
 
 		err := GComets.PushMsg(pushData, k)
 		if err != nil {
-			glog.Errorf("[msg|down] Broadcast to comet failed, comet: %s, ids: %s, err: %v", k, v, err)
+			glog.Errorf("[msg|down] Broadcast to websocket comet failed, comet: %s, ids: %s, err: %v", k, v, err)
 		} else {
 			if glog.V(3) {
 				glog.Infof("[msg|down] to comet: %s, ids: %s, data: (len: %d)%v", k, v, len(msg), pushData)
 			} else {
 				glog.Infof("[msg|down] to comet: %s, ids: %s, data: (len: %d)%v...", k, v, len(msg), pushData[:3])
+			}
+		}
+	}
+	if udpIds != nil {
+		vSize := uint16(udpIds.Len())
+		pushData := make([]byte, 2+vSize*8+uint16(len(data)))
+		binary.LittleEndian.PutUint16(pushData[:2], vSize)
+		copy(pushData[2+vSize*8:], data)
+
+		err := GComets.PushUdpMsg(pushData)
+		if err != nil {
+			glog.Errorf("[msg|down] Broadcast to udp comet failed, ids: %s, err: %v", udpIds, err)
+		} else {
+			if glog.V(3) {
+				glog.Infof("[msg|down] to udp comet failed, ids: %s, data: (len: %d)%v", udpIds, len(msg), pushData)
+			} else {
+				glog.Infof("[msg|down] to udp comet failed, ids: %s, data: (len: %d)%v...", udpIds, len(msg), pushData[:3])
 			}
 		}
 	}

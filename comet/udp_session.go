@@ -1,17 +1,21 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net"
 	"time"
 
 	"cloud-socket/msgs"
+	"github.com/golang/glog"
 	uuid "github.com/nu7hatch/gouuid"
 )
 
 var (
-	ErrSessNotExist = fmt.Errorf("session not exists")
+	kSidLen                     = 16
+	kHeaderCheckPosInDataHeader = 8
+	ErrSessNotExist             = fmt.Errorf("session not exists")
 
 	gUdpSessions = &UdpSessionList{}
 )
@@ -29,6 +33,9 @@ type UdpSession struct {
 
 	// 收取的包序号
 	Ridx uint16 `json:"Ridx"`
+
+	// 已绑定的用户ID列表
+	BindedUsers []int64 `json:"BindedUsers"`
 }
 
 func NewUdpSession(addr *net.UDPAddr) *UdpSession {
@@ -45,6 +52,61 @@ func NewUdpSession(addr *net.UDPAddr) *UdpSession {
 		}
 	}
 	return u
+}
+
+// check pack number and other things in session here
+func (s *UdpSession) VerifySession(packNum uint16) error {
+	// 现在由redis负责超时
+	//if time.Now().Sub(s.LastHeartbeat) > 2*kHeartBeat {
+	//	return ErrSessTimeout
+	//}
+	// pack number
+	switch {
+	case packNum > s.Ridx:
+	case packNum < s.Ridx && packNum < 10 && s.Ridx > uint16(65530):
+	default:
+		return ErrSessPackSeq
+	}
+
+	// all ok
+	s.Ridx = packNum
+
+	return nil
+}
+
+func (s *UdpSession) isBinded(id int64) bool {
+	// 当s代表板子时，检查id是否属于已绑定用户下的手机
+	id = id - id%int64(kUseridUnit)
+	for _, v := range s.BindedUsers {
+		if v == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *UdpSession) CalcDestIds(toId int64) []int64 {
+	var destIds []int64
+	if toId == 0 {
+		for i, ci := 0, len(s.BindedUsers); i < ci; i++ {
+			for j := int64(1); j < int64(kUseridUnit); j++ {
+				destIds = append(destIds, s.BindedUsers[i]+j)
+			}
+		}
+	} else {
+		if !s.isBinded(int64(toId)) {
+			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", s.DeviceId, toId, s.BindedUsers)
+			return nil
+		}
+		if toId%int64(kUseridUnit) == 0 {
+			destIds = make([]int64, kUseridUnit-1)
+			for i, c := 0, int(kUseridUnit-1); i < c; i++ {
+				toId++
+				destIds[i] = toId
+			}
+		}
+	}
+	return destIds
 }
 
 // Caller should have lock on UdpSession
@@ -159,8 +221,100 @@ func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byt
 	sess.Sidx++
 	msg.FrameHeader.Sequence = sess.Sidx
 	msgBytes := msg.MarshalBytes()
+
 	this.server.Send(sess.Addr, msgBytes)
+
+	this.SaveSession(i, sess)
 	return nil
+}
+
+func (this *UdpSessionList) PushMsg(did int64, msg []byte) error {
+	sid, err := GetDeviceSid(did)
+	if err != nil {
+		return fmt.Errorf("get session of device [%d] error: %v", did, err)
+	}
+
+	locker := NewDeviceSessionLocker(sid)
+	err = locker.Lock()
+	if err != nil {
+		return fmt.Errorf("lock session id [%s] failed: %v", sid, err)
+	}
+	defer locker.Unlock()
+
+	i, err := uuid.Parse([]byte(sid))
+	if err != nil {
+		return fmt.Errorf("wrong session id format: %v", err)
+	}
+	sess, err := this.GetSession(i)
+	if err != nil {
+		return fmt.Errorf("get session %s error: %v", sid, err)
+	}
+	sess.Sidx++
+
+	binary.LittleEndian.PutUint16(msg[2:4], sess.Sidx)
+	copy(msg[FrameHeaderLen:FrameHeaderLen+kSidLen], i[:])
+	hcIndex := FrameHeaderLen + kSidLen + FrameHeaderLen + kHeaderCheckPosInDataHeader
+	msg[hcIndex] = msgs.ChecksumHeader(msg, hcIndex)
+
+	this.server.Send(sess.Addr, msg)
+
+	this.SaveSession(i, sess)
+	return nil
+}
+
+func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType bool) {
+	sid, err := GetDeviceSid(deviceId)
+	if err != nil {
+		glog.Errorf("get session of device [%d] error: %v", deviceId, err)
+		return
+	}
+
+	locker := NewDeviceSessionLocker(sid)
+	err = locker.Lock()
+	if err != nil {
+		glog.Errorf("lock session id [%s] failed: %v", sid, err)
+		return
+	}
+	defer locker.Unlock()
+
+	i, err := uuid.Parse([]byte(sid))
+	if err != nil {
+		glog.Errorf("wrong session id format: %v", err)
+		return
+	}
+	sess, err := this.GetSession(i)
+	if err != nil {
+		glog.Errorf("get session %s error: %v", sid, err)
+		return
+	}
+	if bindType {
+		// 绑定
+		sess.BindedUsers = append(sess.BindedUsers, userId)
+		glog.Infof("[bind|bind] deviceId %d add userId %d", deviceId, userId)
+
+	} else {
+		// 解绑
+		for k, v := range sess.BindedUsers {
+			if v != userId {
+				continue
+			}
+			lastIndex := len(sess.BindedUsers) - 1
+			sess.BindedUsers[k] = sess.BindedUsers[lastIndex]
+			sess.BindedUsers = sess.BindedUsers[:lastIndex]
+			glog.Infof("[bind|unbind] deviceId %d remove userId %d", deviceId, userId)
+			break
+		}
+	}
+	this.SaveSession(i, sess)
+
+	go func() {
+		mids := TransId(userId)
+		if bindType {
+			GMsgBusManager.NotifyBindedIdChanged(deviceId, mids, nil)
+		} else {
+			GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, mids)
+		}
+	}()
 }
 
 //func (this *UdpSessionList) GetDeviceIdAndDstIds(sid *uuid.UUID) (int64, []int64, error) {
