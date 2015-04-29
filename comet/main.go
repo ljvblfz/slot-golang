@@ -8,15 +8,9 @@ import (
 	"runtime"
 	"strings"
 
+	"cloud-socket/msgs"
 	"cloud-socket/ver"
 	"github.com/golang/glog"
-)
-
-type CometType int
-
-const (
-	CometWs CometType = iota
-	CometUdp
 )
 
 var (
@@ -25,7 +19,7 @@ var (
 	gStatusAddr   string
 	gMsgbusRoot   string
 	gCometRoot    string
-	gCometType    CometType
+	gCometType    msgs.CometType
 	gCometPushUdp bool
 	gUdpTimeout   = 40
 )
@@ -60,9 +54,9 @@ func main() {
 
 	switch *cType {
 	case "ws":
-		gCometType = CometWs
+		gCometType = msgs.CometWs
 	case "udp":
-		gCometType = CometUdp
+		gCometType = msgs.CometUdp
 	}
 
 	defer glog.Flush()
@@ -81,13 +75,13 @@ func main() {
 	gSessionList = InitSessionList()
 
 	switch gCometType {
-	case CometWs:
+	case msgs.CometWs:
 		if len(gLocalAddr) == 0 {
 			glog.Fatalf("必须指定本机IP")
 		}
 		StartHttp(strings.Split(*lHost, ","))
 
-	case CometUdp:
+	case msgs.CometUdp:
 		if _, e := url.Parse(*apiUrl); len(*apiUrl) == 0 || e != nil {
 			glog.Fatalf("Invalid argument of '-hurl': %s, error: %v", *apiUrl, e)
 		}

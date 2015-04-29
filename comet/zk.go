@@ -8,6 +8,7 @@ import (
 	stat "cloud-base/goprocinfo/linux"
 	"cloud-base/procinfo"
 	"cloud-base/zk"
+	"cloud-socket/msgs"
 	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
 )
@@ -144,9 +145,9 @@ func ReportUsage() {
 					break
 				}
 				var urls []string
-				if gCometType == CometWs {
+				if gCometType == msgs.CometWs {
 					urls = GetCometWsUrl()
-				} else if gCometType == CometUdp {
+				} else if gCometType == msgs.CometUdp {
 					urls = append(urls, GetCometUdpUrl())
 				}
 				for _, u := range urls {

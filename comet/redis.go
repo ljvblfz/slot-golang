@@ -8,6 +8,7 @@ import (
 	"sync"
 	//"time"
 
+	"cloud-socket/msgs"
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
 	"github.com/hjr265/redsync.go/redsync"
@@ -124,7 +125,7 @@ func InitRedix(addr string) {
 	if err != nil {
 		panic(err)
 	}
-	if gCometType != CometUdp || gCometPushUdp {
+	if gCometType != msgs.CometUdp || gCometPushUdp {
 		err = SubCommonMsg()
 		if err != nil {
 			panic(err)
@@ -455,9 +456,9 @@ func HandleCommonMsg(ch <-chan redis.PMessage) {
 func PushMsg(msgId uint16, dstIds []int64, msgBody []byte) {
 	for _, id := range dstIds {
 		// 整数为手机，负数为板子
-		if gCometType == CometWs {
+		if gCometType == msgs.CometWs {
 			gSessionList.PushCommonMsg(msgId, id, msgBody)
-		} else if gCometType == CometUdp {
+		} else if gCometType == msgs.CometUdp {
 			gUdpSessions.PushCommonMsg(msgId, id, msgBody)
 		}
 	}
