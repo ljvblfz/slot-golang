@@ -68,11 +68,15 @@ func WatchRmq(rmqRoot string) {
 	for {
 		nodes, watch, err := zk.GetNodesW(zkConn, zkRmqRoot)
 		if err == zookeeper.ErrNoNode || err == zookeeper.ErrNoChildrenForEphemerals {
-			glog.Errorf("[zk|rmq] error %v", err)
+			if glog.V(1) {
+				glog.Errorf("[zk|rmq] error %v", err)
+			}
 			time.Sleep(time.Second)
 			continue
 		} else if err != nil {
-			glog.Errorf("[zk|rmq] error %v", err)
+			if glog.V(1) {
+				glog.Errorf("[zk|rmq] error %v", err)
+			}
 			time.Sleep(time.Second)
 			continue
 		}
