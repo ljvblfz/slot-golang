@@ -1,6 +1,4 @@
-# 工作交接 - 程序
-
-以下是我负责的所有软件开发工作内容。
+# 智能插座平台
 
 ## cloud-base
 
@@ -29,26 +27,75 @@ cloud-base是一个go语言的基础库，包含通用的工具代码库，工�
 
 ### 部署文档
 
+向开发人员获得当前安装包文件cloudsocket-<ver>.tar.gz。
+
 #### 安装Zookeeper服务器集群，得到IP地址列表ZkIPs，逗号分割的多个IP地址；
 
-#### 安装RabbitMQ，可安装N个单独的RabbitMQ，并为每个RabbitMQ安装cloud-base/rmqkeeper守护程序，并运行：
+#### 安装RabbitMQ
+	
+可安装N个单独的RabbitMQ，并为每个RabbitMQ安装cloud-base/rmqkeeper守护程序;
 
-    nohup ./rmqkeeper -h 192.168.2.225:5672 -url http://guest:guest@192.168.2.225:15672 -vh="/" -zks ZkIPs -zkroot Rabbitmq -logtostderr=true -d 1s &> rmqkeeper.log
+安装守护程序，解压安装包至cloudsocket，并进入cloudsocket/rmqkeeper，修改rmqkeeper.conf中的以下参数:
+-h RabbitMQ的服务地址
+-url RabbitMQ的监控地址
+-zks Zookeeper集群的IP列表ZkIPs
 
-参数：
-* -h RabbitMQ服务器对外提供服务的IP:Port
-* -url RabbitMQ提供监控的HTTP服务地址
-* -vh RabbitMQ的虚拟主机名，使用默认的"/"
-* -zks 步骤1中得到的Zookeeper服务器地址列表
-* -zkroot 在RabbitMQ服务器启动时，将该服务注册至Zookeeper集群中的该节点下
-* -logtostderr 将日志写至标准输出
-* -d 检测RabbitMQ服务是否可用的时间间隔
+启动程序:
+./run.sh
 
-#### 安装Redis服务器，得到IP地址RedisAddr，内容为IP:Port；
+#### 安装Redis服务器
 
-#### 安装msgbus服务器，可单物理服务器安装多个msgbus服务进程；
+安装后得到IP地址RedisAddr，格式为IP:Port；
 
-#### 安装comet服务器。
+#### 安装msgbus服务器
+
+msgbus可在单物理服务器安装多个msgbus服务进程；
+
+解压安装包至cloudsocket，并进入cloudsocket/msgbus，修改msgbus.conf中的以下参数：
+* -addr Msgbus将对Comet开放的服务地址
+* -rh RedisAddr
+
+启动程序：
+./run.sh
+
+注：配置单机多msgbus进程时，为每个进程复制得到单独的msgbus.conf文件，并将这些配置文件中的-addr修改为不同的端口，-sh修改为不同的监控端口，然后为每个进程运行命令，如：
+./run.sh msgbus1.conf
+./run.sh msgbus2.conf
+
+#### 安装comet服务器
+
+comet服务器的websocket和udp模式，都可以扩展为多机服务器，为每个物理服务器按以下步骤安装即可。
+
+解压安装包至cloudsocket，并进入cloudsocket/comet。
+
+##### 安装Websocket协议的Comet:
+
+修改comet.conf中的以下参数：
+* -lip 本机IP
+* -ports 为提供websocket服务的TCP地址列表，用逗号分割，其中每个地址不需指定IP
+* -rh RedisAddr
+* -type ws
+* -zks ZkIPs
+
+启动程序:
+./run.sh
+
+##### 安装UDP协议的Comet:
+
+修改comet.conf中的以下参数：
+* -lip 本机IP
+* -hhttp HostHttpAddr，格式为IP:Port，用于在内网中向平台内提供HTTP服务
+* -hudp 对外提供UDP服务的UDP端口
+* -hurl 为HTTP平台的根URL
+* -rh RedisAddr
+* -type udp
+* -up true, 当部署多台UDP Comet时，应当只有唯一一台的-up参数被设置为true，否则会发生向UDP设备重复推送消息的问题）
+* -uto UDP会话超时秒数
+* -zks ZkIPs
+* -zkroot CometServersUdp
+
+启动程序:
+./run.sh
 
 ### 开发文档
 
@@ -86,13 +133,6 @@ cloud-base是一个go语言的基础库，包含通用的工具代码库，工�
 
 ### 备忘
 
-## 格力空调项目代理服务器
-
-格力项目代理服务器是插座项目代理服务器的2014年6月至8月期间的一个分支，与插座项目有少量的不同：
-1. 终端的ID为32位数值；
-2. 手机ID为负数，设备ID为整数；
-3. 支持同一ID多点登录；
-4. 目前未部署RabbitMQ，但msgbus中已包含推送消息至RabbitMQ的代码；
-5. 不包含UDP内容；
-6. 2014年10月左右，对Comet和Msgbus做过重构，为两个程序中增加多种缓冲队列以提高吞吐量，这些修改未合并至插座项目的代理服务器；
+1. 终端的ID为64位数值；
+2. 手机ID为正数，设备ID为负数；
 
