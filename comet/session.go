@@ -290,10 +290,10 @@ func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte
 				_, err := s.Conn.Send(msgBytes)
 				if err != nil && glog.V(2) {
 					glog.Warningf("[CommonMsg|send] id: %d, MsgId %d, error: %v", id, msgid, err)
-				}
-				err = s.Conn.Close()
-				if err != nil && glog.V(2) {
-					glog.Warningf("[CommonMsg|close] id: %d, MsgId: %d, error: %v", id, msgid, err)
+					err = s.Conn.Close()
+					if err != nil && glog.V(2) {
+						glog.Warningf("[CommonMsg|close] id: %d, MsgId: %d, error: %v", id, msgid, err)
+					}
 				}
 				if glog.V(1) {
 					glog.Infof("[CommonMsg] id: %d, MsgID %d ", id, msgid)
