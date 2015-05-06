@@ -488,7 +488,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	}
 
 	t.Input["mac"] = mac
-	t.Input["dv"] = fmt.Sprintf("%x", dv)
+	t.Input["dv"] = fmt.Sprintf("%x", binary.LittleEndian.Uint32(dv))
 	t.Input["pt"] = fmt.Sprintf("%d", produceTime)
 
 	t.Input["sn"] = fmt.Sprintf("%x", sn)
