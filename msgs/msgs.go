@@ -2,6 +2,7 @@ package msgs
 
 import (
 	"encoding/binary"
+	//"github.com/golang/glog"
 	"time"
 )
 
@@ -185,7 +186,6 @@ func (a *AppMsg) MarshalBytes() []byte {
 	if a.ForwardHeader != nil {
 		buf = a.ForwardHeader.marshalBytes()
 	}
-
 	buf = append(buf, a.FrameHeader.marshalBytes()...)
 
 	var opcode byte
@@ -203,9 +203,8 @@ func (a *AppMsg) MarshalBytes() []byte {
 	if len(a.Data) != 0 {
 		buf = append(buf, a.Data...)
 	}
-
-	buf[hcheckPos] = ChecksumHeader(buf, hcheckPos)
-	buf[checkPos] = ChecksumHeader(buf[checkPos+1:], len(buf)-checkPos-1)
+	buf[hcheckPos-1] = ChecksumHeader(buf, hcheckPos-2) //从帔头到数据头的length字段
+	buf[checkPos-1] = ChecksumHeader(buf[checkPos:], len(buf)-checkPos)//从SessionId到数据尾
 
 	return buf
 }
