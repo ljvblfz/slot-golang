@@ -140,6 +140,7 @@ func NewUdpSessionList() *UdpSessionList {
 }
 
 func (this *UdpSessionList) GetDeviceAddr(id int64) (string, error) {
+	glog.Infoln("GetDeviceAddr ",id)
 	sid, err := GetDeviceSid(id)
 	if err != nil {
 		return "", fmt.Errorf("get session of device [%d] error: %v", id, err)
@@ -152,7 +153,7 @@ func (this *UdpSessionList) GetDeviceAddr(id int64) (string, error) {
 	}
 	defer locker.Unlock()
 
-	i, err := uuid.Parse([]byte(sid))
+	i, err := uuid.ParseHex(sid)
 	if err != nil {
 		return "", fmt.Errorf("wrong session id format: %v", err)
 	}
@@ -165,6 +166,7 @@ func (this *UdpSessionList) GetDeviceAddr(id int64) (string, error) {
 
 // Get existed session from DB
 func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
+	glog.Infoln("GetSession:",sid)
 	// Get from DB
 	data, err := GetDeviceSession(sid.String())
 	if err != nil {
@@ -189,39 +191,47 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 
 // Save to DB
 func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
+	glog.Infoln("SaveSession:",sid,s)
 	return SetDeviceSession(sid.String(), gUdpTimeout, s.String(), s.DeviceId, s.Addr)
 }
 
 func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byte) error {
+	glog.Infoln("PushCommonMsg:",msgId,did,msgBody)
 	msg := msgs.NewMsg(msgBody, nil)
+	glog.Infoln("PushCommonMsg msg:",msg)
 	msg.FrameHeader.Opcode = 2
 	msg.DataHeader.MsgId = msgId
 	msg.FrameHeader.DstId = did
 
 	sid, err := GetDeviceSid(did)
+	glog.Infoln("PushCommonMsg sid:",sid,err)
 	if err != nil {
 		return fmt.Errorf("get session of device [%d] error: %v", did, err)
 	}
 
 	locker := NewDeviceSessionLocker(sid)
+	glog.Infoln("PushCommonMsg locker:",locker)
 	err = locker.Lock()
 	if err != nil {
 		return fmt.Errorf("lock session id [%s] failed: %v", sid, err)
 	}
 	defer locker.Unlock()
 
-	i, err := uuid.Parse([]byte(sid))
+	i, err := uuid.ParseHex(sid)
+	glog.Infoln("PushCommonMsg i:",i,err)
 	if err != nil {
 		return fmt.Errorf("wrong session id format: %v", err)
 	}
 	sess, err := this.GetSession(i)
+	glog.Infoln("PushCommonMsg sess:",sess,err)
 	if err != nil {
 		return fmt.Errorf("get session %s error: %v", sid, err)
 	}
 	sess.Sidx++
 	msg.FrameHeader.Sequence = sess.Sidx
+	glog.Infoln("PushCommonMsg sess.Sidx:",sess.Sidx)
 	msgBytes := msg.MarshalBytes()
-
+	glog.Infoln("PushCommonMsg:",msgId,"|",did,"|",msgBody)
 	this.server.Send(sess.Addr, msgBytes)
 
 	this.SaveSession(i, sess)
@@ -229,36 +239,45 @@ func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byt
 }
 
 func (this *UdpSessionList) PushMsg(did int64, msg []byte) error {
+	glog.Infoln("PushMsg----------:",did,msg)
 	sid, err := GetDeviceSid(did)
+	glog.Infoln("PushMsg---------sid-:",sid)
 	if err != nil {
 		return fmt.Errorf("get session of device [%d] error: %v", did, err)
 	}
 
 	locker := NewDeviceSessionLocker(sid)
+	glog.Infoln("PushMsg----------locker:",locker)
 	err = locker.Lock()
 	if err != nil {
 		return fmt.Errorf("lock session id [%s] failed: %v", sid, err)
 	}
 	defer locker.Unlock()
 
-	i, err := uuid.Parse([]byte(sid))
+	i, err := uuid.ParseHex(sid)
+	glog.Infoln("PushMsg----------sid:",	sid, []byte(sid), i, err)
 	if err != nil {
 		return fmt.Errorf("wrong session id format: %v", err)
 	}
 	sess, err := this.GetSession(i)
+	glog.Infoln("PushMsg----------sess:",	sess)
 	if err != nil {
 		return fmt.Errorf("get session %s error: %v", sid, err)
 	}
 	sess.Sidx++
 
 	binary.LittleEndian.PutUint16(msg[2:4], sess.Sidx)
+	glog.Infoln("PushMsg----------sess:",	sess)
 	copy(msg[FrameHeaderLen:FrameHeaderLen+kSidLen], i[:])
-	hcIndex := FrameHeaderLen + kSidLen + FrameHeaderLen + kHeaderCheckPosInDataHeader
-	msg[hcIndex] = msgs.ChecksumHeader(msg, hcIndex)
-
+	glog.Infoln("PushMsg----------sess:",	sess)
+	//hcIndex := FrameHeaderLen + kSidLen + FrameHeaderLen + kHeaderCheckPosInDataHeader
+	//glog.Infoln("PushMsg----------sess:",	sess)
+	//msg[hcIndex] = msgs.ChecksumHeader(msg, hcIndex)
+	//glog.Infoln("PushMsg:",did,len(msg),msg,hcIndex)
 	this.server.Send(sess.Addr, msg)
-
+	glog.Infoln("PushMsg----------sess:",	sess)
 	this.SaveSession(i, sess)
+	glog.Infoln("PushMsg----------sess:",	sess)
 	return nil
 }
 
@@ -277,7 +296,7 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 	}
 	defer locker.Unlock()
 
-	i, err := uuid.Parse([]byte(sid))
+	i, err := uuid.ParseHex(sid)
 	if err != nil {
 		glog.Errorf("wrong session id format: %v", err)
 		return

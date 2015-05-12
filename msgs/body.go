@@ -3,6 +3,7 @@ package msgs
 import (
 	"encoding/binary"
 	"errors"
+	"github.com/golang/glog"
 )
 
 const (
@@ -38,10 +39,12 @@ func (m *MsgStatus) Marshal() ([]byte, error) {
 		return nil, ErrPayloadTooLong
 	}
 	buf := make([]byte, 1+8+1+len(m.Payload))
-
+	glog.Info(len(buf),len(m.Payload))
 	buf[0] = m.Type
 	binary.LittleEndian.PutUint64(buf[1:9], uint64(m.Id))
-	buf[10] = byte(len(m.Payload))
-	copy(buf[11:], m.Payload)
+	if len(m.Payload)>0 {
+		buf[10] = byte(len(m.Payload))
+		copy(buf[11:], m.Payload)
+	}
 	return buf, nil
 }

@@ -158,6 +158,7 @@ func (this *UserMap) GetUserComet(uid int64) (*hlist.Hlist, error) {
 }
 
 func (this *UserMap) PushToComet(uid int64, msg []byte) error {
+glog.Infoln("PushToComet:",uid,msg,len(msg))
 	bn := getBlockID(uid)
 	this.mu[bn].Lock()
 	hostlist, ok := this.kv[bn][uid]

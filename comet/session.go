@@ -51,33 +51,42 @@ func (this *Session) isBinded(id int64) bool {
 }
 
 func (this *Session) calcDestIds(toId int64) []int64 {
+	glog.Infoln("session.go told:",toId)
 	var destIds []int64
 	if toId == 0 {
 		if this.Uid > 0 {
 			destIds = this.BindedIds
+			glog.Infoln("session.go destIds:",destIds)
 		} else {
 			for i, ci := 0, len(this.BindedIds); i < ci; i++ {
 				for j := int64(1); j < int64(kUseridUnit); j++ {
 					destIds = append(destIds, this.BindedIds[i]+j)
+					glog.Infoln("session.go destIds:",destIds)
 				}
 			}
 		}
 
 	} else {
+		glog.Infoln("session.go !this.isBinded(int64(toId)):",!this.isBinded(int64(toId)) )
 		if !this.isBinded(int64(toId)) {
 			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", this.Uid, toId, this.BindedIds)
 			return nil
 		}
+		glog.Infoln("session.go this.Uid < 0 && toId%int64(kUseridUnit) == 0 ::",this.Uid < 0 && toId%int64(kUseridUnit) == 0 )
 		if this.Uid < 0 && toId%int64(kUseridUnit) == 0 {
 			destIds = make([]int64, kUseridUnit-1)
+		glog.Infoln("session.go destIds:",destIds )
 			for i, c := 0, int(kUseridUnit-1); i < c; i++ {
 				toId++
 				destIds[i] = toId
+				glog.Infoln("session.go toId:",toId )
 			}
 		} else {
 			destIds = append(destIds, toId)
+			glog.Infoln("session.go destIds:",destIds )
 		}
 	}
+	glog.Infoln("session.go destIds:",destIds )
 	return destIds
 }
 
@@ -177,14 +186,18 @@ func (this *SessionList) GetBindedIds(session *Session, ids *[]int64) {
 }
 
 func (this *SessionList) CalcDestIds(s *Session, toId int64) []int64 {
+	glog.Infoln("session.go s.Uid:", s.Uid)
 	blockId := getBlockID(s.Uid)
+	glog.Infoln("session.go blockId:", blockId)
 	this.onlinedMu[blockId].Lock()
 	_, ok := this.onlined[blockId][s.Uid]
+	glog.Infoln("session.go ok:", ok)
 	var ids []int64
 	if ok {
 		ids = s.calcDestIds(toId)
 	}
 	this.onlinedMu[blockId].Unlock()
+	glog.Infoln("session.go ids:", ids)
 	return ids
 }
 
@@ -269,6 +282,7 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 }
 
 func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte) {
+	glog.Infof("session.go Push msgid:%v | dstId:%v | len(msgBody):%v | msgBody:%v\n",msgid,dstId, len(msgBody), msgBody)
 	msg := msgs.NewMsg(msgBody, nil)
 	msg.FrameHeader.Opcode = 2
 	msg.DataHeader.MsgId = msgid
@@ -278,8 +292,6 @@ func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte
 	for _, id := range ids {
 		blockId := getBlockID(id)
 		lock := this.onlinedMu[blockId]
-		msg.FrameHeader.DstId = id
-		msgBytes := msg.MarshalBytes()
 		lock.Lock()
 		if list, ok := this.onlined[blockId][id]; ok {
 			for e := list.Front(); e != nil; e = e.Next() {
@@ -287,6 +299,11 @@ func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte
 				if !ok {
 					break
 				}
+
+				msg.FrameHeader.DstId = id
+				msgBytes := msg.MarshalBytes()
+				glog.Infoln("session.go Push msgBytes:", len(msgBytes), msgBytes)
+
 				_, err := s.Conn.Send(msgBytes)
 				if err != nil && glog.V(2) {
 					glog.Warningf("[CommonMsg|send] id: %d, MsgId %d, error: %v", id, msgid, err)
@@ -343,11 +360,14 @@ func (this *SessionList) KickOffline(uid int64) {
 }
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {
+	glog.Infof("session.go PushMsg uid:%v |  len(data):%v | data:%v\n",uid, len(data), data)
 	blockId := getBlockID(uid)
+	glog.Infof("session.go PushMsg blockId:%v \n",blockId)
 
 	lock := this.onlinedMu[blockId]
 	lock.Lock()
-
+	glog.Infof("session.go PushMsg  this.onlined[blockId][uid]:%v \n", this.onlined[blockId][uid])
+	
 	if list, ok := this.onlined[blockId][uid]; ok {
 		for e := list.Front(); e != nil; e = e.Next() {
 			if session, ok := e.Value.(*Session); !ok {

@@ -196,9 +196,9 @@ func (h *Handler) process(t *UdpMsg) {
 	err := h.handle(t)
 	if err != nil {
 		if glog.V(1) {
-			glog.Errorf("[handler] handle msg (len[%d] %v) error: %v", len(t.Msg), t.Msg, err)
+			glog.Errorf("[udp] error occurs  msg (len[%d] %v) error: %v", len(t.Msg), t.Msg, err)
 		} else {
-			glog.Errorf("[handler] handle msg (len[%d] %v) error: %v", len(t.Msg), t.Msg[:5], err)
+			glog.Errorf("[udp] error occurs  msg (len[%d] %v) error: %v", len(t.Msg), t.Msg[:5], err)
 		}
 	}
 }
@@ -208,7 +208,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 
 	mlen := len(t.Msg)
 	if mlen < FrameHeaderLen {
-		return fmt.Errorf("[protocol] invalid message length for device proxy")
+		return fmt.Errorf("[protocol] invalid message length for device proxy, the current %v less than the standard len %v.",mlen,FrameHeaderLen)
 	}
 	// check opcode
 	op := (0x7 & t.Msg[0])
@@ -360,20 +360,23 @@ func (h *Handler) handle(t *UdpMsg) error {
 		h.Server.Send(t.Peer, output)
 
 	} else if op == 0x3 {
+		glog.Infoln("op==3")
 		if mlen < FrameHeaderLen+kSidLen+FrameHeaderLen+DataHeaderLen {
 			return fmt.Errorf("[protocol] invalid message length for protocol")
 		}
 		packNum := binary.LittleEndian.Uint16(t.Msg[2:4])
+		glog.Infoln("packNum:", packNum)
 		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+6:]))
+		glog.Infoln("bodyLen:", bodyLen)
 		// discard msg if found checking error
-		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+kSidLen+FrameHeaderLen+8) {
-			return fmt.Errorf("checksum header error")
-		}
+//		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+kSidLen+FrameHeaderLen+8) {
+//			return fmt.Errorf("checksum header error")
+//		}
 
 		// check data body
-		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+10:], 2+bodyLen) {
-			return fmt.Errorf("checksum data error")
-		}
+//		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+10:], 2+bodyLen) {
+//			return fmt.Errorf("checksum data error")
+//		}
 
 		var (
 			sess   *UdpSession
@@ -392,7 +395,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		if err != nil {
 			return fmt.Errorf("parse session id error: %v", err)
 		}
-
+		glog.Infoln("sid:", sid)
 		locker = NewDeviceSessionLocker(sid.String())
 		err = locker.Lock()
 		if err != nil {
@@ -410,23 +413,23 @@ func (h *Handler) handle(t *UdpMsg) error {
 		}
 
 		toId := int64(binary.LittleEndian.Uint64(t.Msg[8:16]))
+		glog.Infoln("toId", toId)
 		srcId := int64(binary.LittleEndian.Uint64(t.Msg[16:24]))
+		glog.Infoln("srcId", srcId)
 
 		// check binded ids
 		destIds := sess.CalcDestIds(toId)
+		glog.Infoln("srcId", destIds)
 
 		locker.Unlock()
 
 		if glog.V(3) {
-			glog.Infof("[msg|in] %d <- %d udp, calc to: %v, data: (len: %d)%v...", toId, srcId, destIds, len(t.Msg), t.Msg)
+			glog.Infof("[forward|in] %d <- %d udp, calc to: %v, data: (len: %d)%v...", toId, srcId, destIds, len(t.Msg), t.Msg)
 		} else if glog.V(2) {
-			glog.Infof("[msg|in] %d <- %d udp, calc to: %v, data: (len: %d)%v...", toId, srcId, sess.BindedUsers, destIds, len(t.Msg), t.Msg[0:kDstIdEnd])
+			glog.Infof("[forward|in] %d <- %d udp, calc to: %v, data: (len: %d)%v...", toId, srcId, sess.BindedUsers, destIds, len(t.Msg), t.Msg[0:kDstIdEnd])
 		}
 
 		GMsgBusManager.Push2Backend(srcId, destIds, t.Msg)
-		// transfer message to dest id
-
-		return fmt.Errorf("[protocol] NOT IMPLEMENTED for transfer messages")
 	}
 	return nil
 }
@@ -482,13 +485,14 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	sn := body[32:48]
 	//sign := body[48:308] // HTTP接口暂未实现
 	nameLen := body[308]
+	glog.Infoln("nameLen:", nameLen, 309+int(nameLen))
 	var name []byte
 	if nameLen > 0 {
 		name = body[309 : 309+int(nameLen)]
 	}
 
 	t.Input["mac"] = mac
-	t.Input["dv"] = fmt.Sprintf("%x", binary.LittleEndian.Uint32(dv))
+	t.Input["dv"] = fmt.Sprintf("%d", binary.LittleEndian.Uint16(dv))
 	t.Input["pt"] = fmt.Sprintf("%d", produceTime)
 
 	t.Input["sn"] = fmt.Sprintf("%x", sn)
@@ -522,7 +526,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 				return output, nil
 			}
 			binary.LittleEndian.PutUint64(output[20:28], uint64(id))
-			sess.DeviceId = id
+			//sess.DeviceId = id
 		}
 	}
 	return output, nil
@@ -553,11 +557,25 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 			status = int32(n)
 
 			if n == 0 {
+				ss := strings.SplitN(cookie, "|", 2)
+
+				if len(ss) > 0 {
+					id, err := strconv.ParseInt(ss[0], 10, 64)
+					if err == nil {
+						sess.DeviceId = id
+					}
+				}
+				
+
+				
 				bindedIds, err := GetDeviceUsers(sess.DeviceId)
 				if err != nil {
 					glog.Errorf("[online|getIds] id [%d] get ids error: %v, ids: %v", sess.DeviceId, err, bindedIds)
 				} else {
 					sess.BindedUsers = bindedIds
+					glog.Infof("[online|getIds] id [%d] get ids: %v", sess.DeviceId, bindedIds) 
+					/**向用户推此设备在线消息*/
+					//PushDevOnlineMsgToUsers(sess)
 				}
 			}
 		}

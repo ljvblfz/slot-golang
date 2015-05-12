@@ -70,16 +70,19 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 }
 
 func (this *MsgBusManager) Push2Backend(srcId int64, ids []int64, msg []byte) {
+	glog.Infoln("Push2Backend:",srcId,ids,msg);
 	size := uint16(len(ids))
+	glog.Infoln("Push2Backend ids's size:",size);
 	pushData := make([]byte, 8+2+size*8+uint16(len(msg)))
 	binary.LittleEndian.PutUint64(pushData[:8], uint64(srcId))
 	binary.LittleEndian.PutUint16(pushData[8:8+2], size)
 	idsData := pushData[8+2 : 8+2+size*8]
+	glog.Infoln("Push2Backend idsData:",idsData);
 	for i := uint16(0); i < size; i++ {
 		binary.LittleEndian.PutUint64(idsData[i*8:i*8+8], uint64(ids[i]))
 	}
 	copy(pushData[8+2+size*8:], msg)
-
+	//this.curr是*hlist.Element
 	if this.curr != nil {
 		this.curr.Value.(*MsgBusServer).Send(pushData)
 		this.mu.Lock()

@@ -37,17 +37,22 @@ func MainHandle(srcMsg []byte) {
 	statIncUpStreamIn()
 
 	srcId := int64(binary.LittleEndian.Uint64(srcMsg[:8]))
+	glog.Infoln("msgbus:srcId:",srcId)
 	msg := srcMsg[8:]
+	glog.Infoln("msgbus:msg:",msg)
 	idsSize := binary.LittleEndian.Uint16(msg[:2])
+	glog.Infoln("msgbus:idsSize:",idsSize)
 	toIds := msg[2 : 2+idsSize*8]
+	glog.Infoln("msgbus:toIds:",toIds)
 	data := msg[2+idsSize*8:]
+	glog.Infoln("msgbus:data:",len(data),data)
 
 	if glog.V(2) {
 		var ids []int64
 		for i := uint16(0); i < idsSize; i++ {
 			ids = append(ids, int64(binary.LittleEndian.Uint64(toIds[i*8:i*8+8])))
 		}
-		glog.Infof("[msg|in] from: %d, ids count: %d, to ids: %v, total len: %d, data: %v...", srcId, idsSize, ids, len(msg), msg[:3])
+		glog.Infof("[msg|in] from: %d  to ids: %v, ids count: %d, total len: %d, data: %v...", srcId, ids, idsSize, len(msg), msg[:3])
 	}
 
 	if srcId < 0 {
@@ -80,14 +85,16 @@ func MainHandle(srcMsg []byte) {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
 		var err error
 		if uid > 0 {
+			glog.Infoln("GUserMap.PushToComet(uid, msg)",uid,msg)
 			err = GUserMap.PushToComet(uid, msg)
 		} else if uid < 0 {
+			glog.Infoln("GComets.PushUdpMsg(msg)",uid,msg)
 			err = GComets.PushUdpMsg(msg)
 			if err == nil {
 				if glog.V(3) {
 					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg)
 				} else if glog.V(2) {
-					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
+						glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
 				}
 			}
 		}
@@ -132,14 +139,14 @@ func MainHandle(srcMsg []byte) {
 		vSize := uint16(v.Len())
 		pushData := make([]byte, 2+vSize*8+uint16(len(data)))
 		binary.LittleEndian.PutUint16(pushData[:2], vSize)
-		//i := 0
+		i := 0
 		//var idsDebug []int64
-		//for e := v.Front(); e != nil; e = e.Next() {
-		//	id, _ := e.Value.(int64)
-		//	binary.LittleEndian.PutUint64(pushData[2+i*8:2+i*8+8], uint64(id))
-		//	idsDebug = append(idsDebug, id)
-		//	i++
-		//}
+		for e := v.Front(); e != nil; e = e.Next() {
+			id, _ := e.Value.(int64)
+			binary.LittleEndian.PutUint64(pushData[2+i*8:2+i*8+8], uint64(id))
+			//idsDebug = append(idsDebug, id)
+			i++
+		}
 		copy(pushData[2+vSize*8:], data)
 
 		err := GComets.PushMsg(pushData, k)

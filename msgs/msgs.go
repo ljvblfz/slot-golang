@@ -203,7 +203,7 @@ func (a *AppMsg) MarshalBytes() []byte {
 	if len(a.Data) != 0 {
 		buf = append(buf, a.Data...)
 	}
-	buf[hcheckPos-1] = ChecksumHeader(buf, hcheckPos-2) //从帔头到数据头的length字段
+	buf[hcheckPos-1] = ChecksumHeader(buf, hcheckPos-1) //从帔头到数据头的length字段
 	buf[checkPos-1] = ChecksumHeader(buf[checkPos:], len(buf)-checkPos)//从SessionId到数据尾
 
 	return buf

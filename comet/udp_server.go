@@ -63,8 +63,10 @@ func (s *UdpServer) RunLoop() {
 }
 
 func (s *UdpServer) Send(peer *net.UDPAddr, msg []byte) {
+	glog.Infoln("Send: ",peer.IP,peer.Port,len(msg),msg)
 	s.socketMu.Lock()
 	n, err := s.socket.WriteToUDP(msg, peer)
+	glog.Infoln("finish Send ",peer.Network(),len(msg),msg)
 	s.socketMu.Unlock()
 	if n != len(msg) || err != nil {
 		if glog.V(3) {

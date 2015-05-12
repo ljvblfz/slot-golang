@@ -19,14 +19,17 @@ func HandleMsg(msg []byte) {
 	if gCometType == msgs.CometWs {
 		for i := uint16(0); i < size; i++ {
 			start := i * 8
-			id := binary.LittleEndian.Uint64(msg[start : start+8])
-			gSessionList.PushMsg(int64(id), data)
+			id := int64(binary.LittleEndian.Uint64(msg[start : start+8]))
+			gSessionList.PushMsg(id, data)
 		}
 	} else if gCometType == msgs.CometUdp {
 		for i := uint16(0); i < size; i++ {
 			start := i * 8
-			id := binary.LittleEndian.Uint64(msg[start : start+8])
-			gUdpSessions.PushMsg(int64(id), data)
+			id := int64(binary.LittleEndian.Uint64(msg[start : start+8]))
+			err := gUdpSessions.PushMsg(id, data)
+			if err != nil {
+				glog.Errorf("PushMsg to %d error: %v, data: (%d)%v", id, err, len(data), data)
+			}
 		}
 	}
 }
