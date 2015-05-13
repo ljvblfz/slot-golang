@@ -37,22 +37,17 @@ func MainHandle(srcMsg []byte) {
 	statIncUpStreamIn()
 
 	srcId := int64(binary.LittleEndian.Uint64(srcMsg[:8]))
-	glog.Infoln("msgbus:srcId:",srcId)
 	msg := srcMsg[8:]
-	glog.Infoln("msgbus:msg:",msg)
 	idsSize := binary.LittleEndian.Uint16(msg[:2])
-	glog.Infoln("msgbus:idsSize:",idsSize)
 	toIds := msg[2 : 2+idsSize*8]
-	glog.Infoln("msgbus:toIds:",toIds)
 	data := msg[2+idsSize*8:]
-	glog.Infoln("msgbus:data:",len(data),data)
 
 	if glog.V(2) {
 		var ids []int64
 		for i := uint16(0); i < idsSize; i++ {
 			ids = append(ids, int64(binary.LittleEndian.Uint64(toIds[i*8:i*8+8])))
 		}
-		glog.Infof("[msg|in] from: %d  to ids: %v, ids count: %d, total len: %d, data: %v...", srcId, ids, idsSize, len(msg), msg[:3])
+		glog.Infof("[bus|in] from: %d  to ids: %v, ids count: %d, total len: %d, data: %v...", srcId, ids, idsSize, len(msg), msg[:3])
 	}
 
 	if srcId < 0 {
@@ -74,7 +69,7 @@ func MainHandle(srcMsg []byte) {
 			err := GUserMap.PushToComet(id, pushBuf)
 			if err != nil {
 				statIncDownStreamOutBad()
-				glog.Errorf("[msg|ack] ACK to [%d] error: %v", id, err)
+				glog.Errorf("[bus|ack] ACK to [%d] error: %v", id, err)
 			}
 
 			return
@@ -85,16 +80,16 @@ func MainHandle(srcMsg []byte) {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
 		var err error
 		if uid > 0 {
-			glog.Infoln("GUserMap.PushToComet(uid, msg)",uid,msg)
+			glog.Infoln("GUserMap.PushToComet(uid, msg)", uid, msg)
 			err = GUserMap.PushToComet(uid, msg)
 		} else if uid < 0 {
-			glog.Infoln("GComets.PushUdpMsg(msg)",uid,msg)
+			glog.Infoln("GComets.PushUdpMsg(msg)", uid, msg)
 			err = GComets.PushUdpMsg(msg)
 			if err == nil {
 				if glog.V(3) {
-					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg)
+					glog.Infof("[bus|down] to: %d, data: (len: %d)%v", uid, len(msg), msg)
 				} else if glog.V(2) {
-						glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
+					glog.Infof("[bus|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
 				}
 			}
 		}
@@ -151,12 +146,12 @@ func MainHandle(srcMsg []byte) {
 
 		err := GComets.PushMsg(pushData, k)
 		if err != nil {
-			glog.Errorf("[msg|down] Broadcast to websocket comet failed, comet: %s, ids: %s, err: %v", k, v, err)
+			glog.Errorf("[bus|down] Broadcast to websocket comet failed, comet: %s, ids: %s, err: %v", k, v, err)
 		} else {
 			if glog.V(3) {
-				glog.Infof("[msg|down] to comet: %s, ids: %s, data: (len: %d)%v", k, v, len(msg), pushData)
+				glog.Infof("[bus|down] to comet: %s, ids: %s, data: (len: %d)%v", k, v, len(msg), pushData)
 			} else {
-				glog.Infof("[msg|down] to comet: %s, ids: %s, data: (len: %d)%v...", k, v, len(msg), pushData[:3])
+				glog.Infof("[bus|down] to comet: %s, ids: %s, data: (len: %d)%v...", k, v, len(msg), pushData[:3])
 			}
 		}
 	}
@@ -168,12 +163,12 @@ func MainHandle(srcMsg []byte) {
 
 		err := GComets.PushUdpMsg(pushData)
 		if err != nil {
-			glog.Errorf("[msg|down] Broadcast to udp comet failed, ids: %s, err: %v", udpIds, err)
+			glog.Errorf("[bus|down] Broadcast to udp comet failed, ids: %s, err: %v", udpIds, err)
 		} else {
 			if glog.V(3) {
-				glog.Infof("[msg|down] to udp comet failed, ids: %s, data: (len: %d)%v", udpIds, len(msg), pushData)
+				glog.Infof("[bus|down] to udp comet failed, ids: %s, data: (len: %d)%v", udpIds, len(msg), pushData)
 			} else {
-				glog.Infof("[msg|down] to udp comet failed, ids: %s, data: (len: %d)%v...", udpIds, len(msg), pushData[:3])
+				glog.Infof("[bus|down] to udp comet failed, ids: %s, data: (len: %d)%v...", udpIds, len(msg), pushData[:3])
 			}
 		}
 	}

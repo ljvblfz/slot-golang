@@ -200,13 +200,13 @@ func WsHandler(ws *websocket.Conn) {
 	addr := ws.Request().RemoteAddr
 	var err error
 	if err = setReadTimeout(ws, 60); err != nil {
-		glog.Errorf("[%s] websocket.SetReadDeadline() error(%s)\n", addr, err)
+		glog.Errorf("[ws:err] %v websocket.SetReadDeadline() error(%s)\n", addr, err)
 		ws.Close()
 		return
 	}
 	reply := make([]byte, 0, 256)
 	if err = websocket.Message.Receive(ws, &reply); err != nil {
-		glog.Errorf("[%s] websocket.Message.Receive() error(%s)\n", addr, err)
+		glog.Errorf("[ws:err] %v websocket.Message.Receive() error(%v)\n", addr, err)
 		ws.Close()
 		return
 	}
@@ -214,14 +214,14 @@ func WsHandler(ws *websocket.Conn) {
 	// parse login params
 	id, timestamp, timeout, encryShadow, loginErr := getLoginParams(string(reply))
 	if loginErr != nil {
-		glog.Errorf("[online|check] [%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
+		glog.Errorf("[ws:err] [%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
 		websocket.Message.Send(ws, AckWrongParams)
 		ws.Close()
 		return
 	}
 	// check login
 	if err = isAuth(id, timestamp, timeout, encryShadow); err != nil {
-		glog.Errorf("[online|check] [%s] auth failed:\"%s\", error: %v", addr, string(reply), err)
+		glog.Errorf("[ws:err] [%s] auth failed:\"%s\", error: %v", addr, string(reply), err)
 		websocket.Message.Send(ws, LoginFailed.ErrorId)
 		ws.Close()
 		return
@@ -232,27 +232,27 @@ func WsHandler(ws *websocket.Conn) {
 		// 用户登录，检查其id是否为16整数倍，并为其分配一个1到15内的未使用的手机子id，相加后作为手机
 		// id，用于本session
 		if id%int64(kUseridUnit) != 0 {
-			glog.Warningf("[online|mobileid] invalid user id %d, low byte is not zero", id)
+			glog.Warningf("[ws:err] invalid user id %d, low byte is not zero", id)
 			err = websocket.Message.Send(ws, AckWrongLoginDevice)
 			ws.Close()
 			return
 		}
 		mobileid, err := SelectMobileId(id)
 		if err != nil {
-			glog.Warningf("[online|mobileid] select mobile id for user %d failed: %v", id, err)
+			glog.Warningf("[ws:err] select mobile id for user %d failed: %v", id, err)
 			err = websocket.Message.Send(ws, AckServerError)
 			ws.Close()
 			return
 		}
 		if mobileid <= 0 {
-			glog.Warningf("[online|mobileid] no valid mobile id for user %d, the user may have 15 clients now.", id)
+			glog.Warningf("[ws:err] no valid mobile id for user %d, the user may have 15 clients now.", id)
 			err = websocket.Message.Send(ws, AckWrongLoginDevice)
 			ws.Close()
 			return
 		}
 		newId := id + int64(mobileid%int(kUseridUnit))
 		if id > newId {
-			glog.Errorf("[online|mobileid] user id overflow, origin id: %d, newId %d with mid %d", id, newId, mobileid)
+			glog.Errorf("[ws:err] user id overflow, origin id: %d, newId %d with mid %d", id, newId, mobileid)
 		}
 		mid = byte(mobileid)
 		// 先用原始的用户id获取设备列表
@@ -262,7 +262,7 @@ func WsHandler(ws *websocket.Conn) {
 		bindedIds, err = GetDeviceUsers(id)
 	}
 	if err != nil {
-		glog.Errorf("[online|getIds] id [%d] get ids error: %v, ids: %v", id, err, bindedIds)
+		glog.Errorf("[ws:err] id [%d] get devices error: %v, devices: %v", id, err, bindedIds)
 		websocket.Message.Send(ws, LoginFailed.ErrorId)
 		ws.Close()
 		return
@@ -279,19 +279,19 @@ func WsHandler(ws *websocket.Conn) {
 		err = websocket.Message.Send(ws, []byte{0})
 	}
 	if err != nil {
-		glog.Errorf("[online|error] [%s] [uid: %d] sent login-ack error (%v)\n", addr, id, err)
+		glog.Errorf("[ws:err]  [%s] [uid: %d] sent login-ack error (%v)\n", addr, id, err)
 		ws.Close()
 		return
 	}
 
 	_, err = SetUserOnline(id, gLocalAddr)
 	if err != nil {
-		glog.Errorf("[online|check] redis online error [uid: %d] %v\n", id, err)
+		glog.Errorf("[ws:err] SetUserOnline error [uid: %d] %v\n", id, err)
 		ws.Close()
 		return
 	}
 	if glog.V(2) {
-		glog.Infof("[online] id: %d, ip: %v, comet: %s, param: %s, binded ids: %v", id, addr, gLocalAddr, reply, bindedIds)
+		glog.Infof("[ws:online] success id: %d, ip: %v, comet: %s, param: %s, binded ids: %v", id, addr, gLocalAddr, reply, bindedIds)
 	}
 
 	s := NewWsSession(id, bindedIds, NewWsConn(ws))
@@ -309,7 +309,7 @@ func WsHandler(ws *websocket.Conn) {
 		m.DataHeader.MsgId = msgs.MIDStatus
 		m.Data, _ = body.Marshal()
 
-		GMsgBusManager.Push2Backend(id, destIds, m.MarshalBytes())
+		GMsgBusManager.Push2Bus(id, destIds, m.MarshalBytes())
 	}
 
 	if timeout <= 0 {
@@ -318,21 +318,20 @@ func WsHandler(ws *websocket.Conn) {
 	ws.ReadTimeout = time.Duration(3*timeout) * time.Second
 	for {
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
+			glog.Errorf("[ws:err] [err:%v] causing ws closed", err)
 			break
 		}
 		gSessionList.GetBindedIds(s, &bindedIds)
 		if len(reply) == 1 && string(reply) == PING_MSG {
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
-				glog.Errorf("<%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
+				glog.Errorf("[ws:err] causing ws closed <%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
 				break
 			}
 		} else {
 			statIncUpStreamIn()
-			// Send to Message Bus
 			msg := reply
-
 			if len(msg) < kDstIdEnd {
-				glog.Infof("Invalid msg lenght %d bytes, %v", len(msg), msg)
+				glog.Infof("[ws:err] causing ws closed Invalid msg lenght %d bytes, %v", len(msg), msg)
 				break
 			}
 			// 根据手机与嵌入式协议，提取消息中的目标id
@@ -341,27 +340,31 @@ func WsHandler(ws *websocket.Conn) {
 			destIds := gSessionList.CalcDestIds(s, toId)
 
 			if glog.V(3) {
-				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg)
+				glog.Infof("[ws|received] %d -> %d, binded(%v), calc to: %v, data: (len: %d)%v...", id, toId, s.BindedIds, destIds, len(msg), msg)
 			} else if glog.V(2) {
-				glog.Infof("[msg|in] %d <- %d, binded(%v), calc to: %v, data: (len: %d)%v...", toId, id, s.BindedIds, destIds, len(msg), msg[0:kDstIdEnd])
+				glog.Infof("[ws|received] %d -> %d, binded(%v), calc to: %v, data: (len: %d)%v...", id, toId, s.BindedIds, destIds, len(msg), msg[0:kDstIdEnd])
 			}
-			GMsgBusManager.Push2Backend(id, destIds, msg)
+			// Send to Message Bus
+			GMsgBusManager.Push2Bus(id, destIds, msg)
 		}
 		//end = time.Now().UnixNano()
 	}
 	offlineErr := err
 	err = SetUserOffline(id, gLocalAddr)
 	if err != nil {
-		glog.Errorf("[offline|error] uid %d, error: %v", id, err)
+		glog.Errorf("[ws:offline|error] uid %d, error: %v", id, err)
 	}
 	if glog.V(2) {
-		glog.Infof("[offline] id:%d, comet: %s, reason: %v", id, gLocalAddr, offlineErr)
+		glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, gLocalAddr, offlineErr)
 	}
+	glog.Infof("[ws] Now it is going to kill the user:%v mobileid:%v", id, mid)
 	if id > 0 && mid > 0 {
 		id -= int64(mid)
-		err = ReturnMobileId(id, mid)
-		if err != nil {
-			glog.Errorf("[mid|return] return mid %d for user %d failed, error: %v", mid, id, err)
+		q := ReturnMobileId(id, mid)
+		if q != 1 {
+			glog.Errorf("[ws|return] return mid %d for user %d failed, error: %v", mid, id, err)
+		} else {
+			glog.Errorf("[ws|return] return mid %d for user %d successed, error: %v", mid, id, err)
 		}
 	}
 	if id < 0 {
@@ -375,8 +378,8 @@ func WsHandler(ws *websocket.Conn) {
 		m.FrameHeader.SrcId = id
 		m.DataHeader.MsgId = msgs.MIDStatus
 		m.Data, _ = body.Marshal()
-
-		GMsgBusManager.Push2Backend(id, destIds, m.MarshalBytes())
+		glog.Infof("deprecated [ws->udp] %v->%v ctn:%v\n", id, destIds, m)
+		GMsgBusManager.Push2Bus(id, destIds, m.MarshalBytes())
 	}
 	gSessionList.RemoveSession(selement)
 	return

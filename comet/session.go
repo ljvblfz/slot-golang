@@ -51,42 +51,42 @@ func (this *Session) isBinded(id int64) bool {
 }
 
 func (this *Session) calcDestIds(toId int64) []int64 {
-	glog.Infoln("session.go told:",toId)
+	glog.Infoln("session.go told:", toId)
 	var destIds []int64
 	if toId == 0 {
 		if this.Uid > 0 {
 			destIds = this.BindedIds
-			glog.Infoln("session.go destIds:",destIds)
+			glog.Infoln("session.go destIds:", destIds)
 		} else {
 			for i, ci := 0, len(this.BindedIds); i < ci; i++ {
 				for j := int64(1); j < int64(kUseridUnit); j++ {
 					destIds = append(destIds, this.BindedIds[i]+j)
-					glog.Infoln("session.go destIds:",destIds)
+					glog.Infoln("session.go destIds:", destIds)
 				}
 			}
 		}
 
 	} else {
-		glog.Infoln("session.go !this.isBinded(int64(toId)):",!this.isBinded(int64(toId)) )
+		glog.Infoln("session.go !this.isBinded(int64(toId)):", !this.isBinded(int64(toId)))
 		if !this.isBinded(int64(toId)) {
 			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", this.Uid, toId, this.BindedIds)
 			return nil
 		}
-		glog.Infoln("session.go this.Uid < 0 && toId%int64(kUseridUnit) == 0 ::",this.Uid < 0 && toId%int64(kUseridUnit) == 0 )
+		glog.Infoln("session.go this.Uid < 0 && toId%int64(kUseridUnit) == 0 ::", this.Uid < 0 && toId%int64(kUseridUnit) == 0)
 		if this.Uid < 0 && toId%int64(kUseridUnit) == 0 {
 			destIds = make([]int64, kUseridUnit-1)
-		glog.Infoln("session.go destIds:",destIds )
+			glog.Infoln("session.go destIds:", destIds)
 			for i, c := 0, int(kUseridUnit-1); i < c; i++ {
 				toId++
 				destIds[i] = toId
-				glog.Infoln("session.go toId:",toId )
+				glog.Infoln("session.go toId:", toId)
 			}
 		} else {
 			destIds = append(destIds, toId)
-			glog.Infoln("session.go destIds:",destIds )
+			glog.Infoln("session.go destIds:", destIds)
 		}
 	}
-	glog.Infoln("session.go destIds:",destIds )
+	glog.Infoln("session.go destIds:", destIds)
 	return destIds
 }
 
@@ -174,6 +174,7 @@ func (this *SessionList) RemoveSession(e *hlist.Element) {
 		}
 	}
 	this.onlinedMu[blockId].Unlock()
+	glog.Infoln("[ws:over] sess dead. uid:", s.Uid)
 }
 
 func (this *SessionList) GetBindedIds(session *Session, ids *[]int64) {
@@ -282,7 +283,7 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 }
 
 func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte) {
-	glog.Infof("session.go Push msgid:%v | dstId:%v | len(msgBody):%v | msgBody:%v\n",msgid,dstId, len(msgBody), msgBody)
+	glog.Infof("session.go Push msgid:%v | dstId:%v | len(msgBody):%v | msgBody:%v\n", msgid, dstId, len(msgBody), msgBody)
 	msg := msgs.NewMsg(msgBody, nil)
 	msg.FrameHeader.Opcode = 2
 	msg.DataHeader.MsgId = msgid
@@ -360,14 +361,11 @@ func (this *SessionList) KickOffline(uid int64) {
 }
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {
-	glog.Infof("session.go PushMsg uid:%v |  len(data):%v | data:%v\n",uid, len(data), data)
 	blockId := getBlockID(uid)
-	glog.Infof("session.go PushMsg blockId:%v \n",blockId)
 
 	lock := this.onlinedMu[blockId]
 	lock.Lock()
-	glog.Infof("session.go PushMsg  this.onlined[blockId][uid]:%v \n", this.onlined[blockId][uid])
-	
+
 	if list, ok := this.onlined[blockId][uid]; ok {
 		for e := list.Front(); e != nil; e = e.Next() {
 			if session, ok := e.Value.(*Session); !ok {
@@ -375,17 +373,15 @@ func (this *SessionList) PushMsg(uid int64, data []byte) {
 				return
 			} else {
 				if len(data) < 24 {
-					glog.Errorf("[invalid data] [uid: %d] length less than 24 (%d)%v", uid, len(data), data)
+					glog.Errorf("[ws|err] [user: %d] length less than 24 (%d)%v", uid, len(data), data)
 				}
 				_, err := session.Conn.Send(data)
 				if err != nil {
 					// 不要在这里移除用户session，用户的websocket连接会处理这个情况
-					if glog.V(1) {
-						glog.Infof("[push failed] uid: %d, error: %v", session.Uid, err)
-					}
+					glog.Infof("[ws|down] fail user: %d, error: %v", session.Uid, err)
 				} else {
 					statIncDownStreamOut()
-					glog.Infof("[msg|down] to id: %d, data: (len %d)%v", session.Uid, len(data), data[:3])
+					glog.Infof("[ws|down] success to user: %d, data: (len %d)%v", session.Uid, len(data), data[:3])
 				}
 			}
 		}

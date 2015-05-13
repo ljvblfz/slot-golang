@@ -146,11 +146,10 @@ func (this *UserMap) GetUserComet(uid int64) (*hlist.Hlist, error) {
 	hosts, ok := this.kv[bn][uid]
 	if !ok {
 		this.mu[bn].Unlock()
-		return nil, fmt.Errorf("Cannot found %d comet", uid)
+		return nil, fmt.Errorf("[bus|err] Cannot found %d comet", uid)
 	}
 	newList := hlist.New()
 	for e := hosts.Front(); e != nil; e = e.Next() {
-		// glog.Info("UID", uid, e.Value)
 		newList.PushFront(e.Value)
 	}
 	this.mu[bn].Unlock()
@@ -158,29 +157,28 @@ func (this *UserMap) GetUserComet(uid int64) (*hlist.Hlist, error) {
 }
 
 func (this *UserMap) PushToComet(uid int64, msg []byte) error {
-glog.Infoln("PushToComet:",uid,msg,len(msg))
 	bn := getBlockID(uid)
 	this.mu[bn].Lock()
 	hostlist, ok := this.kv[bn][uid]
 	if !ok {
 		this.mu[bn].Unlock()
-		return fmt.Errorf("user %d not found", uid)
+		return fmt.Errorf("[bus|err] user %d not found", uid)
 	}
 	var err error
 	for e := hostlist.Front(); e != nil; e = e.Next() {
 		if h, ok := e.Value.(string); !ok {
 			this.mu[bn].Unlock()
-			return fmt.Errorf("wrong type error [%v] uid[%d]", e.Value, uid)
+			return fmt.Errorf("[bus|err] wrong type error [%v] uid[%d]", e.Value, uid)
 		} else {
 			err = GComets.PushMsg(msg, h)
 			if err != nil {
-				glog.Errorf("[msg|down] to: (%d)%v", 1, h)
+				glog.Errorf("[bus|down] to: (%d)%v", 1, h)
 			} else {
 				statIncDownStreamOut()
 				if glog.V(3) {
-					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg)
+					glog.Infof("[bus|down] to: %d, data: (len: %d)%v", uid, len(msg), msg)
 				} else if glog.V(2) {
-					glog.Infof("[msg|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
+					glog.Infof("[bus|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
 				}
 			}
 		}
@@ -200,7 +198,7 @@ func (this *UserMap) GetAll() map[string][]string {
 			for p := v.Front(); p != nil; p = p.Next() {
 				h, ok := p.Value.(string)
 				if !ok {
-					glog.Errorf("Type error, [%v] should be string of ip", p.Value)
+					glog.Errorf("[bus|err] Type error, [%v] should be string of ip", p.Value)
 					continue
 				}
 				id := strconv.FormatInt(k, 10)

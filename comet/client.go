@@ -28,7 +28,9 @@ func HandleMsg(msg []byte) {
 			id := int64(binary.LittleEndian.Uint64(msg[start : start+8]))
 			err := gUdpSessions.PushMsg(id, data)
 			if err != nil {
-				glog.Errorf("PushMsg to %d error: %v, data: (%d)%v", id, err, len(data), data)
+				glog.Errorf("[udp:sended] fail to device: %d | error: %v, data: len(%d)%v", id, err, len(data), data)
+			} else {
+				glog.Errorf("[udp:sended] success to device: %d | error: %v, data: len(%d)%v", id, err, len(data), data)
 			}
 		}
 	}

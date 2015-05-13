@@ -1,10 +1,9 @@
 package main
 
 import (
+	"github.com/golang/glog"
 	"net"
 	"sync"
-
-	"github.com/golang/glog"
 )
 
 const (
@@ -48,43 +47,16 @@ func (s *UdpServer) RunLoop() {
 			}
 			continue
 		}
-
-		if glog.V(3) {
-			glog.Infof("[msg|in] peer: %v, msg: len(%d)%v", peer, n, buf[:n])
-		} else if glog.V(2) {
-			if n < 4 {
-				glog.Infof("[msg|in] peer: %v, msg: len(%d)%v", peer, n, buf[:n])
-			} else {
-				glog.Infof("[msg|in] peer: %v, msg: len(%d)%v", peer, n, buf[:4])
-			}
+		if glog.V(2) {
+			glog.Infof("[udp|received] peer: %v, msg: len(%d)%v", peer, n, buf[:4])
 		}
 		s.handler.Process(peer, buf[:n])
 	}
 }
 
 func (s *UdpServer) Send(peer *net.UDPAddr, msg []byte) {
-	glog.Infoln("Send: ",peer.IP,peer.Port,len(msg),msg)
 	s.socketMu.Lock()
 	n, err := s.socket.WriteToUDP(msg, peer)
-	glog.Infoln("finish Send ",peer.Network(),len(msg),msg)
 	s.socketMu.Unlock()
-	if n != len(msg) || err != nil {
-		if glog.V(3) {
-			glog.Errorf("[server] send udp msg (len(%d)%v) failed: %v", len(msg), msg, err)
-		} else if glog.V(2) {
-			glog.Errorf("[server] send udp msg (len(%d)%v) failed: %v", len(msg), msg[:4], err)
-		} else {
-			glog.Errorf("[server] send udp msg failed: %v", err)
-		}
-	} else {
-		if glog.V(3) {
-			glog.Infof("[msg|out] peer: %v, msg: len(%d)%v", peer, n, msg[:n])
-		} else if glog.V(2) {
-			if n < 4 {
-				glog.Infof("[msg|out] peer: %v, msg: len(%d)%v", peer, n, msg[:n])
-			} else {
-				glog.Infof("[msg|out] peer: %v, msg: len(%d)%v", peer, n, msg[:4])
-			}
-		}
-	}
+	glog.Infof("[udp|sended] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
 }

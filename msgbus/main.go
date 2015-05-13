@@ -52,7 +52,7 @@ func main() {
 	}
 	handleSignal(func() {
 		CloseZK()
-		glog.Info("Closed Server")
+		glog.Info("MsgBusServer Closed")
 		local.Stop()
 	})
 }
@@ -67,7 +67,7 @@ func handleOnlineEvent(notifyUserState <-chan []byte) {
 		if isOnline == "1" {
 			GUserMap.Online(uid, host)
 			if glog.V(1) {
-				glog.Infof("[online] user %d on %s", uid, host)
+				glog.Infof("[bus:online] user %d on %s", uid, host)
 			}
 		} else {
 			if uid == 0 {
@@ -76,7 +76,7 @@ func handleOnlineEvent(notifyUserState <-chan []byte) {
 				GUserMap.Offline(uid, host)
 			}
 			if glog.V(1) {
-				glog.Infof("[offline] user %d on %s", uid, host)
+				glog.Infof("[bus:offline] user %d on %s", uid, host)
 			}
 		}
 	}

@@ -8,8 +8,8 @@ import (
 	"sync"
 	//"time"
 	"bytes"
-	"encoding/binary"
 	"cloud-socket/msgs"
+	"encoding/binary"
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
 	"github.com/hjr265/redsync.go/redsync"
@@ -24,14 +24,14 @@ const (
 	SubCommonMsgKey       = SubCommonMsgKeyPrefix + "*"
 
 	RedisDeviceUsers = "device:owner"
-	RedisUserDevices = "u:%d:devices"
+	RedisUserDevices = "u:%v:devices"
 
 	// 用户正在使用的手机id
-	RedisUserMobiles = "user:mobileid:%d"
+	RedisUserMobiles = "user:mobileid:%v"
 
-	RedisSessionDevice       = "sess:dev:%s"
-	RedisSessionDeviceAddr   = "sess:dev:sid:%d"
-	RedisSessionDeviceLocker = "sess:dev:%s:locker"
+	RedisSessionDevice       = "sess:dev:%v"
+	RedisSessionDeviceAddr   = "sess:dev:sid:%v"
+	RedisSessionDeviceLocker = "sess:dev:%v:locker"
 )
 const (
 	_SetUserOnline = iota
@@ -176,21 +176,6 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 		PubKey,
 		host,
 	))
-
-	// old
-	//ret, err := redis.Int(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, 1))
-	//if err != nil {
-	//	r.Close()
-	//	return false, err
-	//}
-	//if ret == 1 {
-	//	_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 1))
-	//	if err != nil {
-	//		r.Close()
-	//		return false, err
-	//	}
-	//}
-	//return ret == 1, err
 }
 
 func SetUserOffline(uid int64, host string) error {
@@ -205,30 +190,6 @@ func SetUserOffline(uid int64, host string) error {
 		host,
 	))
 	return err
-
-	// old
-	//var (
-	//	err error
-	//	ret int
-	//)
-	//ret, err = redis.Int(r.Do("hincrby", fmt.Sprintf(HostUsers, host), uid, -1))
-	//if err != nil {
-	//	r.Close()
-	//	return err
-	//}
-	//if ret <= 0 {
-	//	_, err = r.Do("publish", PubKey, fmt.Sprintf("%d|%s|%d", uid, host, 0))
-	//	if err != nil {
-	//		r.Close()
-	//		return err
-	//	}
-	//	_, err = r.Do("hdel", fmt.Sprintf(HostUsers, host), uid)
-	//	if err != nil {
-	//		r.Close()
-	//		return err
-	//	}
-	//}
-	//return err
 }
 
 func GetDeviceUsers_bk(deviceId int64) ([]int64, error) {
@@ -250,57 +211,55 @@ func GetDeviceUsers_bk(deviceId int64) ([]int64, error) {
 	bindedIds = append(bindedIds, int64(u_id))
 	return bindedIds, nil
 }
-func PushDevOnlineMsgToUsers(sess *UdpSession){
-	glog.Infof("%v向%v推设备上线消息开始",sess.DeviceId,sess.BindedUsers);
+func PushDevOnlineMsgToUsers(sess *UdpSession) {
+	glog.Infof("%v向%v推设备上线消息开始", sess.DeviceId, sess.BindedUsers)
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
-	r.Do("hset","device:adr",fmt.Sprintf("%d",sess.DeviceId),sess.Addr.Network())
+	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.String())
 	var DevOnlineMsg []byte
 	var strIds []string
-	for _,v:=range sess.BindedUsers{
-		strIds=append(strIds,fmt.Sprintf("%d",v))
+	for _, v := range sess.BindedUsers {
+		strIds = append(strIds, fmt.Sprintf("%d", v))
 	}
-	userIds:=strings.Join(strIds,",")+"|"
-	DevOnlineMsg=append(DevOnlineMsg,[]byte(userIds)...)
-	DevOnlineMsg=append(DevOnlineMsg,byte(9/**上线标识*/))
-	b_buf := bytes.NewBuffer([]byte{}) 
-    binary.Write(b_buf, binary.LittleEndian, sess.DeviceId) 
-	DevOnlineMsg=append(DevOnlineMsg,b_buf.Bytes()...)
-	DevOnlineMsg=append(DevOnlineMsg,byte(0))
-	r.Do("publish", []byte("PubCommonMsg:0x36"),DevOnlineMsg)
-	glog.Infof("%v向%v推设备上线消息结束",sess.DeviceId,sess.BindedUsers);
-	
+	userIds := strings.Join(strIds, ",") + "|"
+	DevOnlineMsg = append(DevOnlineMsg, []byte(userIds)...)
+	DevOnlineMsg = append(DevOnlineMsg, byte(9 /**上线标识*/))
+	b_buf := bytes.NewBuffer([]byte{})
+	binary.Write(b_buf, binary.LittleEndian, sess.DeviceId)
+	DevOnlineMsg = append(DevOnlineMsg, b_buf.Bytes()...)
+	DevOnlineMsg = append(DevOnlineMsg, byte(0))
+	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOnlineMsg)
+	glog.Infof("%v向%v推设备上线消息结束", sess.DeviceId, sess.BindedUsers)
+
 }
-func PushDevOfflineMsgToUsers(sess *UdpSession){
-	glog.Infof("%v向%v推设备下线消息开始",sess.DeviceId,sess.BindedUsers);
+func PushDevOfflineMsgToUsers(sess *UdpSession) {
+	glog.Infof("%v向%v推设备下线消息开始", sess.DeviceId, sess.BindedUsers)
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
-	r.Do("hset","device:adr",fmt.Sprintf("%d",sess.DeviceId),sess.Addr.Network())
+	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.Network())
 	var DevOfflineMsg []byte
 	var strIds []string
-	for _,v:=range sess.BindedUsers{
-		strIds=append(strIds,fmt.Sprintf("%d",v))
+	for _, v := range sess.BindedUsers {
+		strIds = append(strIds, fmt.Sprintf("%d", v))
 	}
-	userIds:=strings.Join(strIds,",")+"|"
-	DevOfflineMsg=append(DevOfflineMsg,[]byte(userIds)...)
-	DevOfflineMsg=append(DevOfflineMsg,byte(10/**下线标识*/))
-	b_buf := bytes.NewBuffer([]byte{}) 
-    binary.Write(b_buf, binary.LittleEndian, sess.DeviceId) 
-	DevOfflineMsg=append(DevOfflineMsg,b_buf.Bytes()...)
-	DevOfflineMsg=append(DevOfflineMsg,byte(0))
-	r.Do("publish", []byte("PubCommonMsg:0x36"),DevOfflineMsg)
-	glog.Infof("%v向%v推设备下线消息结束",sess.DeviceId,sess.BindedUsers);
-	
+	userIds := strings.Join(strIds, ",") + "|"
+	DevOfflineMsg = append(DevOfflineMsg, []byte(userIds)...)
+	DevOfflineMsg = append(DevOfflineMsg, byte(10 /**下线标识*/))
+	b_buf := bytes.NewBuffer([]byte{})
+	binary.Write(b_buf, binary.LittleEndian, sess.DeviceId)
+	DevOfflineMsg = append(DevOfflineMsg, b_buf.Bytes()...)
+	DevOfflineMsg = append(DevOfflineMsg, byte(0))
+	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOfflineMsg)
+	glog.Infof("%v向%v推设备下线消息结束", sess.DeviceId, sess.BindedUsers)
+
 }
 func GetDeviceUsers(deviceId int64) ([]int64, error) {
-	glog.Infoln("redis.go GetDeviceUsers start devuceId:", deviceId)
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
 	user, err := redis.String(r.Do("hget", RedisDeviceUsers, deviceId))
-	glog.Infoln("redis.go GetDeviceUsers", user)
 	if err != nil {
 		return nil, err
 	}
@@ -313,11 +272,11 @@ func GetDeviceUsers(deviceId int64) ([]int64, error) {
 		bindedIds = append(bindedIds, int64(u_id))
 		return bindedIds, nil
 	} else {
-		mems, _ := redis.Strings(r.Do("smembers", fmt.Sprintf("family:%s", host)))
+		mems, _ := redis.Strings(r.Do("smembers", fmt.Sprintf("family:%v", host)))
 		bindedIds := make([]int64, 0, len(mems))
 		for _, m := range mems {
 			u_id, err := strconv.ParseInt(m, 10, 64)
-			if err != nil {
+			if err == nil {
 				bindedIds = append(bindedIds, int64(u_id))
 			}
 		}
@@ -325,31 +284,23 @@ func GetDeviceUsers(deviceId int64) ([]int64, error) {
 	}
 }
 func GetUserDevices(userId int64) ([]int64, error) {
-	glog.Infoln("redis.go GetUserDevices userId:", userId)
 	r := Redix[_GetUserDevices]
 	RedixMu[_GetUserDevices].Lock()
 	defer RedixMu[_GetUserDevices].Unlock()
 	var idStrs []string //字串类型的设备数组
-
 	hostId, err := redis.String(r.Do("hget", "user:family", userId))
-	glog.Infof("hostId:%v|%v\n", hostId, err)
 	//hostId为空说明此用户为孤儿
 	if err != nil || hostId == "" {
 		idStrs, _ = redis.Strings(r.Do("smembers", fmt.Sprintf(RedisUserDevices, userId)))
 	} else {
-		mems, err := redis.Strings(r.Do("smembers", fmt.Sprintf("family:%d", hostId)))
-		if err != nil {
-			for _, m := range mems {
-				devs, err := redis.Strings(r.Do("smembers", fmt.Sprintf(RedisUserDevices, m)))
-				if err != nil {
-					idStrs = append(idStrs, devs...)
-				}
+		mems, _ := redis.Strings(r.Do("smembers", fmt.Sprintf("family:%v", hostId)))
+		for _, m := range mems {
+			devs, err := redis.Strings(r.Do("smembers", fmt.Sprintf(RedisUserDevices, m)))
+			if err == nil && len(devs) > 0 {
+				idStrs = append(idStrs, devs...)
 			}
 		}
 	}
-
-	glog.Infoln("redis.go GetUserDevices idStrs:", idStrs)
-
 	bindedIds := make([]int64, 0, len(idStrs))
 	for _, v := range idStrs {
 		id, err := strconv.ParseInt(v, 10, 64)
@@ -358,7 +309,6 @@ func GetUserDevices(userId int64) ([]int64, error) {
 		}
 		bindedIds = append(bindedIds, id)
 	}
-
 	return bindedIds, nil
 }
 
@@ -400,7 +350,6 @@ func HandleDeviceUsers(ch <-chan []byte) {
 		if buf == nil {
 			continue
 		}
-
 		strs := strings.SplitN(string(buf), "|", 3)
 		if len(strs) != 3 || len(strs) == 0 {
 			glog.Errorf("[binded id] invalid pub-sub msg format: %s", string(buf))
@@ -566,15 +515,13 @@ func SelectMobileId(uid int64) (int, error) {
 	return redis.Int(ScriptSelectMobileId.Do(r, fmt.Sprintf(RedisUserMobiles, uid)))
 }
 
-func ReturnMobileId(userId int64, mid byte) error {
-	glog.Infof("userId:%v|mid:%v", userId, mid)
+func ReturnMobileId(userId int64, mid byte) int {
 	r := Redix[_ReturnMobileId]
 	RedixMu[_ReturnMobileId].Lock()
 	defer RedixMu[_ReturnMobileId].Unlock()
 
-	_, err := r.Do("srem", fmt.Sprintf(RedisUserMobiles, userId), mid)
-
-	return err
+	n, _ := redis.Int(r.Do("srem", fmt.Sprintf(RedisUserMobiles, userId), mid))
+	return n
 }
 
 type Locker interface {
@@ -599,13 +546,11 @@ func GetDeviceSession(sid string) (string, error) {
 }
 
 func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr *net.UDPAddr) error {
-	glog.Infof("SetDeviceSess:%v|%v|%v|%v|%v\n", sid, expire, data, deviceId, addr)
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
 
-	_, err := r.Do("setex", fmt.Sprintf(RedisSessionDevice,sid), expire,  data)
-	glog.Infof("SetDeviceSession %v|%v|%v\n", deviceId, sid,  fmt.Sprintf(RedisSessionDevice,sid))
+	_, err := r.Do("setex", fmt.Sprintf(RedisSessionDevice, sid), expire, data)
 	if err != nil {
 		return err
 	}
@@ -613,7 +558,6 @@ func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr 
 	// session设置deviceId和UDP地址的表映射，因为这个状态的session还不满足P2P的业务功能
 	if deviceId != 0 {
 		_, err = r.Do("setex", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), expire, sid)
-		glog.Infof("SetDeviceSession %v|%v|%v\n", deviceId, sid, fmt.Sprintf(RedisSessionDeviceAddr, deviceId))
 		if err != nil {
 			return err
 		}
@@ -622,13 +566,11 @@ func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr 
 }
 
 func GetDeviceSid(deviceId int64) (string, error) {
-	glog.Infoln("deviceId:", deviceId)
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
-	v,e:=redis.String(r.Do("get", fmt.Sprintf(RedisSessionDeviceAddr, deviceId)))
-	glog.Infoln("GetDeviceSid:",v,e)
-	return v,e
+	v, e := redis.String(r.Do("get", fmt.Sprintf(RedisSessionDeviceAddr, deviceId)))
+	return v, e
 }
 
 func DeleteDeviceSession(sid string) error {
@@ -637,7 +579,6 @@ func DeleteDeviceSession(sid string) error {
 	defer RedixMu[_DeleteDeviceSession].Unlock()
 
 	_, err := r.Do("del", fmt.Sprintf(RedisSessionDevice, sid))
-	glog.Infoln("DeleteDeviceSession:",sid,err)
 	return err
 }
 

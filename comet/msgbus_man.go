@@ -51,7 +51,7 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 	this.mu.Lock()
 	for e := this.list.Front(); e != nil; e = e.Next() {
 		if srv, ok := e.Value.(*MsgBusServer); !ok {
-			glog.Error("Fatal error on msg bus")
+			glog.Error("[bus:err] Fatal error on msg bus")
 			this.mu.Unlock()
 			return
 		} else {
@@ -69,21 +69,20 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 	this.mu.Unlock()
 }
 
-func (this *MsgBusManager) Push2Backend(srcId int64, ids []int64, msg []byte) {
-	glog.Infoln("Push2Backend:",srcId,ids,msg);
+//called by websocket.go,udp_handler.go
+func (this *MsgBusManager) Push2Bus(srcId int64, ids []int64, msg []byte) {
 	size := uint16(len(ids))
-	glog.Infoln("Push2Backend ids's size:",size);
 	pushData := make([]byte, 8+2+size*8+uint16(len(msg)))
 	binary.LittleEndian.PutUint64(pushData[:8], uint64(srcId))
 	binary.LittleEndian.PutUint16(pushData[8:8+2], size)
 	idsData := pushData[8+2 : 8+2+size*8]
-	glog.Infoln("Push2Backend idsData:",idsData);
 	for i := uint16(0); i < size; i++ {
 		binary.LittleEndian.PutUint64(idsData[i*8:i*8+8], uint64(ids[i]))
 	}
 	copy(pushData[8+2+size*8:], msg)
 	//this.curr是*hlist.Element
 	if this.curr != nil {
+		//look here!!!!, it send
 		this.curr.Value.(*MsgBusServer).Send(pushData)
 		this.mu.Lock()
 		next := this.curr.Next()
@@ -94,7 +93,7 @@ func (this *MsgBusManager) Push2Backend(srcId int64, ids []int64, msg []byte) {
 		}
 		this.mu.Unlock()
 	} else {
-		glog.Errorf("[msgbus] curr == nil, list: %v", this.list)
+		glog.Errorf("[bus:err] Push2Backend curr == nil, list: %v", this.list)
 	}
 	statIncUpStreamOut()
 }
@@ -110,12 +109,12 @@ func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []in
 	if len(newBindIds) > 0 {
 		body.Type = msgs.MSTBinded
 		m.Data, _ = body.Marshal()
-		GMsgBusManager.Push2Backend(0, newBindIds, m.MarshalBytes())
+		GMsgBusManager.Push2Bus(0, newBindIds, m.MarshalBytes())
 	}
 	if len(unbindIds) > 0 {
 		body.Type = msgs.MSTUnbinded
 		m.Data, _ = body.Marshal()
-		GMsgBusManager.Push2Backend(0, unbindIds, m.MarshalBytes())
+		GMsgBusManager.Push2Bus(0, unbindIds, m.MarshalBytes())
 	}
 
 	// old code
