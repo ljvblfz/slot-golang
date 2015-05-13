@@ -359,7 +359,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 			return fmt.Errorf("[protocol] invalid message length for protocol")
 		}
 		packNum := binary.LittleEndian.Uint16(t.Msg[2:4])
-		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+6:]))
+//		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+6:]))
 		// discard msg if found checking error
 		//		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+kSidLen+FrameHeaderLen+8) {
 		//			return fmt.Errorf("checksum header error")
@@ -381,7 +381,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		//if bodyLen != len(t.Msg[bodyIndex:]) {
 		//	return fmt.Errorf("wrong body length in data header: %d != %d", bodyLen, len(t.Msg[bodyIndex:]))
 		//}
-		//body = t.Msg[bodyIndex : bodyIndex+bodyLen]
+//		body = t.Msg[bodyIndex : bodyIndex+bodyLen]
 
 		sid, err = uuid.Parse(t.Msg[FrameHeaderLen : FrameHeaderLen+kSidLen])
 		if err != nil {
