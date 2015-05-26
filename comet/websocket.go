@@ -357,15 +357,15 @@ func WsHandler(ws *websocket.Conn) {
 	if glog.V(2) {
 		glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, gLocalAddr, offlineErr)
 	}
-	glog.Infof("[ws] Now it is going to kill the user:%v mobileid:%v", id, mid)
 	if id > 0 && mid > 0 {
 		id -= int64(mid)
-		q := ReturnMobileId(id, mid)
-		if q != 1 {
-			glog.Errorf("[ws|return] return mid %d for user %d failed, error: %v", mid, id, err)
-		} else {
-			glog.Errorf("[ws|return] return mid %d for user %d successed, error: %v", mid, id, err)
-		}
+		ReturnMobileId(id, mid)
+//		q := ReturnMobileId(id, mid)
+//		if q != 1 {
+//			glog.Errorf("[ws|return] return mid %d for user %d failed, error: %v", mid, id-int64(mid), err)
+//		} else {
+//			glog.Errorf("[ws|return] return mid %d for user %d successed, error: %v", mid, id-int64(mid), err)
+//		}
 	}
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)

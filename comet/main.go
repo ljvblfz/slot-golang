@@ -92,7 +92,7 @@ func main() {
 		server := NewUdpServer(*addr, handler)
 		handler.Server = server
 		gUdpSessions.server = server
-		go handler.Run()
+		go handler.Run() ///api/device/udpadr
 		go server.RunLoop()
 
 	default:

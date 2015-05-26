@@ -38,19 +38,17 @@ func (s *UdpServer) RunLoop() {
 	s.socket = socket
 	glog.Infof("UdpServer started on %v", socket.LocalAddr())
 
-	buf := make([]byte, kMaxPackageSize)
+	input := make([]byte, kMaxPackageSize)
 	for {
-		n, peer, err := socket.ReadFromUDP(buf)
+		n, peer, err := socket.ReadFromUDP(input)
 		if err != nil {
 			if nerr, ok := err.(*net.OpError); ok && !nerr.Temporary() {
-				glog.Fatalf("Read failed: %v", nerr)
+				glog.Fatalf("[udp|received] Read failed: %v", nerr)
 			}
 			continue
 		}
-		if glog.V(2) {
-			glog.Infof("[udp|received] peer: %v, msg: len(%d)%v", peer, n, buf[:4])
-		}
-		s.handler.Process(peer, buf[:n])
+		glog.Infof("[udp|received] peer: %v, msg: len(%d)%v", peer, n, input[:n])
+		s.handler.Process(peer, input[:n])
 	}
 }
 

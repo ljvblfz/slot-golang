@@ -178,9 +178,9 @@ func (h *Handler) OnBackendGetDeviceAddr(w http.ResponseWriter, r *http.Request)
 	w.Write(buf)
 }
 
-func (h *Handler) Process(peer *net.UDPAddr, msg []byte) {
-	msgCopy := make([]byte, len(msg))
-	copy(msgCopy, msg)
+func (h *Handler) Process(peer *net.UDPAddr, input []byte) {
+	msgCopy := make([]byte, len(input))
+	copy(msgCopy, input)
 
 	t := &UdpMsg{
 		Peer:   peer,
@@ -246,7 +246,16 @@ func (h *Handler) handle(t *UdpMsg) error {
 		// parse data(udp)
 		// 28 = FrameHeaderLen + 4
 		c := binary.LittleEndian.Uint16(t.Msg[28:30])
-		if c != CmdGetToken {
+		if c == CmdSyncState {
+			glog.Infoln("执行设备状态同步")
+			GMsgBusManager.Push2Bus(0, nil, t.Msg)
+			return nil
+		} else if c == 0x31 {
+			glog.Infoln("执行报警信息同步")
+			GMsgBusManager.Push2Bus(0, nil, t.Msg)
+			return nil
+			//TODO alarm msg synchronization
+		} else if c != CmdGetToken {
 			sid, err = uuid.Parse(t.Msg[bodyIndex : bodyIndex+16])
 			if err != nil {
 				return fmt.Errorf("parse session id error: %v", err)
@@ -307,8 +316,8 @@ func (h *Handler) handle(t *UdpMsg) error {
 			t.CmdType = c
 			res, err = h.onSubDeviceOffline(t, sess, body)
 
-		case CmdSyncState:
-			GMsgBusManager.Push2Bus(0, nil, t.Msg)
+			//		case CmdSyncState:
+			//			GMsgBusManager.Push2Bus(0, nil, t.Msg)
 
 		default:
 			glog.Warningf("invalid command type %v", c)
@@ -359,7 +368,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 			return fmt.Errorf("[protocol] invalid message length for protocol")
 		}
 		packNum := binary.LittleEndian.Uint16(t.Msg[2:4])
-//		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+6:]))
+		//		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+6:]))
 		// discard msg if found checking error
 		//		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+kSidLen+FrameHeaderLen+8) {
 		//			return fmt.Errorf("checksum header error")
@@ -381,7 +390,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		//if bodyLen != len(t.Msg[bodyIndex:]) {
 		//	return fmt.Errorf("wrong body length in data header: %d != %d", bodyLen, len(t.Msg[bodyIndex:]))
 		//}
-//		body = t.Msg[bodyIndex : bodyIndex+bodyLen]
+		//		body = t.Msg[bodyIndex : bodyIndex+bodyLen]
 
 		sid, err = uuid.Parse(t.Msg[FrameHeaderLen : FrameHeaderLen+kSidLen])
 		if err != nil {
@@ -456,7 +465,7 @@ func (h *Handler) onGetToken(t *UdpMsg, body []byte) ([]byte, error) {
 	}
 	output := make([]byte, 28)
 	binary.LittleEndian.PutUint32(output[:4], 0)
-	copy(output[4:20], sid[:16])
+	copy(output[4:20], sid[:16]) //把sid传给板子
 
 	return output, nil
 }
@@ -562,6 +571,7 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 					glog.Infof("[udp|getIds] id [%d] get ids: %v", sess.DeviceId, bindedIds)
 					/**向用户推此设备在线消息*/
 					PushDevOnlineMsgToUsers(sess)
+					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(40*time.Second, func() { PushDevOfflineMsgToUsers(sess); delete(gUdpSessions.udpmap,sess.Addr.String()) })
 				}
 			}
 		}

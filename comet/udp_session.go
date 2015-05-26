@@ -132,10 +132,11 @@ func (s *UdpSession) FromString(data string) error {
 
 type UdpSessionList struct {
 	server *UdpServer
+	udpmap map[string]*time.Timer
 }
 
 func NewUdpSessionList() *UdpSessionList {
-	sl := &UdpSessionList{}
+	sl := &UdpSessionList{udpmap: make(map[string]*time.Timer)}
 	return sl
 }
 
@@ -166,8 +167,6 @@ func (this *UdpSessionList) GetDeviceAddr(id int64) (string, error) {
 
 // Get existed session from DB
 func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
-	glog.Infoln("GetSession:", sid)
-	// Get from DB
 	data, err := GetDeviceSession(sid.String())
 	if err != nil {
 		return nil, err
@@ -191,6 +190,7 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 
 // Save to DB
 func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
+	gUdpSessions.udpmap[s.Addr.String()].Reset(40 * time.Second)
 	return SetDeviceSession(sid.String(), gUdpTimeout, s.String(), s.DeviceId, s.Addr)
 }
 

@@ -238,7 +238,7 @@ func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
-	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.Network())
+	r.Do("hdel", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.Network())
 	var DevOfflineMsg []byte
 	var strIds []string
 	for _, v := range sess.BindedUsers {
@@ -545,12 +545,12 @@ func GetDeviceSession(sid string) (string, error) {
 	return redis.String(r.Do("get", fmt.Sprintf(RedisSessionDevice, sid)))
 }
 
-func SetDeviceSession(sid string, expire int, data string, deviceId int64, addr *net.UDPAddr) error {
+func SetDeviceSession(sid string, expire int, json string, deviceId int64, addr *net.UDPAddr) error {
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
 
-	_, err := r.Do("setex", fmt.Sprintf(RedisSessionDevice, sid), expire, data)
+	_, err := r.Do("setex", fmt.Sprintf(RedisSessionDevice, sid), expire, json)
 	if err != nil {
 		return err
 	}
