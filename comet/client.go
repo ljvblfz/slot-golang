@@ -30,7 +30,7 @@ func HandleMsg(msg []byte) {
 			if err != nil {
 				glog.Errorf("[udp:sended] fail to device: %d | error: %v, data: len(%d)%v", id, err, len(data), data)
 			} else {
-				glog.Errorf("[udp:sended] success to device: %d | error: %v, data: len(%d)%v", id, err, len(data), data)
+				glog.Infof("[udp:sended] success to device: %d | error: %v, data: len(%d)%v", id, err, len(data), data)
 			}
 		}
 	}

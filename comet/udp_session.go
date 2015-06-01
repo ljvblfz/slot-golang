@@ -17,7 +17,7 @@ var (
 	kHeaderCheckPosInDataHeader = 8
 	ErrSessNotExist             = fmt.Errorf("session not exists")
 
-	gUdpSessions = &UdpSessionList{}
+	gUdpSessions = NewUdpSessionList()
 )
 
 type UdpSession struct {
@@ -190,7 +190,10 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 
 // Save to DB
 func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
-	gUdpSessions.udpmap[s.Addr.String()].Reset(40 * time.Second)
+	v, ok := gUdpSessions.udpmap[s.Addr.String()]
+	if ok {
+		v.Reset(40 * time.Second)
+	}
 	return SetDeviceSession(sid.String(), gUdpTimeout, s.String(), s.DeviceId, s.Addr)
 }
 
