@@ -482,7 +482,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	sn := body[32:48]
 	//sign := body[48:308] // HTTP接口暂未实现
 	nameLen := body[308]
-	glog.Infoln("nameLen:", nameLen, 309+int(nameLen))
+	
 	var name []byte
 	if nameLen > 0 {
 		name = body[309 : 309+int(nameLen)]

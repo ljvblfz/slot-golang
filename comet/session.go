@@ -283,7 +283,7 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 }
 
 func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte) {
-	glog.Infof("session.go Push msgid:%v | dstId:%v | len(msgBody):%v | msgBody:%v\n", msgid, dstId, len(msgBody), msgBody)
+	glog.Infof("[ch:sending] msgid:%v | dstId:%v | len(msgBody):%v | msgBody:%v\n", msgid, dstId, len(msgBody), msgBody)
 	msg := msgs.NewMsg(msgBody, nil)
 	msg.FrameHeader.Opcode = 2
 	msg.DataHeader.MsgId = msgid
@@ -307,14 +307,14 @@ func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte
 
 				_, err := s.Conn.Send(msgBytes)
 				if err != nil && glog.V(2) {
-					glog.Warningf("[CommonMsg|send] id: %d, MsgId %d, error: %v", id, msgid, err)
+					glog.Warningf("[ch:err] id: %d, MsgId %d, error: %v", id, msgid, err)
 					err = s.Conn.Close()
 					if err != nil && glog.V(2) {
-						glog.Warningf("[CommonMsg|close] id: %d, MsgId: %d, error: %v", id, msgid, err)
+						glog.Warningf("[ch:err] id: %d, MsgId: %d, error: %v", id, msgid, err)
 					}
 				}
 				if glog.V(1) {
-					glog.Infof("[CommonMsg] id: %d, MsgID %d ", id, msgid)
+					glog.Infof("[ch:sended]%v->%v, MsgID:%v,ctn:%v ", s.Uid, dstId, msgid, msgBytes)
 				}
 			}
 		}

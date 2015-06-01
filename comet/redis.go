@@ -467,13 +467,13 @@ func HandleCommonMsg(ch <-chan redis.PMessage) {
 		}
 		mid, err := strconv.ParseUint(msgid, 0, 16)
 		if err != nil {
-			glog.Errorf("[common msg] Cannot parse wrong MsgId %s, error: %v", msgid, err)
+			glog.Errorf("[channel err] Cannot parse wrong MsgId %s, error: %v", msgid, err)
 			continue
 		}
 
 		fields := strings.SplitN(string(m.Data), "|", 2)
 		if len(fields) != 2 || len(fields) == 0 {
-			glog.Errorf("[common msg] invalid pub-sub msg format: %s", string(m.Data))
+			glog.Errorf("[channel err] invalid pub-sub msg format: %s", string(m.Data))
 			continue
 		}
 
@@ -482,7 +482,7 @@ func HandleCommonMsg(ch <-chan redis.PMessage) {
 		for _, i := range ids {
 			id, err := strconv.ParseInt(i, 10, 64)
 			if err != nil {
-				glog.Errorf("[common msg] invalid dest id %s, error: %v", i, err)
+				glog.Errorf("[channel err] invalid dest id %s, error: %v", i, err)
 				continue
 			}
 			dstIds = append(dstIds, id)
