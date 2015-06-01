@@ -482,7 +482,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	sn := body[32:48]
 	//sign := body[48:308] // HTTP接口暂未实现
 	nameLen := body[308]
-	
+
 	var name []byte
 	if nameLen > 0 {
 		name = body[309 : 309+int(nameLen)]
@@ -493,7 +493,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	t.Input["pt"] = fmt.Sprintf("%d", produceTime)
 
 	t.Input["sn"] = fmt.Sprintf("%x", sn)
-	t.Input["name"] = fmt.Sprintf("%x", name)
+	t.Input["name"] = string(name)
 
 	output := make([]byte, 92)
 	httpStatus, rep, err := t.DoHTTPTask()
@@ -571,7 +571,7 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 					glog.Infof("[udp|getIds] id [%d] get ids: %v", sess.DeviceId, bindedIds)
 					/**向用户推此设备在线消息*/
 					PushDevOnlineMsgToUsers(sess)
-					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(40*time.Second, func() { PushDevOfflineMsgToUsers(sess); delete(gUdpSessions.udpmap,sess.Addr.String()) })
+					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(40*time.Second, func() { PushDevOfflineMsgToUsers(sess); delete(gUdpSessions.udpmap, sess.Addr.String()) })
 				}
 			}
 		}
