@@ -201,7 +201,7 @@ func (h *Handler) process(t *UdpMsg) {
 
 func (h *Handler) handle(t *UdpMsg) error {
 	// TODO need decryption later
-
+	busi := ""
 	mlen := len(t.Msg)
 	if mlen < FrameHeaderLen {
 		return fmt.Errorf("[protocol] invalid message length for device proxy,reason: mlen < FrameHeaderLen | %v < %v.", mlen, FrameHeaderLen)
@@ -247,15 +247,18 @@ func (h *Handler) handle(t *UdpMsg) error {
 		// 28 = FrameHeaderLen + 4
 		c := binary.LittleEndian.Uint16(t.Msg[28:30])
 		if c == CmdSyncState {
+			busi = "CmdSyncState"
 			glog.Infoln("执行设备状态同步")
 			GMsgBusManager.Push2Bus(0, nil, t.Msg)
 			return nil
 		} else if c == 0x31 {
 			glog.Infoln("执行报警信息同步")
+			busi = "报警信息同步"
 			GMsgBusManager.Push2Bus(0, nil, t.Msg)
 			return nil
 			//TODO alarm msg synchronization
 		} else if c != CmdGetToken {
+			busi = "CmdGetToken"
 			sid, err = uuid.Parse(t.Msg[bodyIndex : bodyIndex+16])
 			if err != nil {
 				return fmt.Errorf("parse session id error: %v", err)
@@ -283,39 +286,34 @@ func (h *Handler) handle(t *UdpMsg) error {
 		copy(output[:bodyIndex], t.Msg[:bodyIndex])
 
 		var res []byte
+		t.CmdType = c
 		switch c {
 		case CmdGetToken:
-			t.CmdType = c
 			res, err = h.onGetToken(t, body)
-
+			busi = "CmdGetToken"
 		case CmdRegister:
-			t.CmdType = c
 			t.Url = h.kApiUrls[c]
 			res, err = h.onRegister(t, sess, body)
-
+			busi = "CmdRegister"
 		case CmdLogin:
-			t.CmdType = c
 			t.Url = h.kApiUrls[c]
 			res, err = h.onLogin(t, sess, body)
-
+			busi = "CmdLogin"
 		case CmdRename:
-			t.CmdType = c
 			t.Url = h.kApiUrls[c]
 			res, err = h.onRename(t, sess, body)
-
+			busi = "CmdRename"
 		//case CmdDoBind:
 		//	t.CmdType = c
 		//	t.Url = h.kApiUrls[c]
 		//	res, err = h.onDoBind(t, sess, body)
 
 		case CmdHeartBeat:
-			t.CmdType = c
 			res, err = h.onHearBeat(t, sess, body)
-
+			busi = "CmdHeartBeat"
 		case CmdSubDeviceOffline:
-			t.CmdType = c
 			res, err = h.onSubDeviceOffline(t, sess, body)
-
+			busi = "CmdSubDeviceOffline"
 			//		case CmdSyncState:
 			//			GMsgBusManager.Push2Bus(0, nil, t.Msg)
 
@@ -361,7 +359,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		binary.LittleEndian.PutUint16(output[FrameHeaderLen+6:], uint16(len(res)))
 		output[FrameHeaderLen+8] = msgs.ChecksumHeader(output, FrameHeaderLen+8)
 		output[FrameHeaderLen+9] = msgs.ChecksumHeader(output[FrameHeaderLen+10:], 2+len(res))
-		h.Server.Send(t.Peer, output)
+		h.Server.Send2(t.Peer, output, sess.DeviceId, busi)
 
 	} else if op == 0x3 {
 		if mlen < FrameHeaderLen+kSidLen+FrameHeaderLen+DataHeaderLen {
@@ -649,6 +647,11 @@ func (h *Handler) onHearBeat(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 		binary.LittleEndian.PutUint32(output[:4], 0)
 	}
 
+	//set over device offine event's time
+	v, ok := gUdpSessions.udpmap[sess.Addr.String()]
+	if ok {
+		v.Reset(40 * time.Second)
+	}
 	return output, err
 }
 

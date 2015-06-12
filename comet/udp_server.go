@@ -58,3 +58,9 @@ func (s *UdpServer) Send(peer *net.UDPAddr, msg []byte) {
 	s.socketMu.Unlock()
 	glog.Infof("[udp|sended] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
 }
+func (s *UdpServer) Send2(peer *net.UDPAddr, msg []byte, id int64, busi string) {
+	s.socketMu.Lock()
+	n, err := s.socket.WriteToUDP(msg, peer)
+	s.socketMu.Unlock()
+	glog.Infof("[udp|sended %v] peer:%v-%v, msg: len(%d)%v,err:%v", busi, id, peer.String(), n, msg, err)
+}

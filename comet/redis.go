@@ -192,25 +192,6 @@ func SetUserOffline(uid int64, host string) error {
 	return err
 }
 
-func GetDeviceUsers_bk(deviceId int64) ([]int64, error) {
-	glog.Infoln("redis.go GetDeviceUsers start devuceId:", deviceId)
-	r := Redix[_GetDeviceUsers]
-	RedixMu[_GetDeviceUsers].Lock()
-	defer RedixMu[_GetDeviceUsers].Unlock()
-	user, err := redis.String(r.Do("hget", RedisDeviceUsers, deviceId))
-	glog.Infoln("redis.go GetDeviceUsers", user)
-	if err != nil {
-		glog.Infoln("redis.go GetDeviceUsers", user)
-		return nil, err
-	}
-	bindedIds := make([]int64, 0, 1)
-	u_id, err := strconv.ParseInt(user, 10, 64)
-	if err != nil {
-		return nil, err
-	}
-	bindedIds = append(bindedIds, int64(u_id))
-	return bindedIds, nil
-}
 func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	glog.Infof("%v向%v推设备上线消息开始", sess.DeviceId, sess.BindedUsers)
 	r := Redix[_GetDeviceUsers]

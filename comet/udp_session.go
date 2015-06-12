@@ -12,8 +12,7 @@ import (
 	uuid "github.com/nu7hatch/gouuid"
 )
 
-var (
-	kSidLen                     = 16
+var (	kSidLen                     = 16
 	kHeaderCheckPosInDataHeader = 8
 	ErrSessNotExist             = fmt.Errorf("session not exists")
 
@@ -190,10 +189,6 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 
 // Save to DB
 func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
-	v, ok := gUdpSessions.udpmap[s.Addr.String()]
-	if ok {
-		v.Reset(40 * time.Second)
-	}
 	return SetDeviceSession(sid.String(), gUdpTimeout, s.String(), s.DeviceId, s.Addr)
 }
 

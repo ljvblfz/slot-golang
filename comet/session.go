@@ -347,13 +347,13 @@ func (this *SessionList) KickOffline(uid int64) {
 				}
 				_, err := s.Conn.Send(msgBody)
 				if err != nil && glog.V(2) {
-					glog.Warningf("[kick|send] mid: %d, user: %d, error: %v", s.Uid, id, err)
+					glog.Warningf("[kicking msg sending fail] user: %d, error: %v", s.Uid, err)
 				}
 				err = s.Conn.Close()
 				if err != nil && glog.V(2) {
-					glog.Warningf("[kick|close] mid: %d, user: %d, error: %v", s.Uid, id, err)
+					glog.Warningf("[ws closing fail]  user: %d, error: %v", s.Uid, err)
 				}
-				glog.Infof("[kick] mid: %d, user %d modified password", s.Uid, id)
+				glog.Infof("[kick] user %d modified password", s.Uid, id)
 			}
 		}
 		lock.Unlock()
