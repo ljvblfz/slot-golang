@@ -143,7 +143,7 @@ func websocketListen(bindAddr string) {
 	urlLock.Unlock()
 }
 
-func getLoginParams(req string) (id int64, timestamp, timeout uint64, md5Str string, err error) {
+func verifyLoginParams(req string) (id int64, timestamp, timeout uint64, md5Str string, err error) {
 	args := strings.Split(req, "|")
 	if len(args) != LOGIN_PARAM_COUNT {
 		err = LOGIN_PARAM_ERROR
@@ -212,7 +212,7 @@ func WsHandler(ws *websocket.Conn) {
 	}
 
 	// parse login params
-	id, timestamp, timeout, encryShadow, loginErr := getLoginParams(string(reply))
+	id, timestamp, timeout, encryShadow, loginErr := verifyLoginParams(string(reply))
 	if loginErr != nil {
 		glog.Errorf("[ws:err] [%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
 		websocket.Message.Send(ws, AckWrongParams)
@@ -227,40 +227,39 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 	var bindedIds []int64
-	var mid byte
-	if id > 0 {
-		// 用户登录，检查其id是否为16整数倍，并为其分配一个1到15内的未使用的手机子id，相加后作为手机
-		// id，用于本session
-		if id%int64(kUseridUnit) != 0 {
-			glog.Warningf("[ws:err] invalid user id %d, low byte is not zero", id)
-			err = websocket.Message.Send(ws, AckWrongLoginDevice)
-			ws.Close()
-			return
-		}
-		mobileid, err := SelectMobileId(id)
-		if err != nil {
-			glog.Warningf("[ws:err] select mobile id for user %d failed: %v", id, err)
-			err = websocket.Message.Send(ws, AckServerError)
-			ws.Close()
-			return
-		}
-		if mobileid <= 0 {
-			glog.Warningf("[ws:err] no valid mobile id for user %d, the user may have 15 clients now.", id)
-			err = websocket.Message.Send(ws, AckWrongLoginDevice)
-			ws.Close()
-			return
-		}
-		newId := id + int64(mobileid%int(kUseridUnit))
-		if id > newId {
-			glog.Errorf("[ws:err] user id overflow, origin id: %d, newId %d with mid %d", id, newId, mobileid)
-		}
-		mid = byte(mobileid)
-		// 先用原始的用户id获取设备列表
-		bindedIds, err = GetUserDevices(id)
-		id = newId // 防止错误的手机id溢出可用的范围
-	} else if id < 0 {
-		bindedIds, err = GetDeviceUsers(id)
-	}
+	//	var mid byte
+	//	if id > 0 {
+	// 用户登录，检查其id是否为16整数倍，并为其分配一个1到15内的未使用的手机子id，相加后作为手机
+	// id，用于本session
+	//		if id%int64(kUseridUnit) != 0 {
+	//			glog.Warningf("[ws:err] invalid user id %d, low byte is not zero", id)
+	//			err = websocket.Message.Send(ws, AckWrongLoginDevice)
+	//			ws.Close()
+	//			return
+	//		}
+	//		mobileid, err := SelectMobileId(id)
+	//		if err != nil {
+	//			glog.Warningf("[ws:err] select mobile id for user %d failed: %v", id, err)
+	//			err = websocket.Message.Send(ws, AckServerError)
+	//			ws.Close()
+	//			return
+	//		}
+	//		if mobileid <= 0 {
+	//			glog.Warningf("[ws:err] no valid mobile id for user %d, the user may have 15 clients now.", id)
+	//			err = websocket.Message.Send(ws, AckWrongLoginDevice)
+	//			ws.Close()
+	//			return
+	//		}
+	//		newId := id + int64(mobileid%int(kUseridUnit))
+	//		if id > newId {
+	//			glog.Errorf("[ws:err] user id overflow, origin id: %d, newId %d with mid %d", id, newId, mobileid)
+	//		}
+	//		mid = byte(mobileid)
+	// 先用原始的用户id获取设备列表
+	//		id = newId // 防止错误的手机id溢出可用的范围
+	//	} else if id < 0 {
+	//	}
+	bindedIds, err = GetDeviceUsers(id)
 	if err != nil {
 		glog.Errorf("[ws:err] id [%d] get devices error: %v, devices: %v", id, err, bindedIds)
 		websocket.Message.Send(ws, LoginFailed.ErrorId)
@@ -274,7 +273,7 @@ func WsHandler(ws *websocket.Conn) {
 
 	// 成功登陆后的一次回复
 	if id > 0 {
-		err = websocket.Message.Send(ws, []byte{0, mid})
+		err = websocket.Message.Send(ws, []byte{0})
 	} else {
 		err = websocket.Message.Send(ws, []byte{0})
 	}
@@ -357,16 +356,16 @@ func WsHandler(ws *websocket.Conn) {
 	if glog.V(2) {
 		glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, gLocalAddr, offlineErr)
 	}
-	if id > 0 && mid > 0 {
-		id -= int64(mid)
-		ReturnMobileId(id, mid)
-//		q := ReturnMobileId(id, mid)
-//		if q != 1 {
-//			glog.Errorf("[ws|return] return mid %d for user %d failed, error: %v", mid, id-int64(mid), err)
-//		} else {
-//			glog.Errorf("[ws|return] return mid %d for user %d successed, error: %v", mid, id-int64(mid), err)
-//		}
-	}
+	//	if id > 0 && mid > 0 {
+	//		id -= int64(mid)
+	//		ReturnMobileId(id, mid)
+	//		//		q := ReturnMobileId(id, mid)
+	//		//		if q != 1 {
+	//		//			glog.Errorf("[ws|return] return mid %d for user %d failed, error: %v", mid, id-int64(mid), err)
+	//		//		} else {
+	//		//			glog.Errorf("[ws|return] return mid %d for user %d successed, error: %v", mid, id-int64(mid), err)
+	//		//		}
+	//	}
 	if id < 0 {
 		destIds := gSessionList.CalcDestIds(s, 0)
 
