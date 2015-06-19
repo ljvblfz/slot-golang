@@ -11,7 +11,7 @@ import (
 const (
 	Hosts     = "Host:*"
 	HostUsers = "Host:%s"
-	SubKey    = "PubKey"
+	PubKey    = "PubKey"
 )
 const (
 	_GetAllHosts = iota
@@ -110,7 +110,7 @@ func SubUserState() (<-chan []byte, error) {
 	r := Redix[_SubLoginState].Get()
 
 	psc := redis.PubSubConn{Conn: r}
-	psc.Subscribe(SubKey)
+	psc.Subscribe(PubKey)
 	ch := make(chan []byte, 128)
 
 	// 单独处理Subscribe后的第一个消息（即返回值），用于保证在已监听到SubKey后，

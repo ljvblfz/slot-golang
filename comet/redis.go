@@ -65,7 +65,7 @@ if count == 0 then
 	redis.call('hdel', KEYS[1], KEYS[2])
 end
 return count
-`
+`	
 	// 为用户挑选一个[1,15]中未使用的手机id
 	_scriptSelectMobileId = `
 for mid=1,15,1 do

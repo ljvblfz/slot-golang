@@ -80,9 +80,7 @@ func (this *MsgBusManager) Push2Bus(srcId int64, ids []int64, msg []byte) {
 		binary.LittleEndian.PutUint64(idsData[i*8:i*8+8], uint64(ids[i]))
 	}
 	copy(pushData[8+2+size*8:], msg)
-	//this.curr是*hlist.Element
 	if this.curr != nil {
-		//look here!!!!, it send
 		this.curr.Value.(*MsgBusServer).Send(pushData)
 		this.mu.Lock()
 		next := this.curr.Next()

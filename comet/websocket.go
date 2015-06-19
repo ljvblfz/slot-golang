@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"cloud-base/websocket"
-	"cloud-socket/msgs"
+//	"cloud-socket/msgs"
 	"github.com/golang/glog"
 )
 
@@ -272,11 +272,7 @@ func WsHandler(ws *websocket.Conn) {
 	defer statDecConnOnline()
 
 	// 成功登陆后的一次回复
-	if id > 0 {
-		err = websocket.Message.Send(ws, []byte{0})
-	} else {
-		err = websocket.Message.Send(ws, []byte{0})
-	}
+	err = websocket.Message.Send(ws, []byte{0})
 	if err != nil {
 		glog.Errorf("[ws:err]  [%s] [uid: %d] sent login-ack error (%v)\n", addr, id, err)
 		ws.Close()
@@ -293,34 +289,35 @@ func WsHandler(ws *websocket.Conn) {
 		glog.Infof("[ws:online] success id: %d, ip: %v, comet: %s, param: %s, binded ids: %v", id, addr, gLocalAddr, reply, bindedIds)
 	}
 
-	s := NewWsSession(id, bindedIds, NewWsConn(ws))
-	selement := gSessionList.AddSession(s)
+	s := NewWsSession(id, bindedIds, NewWsConn(ws), ws.RemoteAddr().Network())
+	gSessionList.AddSession(s)
 
-	if id < 0 {
-		destIds := gSessionList.CalcDestIds(s, 0)
+	//	if id < 0 {
+	//		destIds := gSessionList.CalcDestIds(s, 0)
 
-		body := msgs.MsgStatus{}
-		body.Type = msgs.MSTDeviceOnline
-		body.Id = id
-		m := msgs.NewMsg(nil, nil)
-		m.FrameHeader.Opcode = 2
-		m.FrameHeader.SrcId = id
-		m.DataHeader.MsgId = msgs.MIDStatus
-		m.Data, _ = body.Marshal()
+	//		body := msgs.MsgStatus{}
+	//		body.Type = msgs.MSTDeviceOnline
+	//		body.Id = id
+	//		m := msgs.NewMsg(nil, nil)
+	//		m.FrameHeader.Opcode = 2
+	//		m.FrameHeader.SrcId = id
+	//		m.DataHeader.MsgId = msgs.MIDStatus
+	//		m.Data, _ = body.Marshal()
 
-		GMsgBusManager.Push2Bus(id, destIds, m.MarshalBytes())
-	}
+	//		GMsgBusManager.Push2Bus(id, destIds, m.MarshalBytes())
+	//	}
 
 	if timeout <= 0 {
 		timeout = TIME_OUT
 	}
 	ws.ReadTimeout = time.Duration(3*timeout) * time.Second
+	glog.Infoln("[ws:info] ws.ReadTimeout:", ws.ReadTimeout)
 	for {
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
 			glog.Errorf("[ws:err] [err:%v] causing ws closed", err)
 			break
 		}
-		gSessionList.GetBindedIds(s, &bindedIds)
+		//		gSessionList.GetBindedIds(s, &bindedIds)
 		if len(reply) == 1 && string(reply) == PING_MSG {
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
 				glog.Errorf("[ws:err] causing ws closed <%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
@@ -353,9 +350,7 @@ func WsHandler(ws *websocket.Conn) {
 	if err != nil {
 		glog.Errorf("[ws:offline|error] uid %d, error: %v", id, err)
 	}
-	if glog.V(2) {
-		glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, gLocalAddr, offlineErr)
-	}
+	glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, gLocalAddr, offlineErr)
 	//	if id > 0 && mid > 0 {
 	//		id -= int64(mid)
 	//		ReturnMobileId(id, mid)
@@ -366,20 +361,20 @@ func WsHandler(ws *websocket.Conn) {
 	//		//			glog.Errorf("[ws|return] return mid %d for user %d successed, error: %v", mid, id-int64(mid), err)
 	//		//		}
 	//	}
-	if id < 0 {
-		destIds := gSessionList.CalcDestIds(s, 0)
+	//	if id < 0 {
+	//		destIds := gSessionList.CalcDestIds(s, 0)
 
-		body := msgs.MsgStatus{}
-		body.Type = msgs.MSTDeviceOffline
-		body.Id = id
-		m := msgs.NewMsg(nil, nil)
-		m.FrameHeader.Opcode = 2
-		m.FrameHeader.SrcId = id
-		m.DataHeader.MsgId = msgs.MIDStatus
-		m.Data, _ = body.Marshal()
-		glog.Infof("deprecated [ws->udp] %v->%v ctn:%v\n", id, destIds, m)
-		GMsgBusManager.Push2Bus(id, destIds, m.MarshalBytes())
-	}
-	gSessionList.RemoveSession(selement)
+	//		body := msgs.MsgStatus{}
+	//		body.Type = msgs.MSTDeviceOffline
+	//		body.Id = id
+	//		m := msgs.NewMsg(nil, nil)
+	//		m.FrameHeader.Opcode = 2
+	//		m.FrameHeader.SrcId = id
+	//		m.DataHeader.MsgId = msgs.MIDStatus
+	//		m.Data, _ = body.Marshal()
+	//		glog.Infof("deprecated [ws->udp] %v->%v ctn:%v\n", id, destIds, m)
+	//		GMsgBusManager.Push2Bus(id, destIds, m.MarshalBytes())
+	//	}
+	gSessionList.RemoveSession(s)
 	return
 }
