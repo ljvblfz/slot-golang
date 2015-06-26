@@ -9,16 +9,20 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	// "log"
 	"net"
 	"os"
 	"os/signal"
 	// "strconv"
+	"runtime"
+	"sync"
 	"syscall"
 	"time"
 
 	"cloud-base/atomic"
 	"cloud-socket/msgs"
+	"github.com/fzzy/radix/redis"
+	"github.com/golang/glog"
 )
 
 const (
@@ -35,6 +39,9 @@ const (
 var (
 	ErrAckTimeout = errors.New("ack timeout")
 	ErrNoReply    = errors.New("no response")
+
+	gRedisClient *redis.Client
+	gRedisMu     *sync.Mutex
 
 	gBenchDur time.Duration
 	gDone     atomic.AtomicInt64
@@ -74,97 +81,109 @@ func (c *Client) Run() {
 			return
 		}
 	} else {
-		c.testApi()
+		tests := []testCase{
+			testCase{"doNewSession", c.doNewSession},
+			/*			testCase{"doRegister", c.doRegister},
+						testCase{"doLogin", c.doLogin},
+						testCase{"doRename", c.doRename},
+						//testCase{"doDoBind", c.doDoBind},
+						testCase{"doHeartbeat", c.doHeartbeat},
+						//testCase{"doOfflineSub", c.doOfflineSub},
+						testCase{"doSendMessage", c.doSendMessage},
+			*/}
+
+		c.testApi(tests)
 	}
 }
 
 func (c *Client) testBenchmark(name string) {
 
 	go func() {
-		t := time.NewTicker(time.Second * 3)
+		t := time.NewTicker(time.Second * 5)
 		last := time.Now()
 		for now := range t.C {
-			log.Printf("qps: %f", float64(gDone.Set(0))/now.Sub(last).Seconds())
-			last = now
+			qps := float64(gDone.Set(0)) / now.Sub(last).Seconds()
+			if qps > 0.5 {
+				glog.Infof("qps: %f", qps)
+				last = now
+			}
 		}
 	}()
 
 	t := time.NewTicker(gBenchDur)
 	switch name {
 	case "ns":
-		for tt := range t.C {
-			ret, err := c.doNewSession()
-			if err != nil {
-				log.Printf("Hearbeat error: %v %v\n", ret["code"], err, tt)
-				continue
-			}
-			if ret["code"] == uint32(0) {
+		tests := []testCase{
+			testCase{"doNewSession", c.doNewSession},
+		}
+		for range t.C {
+			go func() {
+				c.testApi(tests)
 				gDone.Inc()
-			}
-			//log.Printf("Heartbeat: %v", ret["code"])
+			}()
 		}
 
 	case "reg":
-		ret, err := c.doNewSession()
-		if err != nil || ret["code"] != uint32(0) {
-			log.Printf("NewSession return %v, error: %v", ret["code"], err)
-			return
+		tests := []testCase{
+			testCase{"doNewSession", c.doNewSession},
 		}
-		for tt := range t.C {
-			ret, err = c.doRegister()
-			if err != nil {
-				log.Printf("Hearbeat error: %v %v\n", ret["code"], err, tt)
-				continue
-			}
-			if ret["code"] == uint32(0) {
+		c.testApi(tests)
+
+		tests = []testCase{
+			testCase{"doRegister", c.doRegister},
+		}
+		for range t.C {
+			go func() {
+				c.testApi(tests)
 				gDone.Inc()
-			}
-			//log.Printf("Heartbeat: %v", ret["code"])
+			}()
 		}
 	case "login":
-		ret, err := c.doNewSession()
-		if err != nil || ret["code"] != uint32(0) {
-			log.Printf("NewSession return %v, error: %v", ret["code"], err)
-			return
+		tests := []testCase{
+			testCase{"doNewSession", c.doNewSession},
+			testCase{"doRegister", c.doRegister},
 		}
-		ret, err = c.doRegister()
-		if err != nil || ret["code"] != uint32(0) {
-			log.Printf("NewSession return %v, error: %v", ret["code"], err)
-			return
-		}
-		for tt := range t.C {
-			ret, err = c.doLogin()
-			if err != nil {
-				log.Printf("Hearbeat error: %v %v\n", ret["code"], err, tt)
-				continue
-			}
-			if ret["code"] == uint32(0) {
-				gDone.Inc()
-			}
+		c.testApi(tests)
 
+		tests = []testCase{
+			testCase{"doLogin", c.doLogin},
+		}
+		for range t.C {
+			go func() {
+				c.testApi(tests)
+				gDone.Inc()
+			}()
 		}
 	case "rn":
-		ret, err := c.doNewSession()
-		if err != nil || ret["code"] != uint32(0) {
-			log.Printf("NewSession return %v, error: %v", ret["code"], err)
-			return
+		tests := []testCase{
+			testCase{"doNewSession", c.doNewSession},
+			testCase{"doRegister", c.doRegister},
+			testCase{"doLogin", c.doLogin},
 		}
-		ret, err = c.doRegister()
-		if err != nil || ret["code"] != uint32(0) {
-			log.Printf("NewSession return %v, error: %v", ret["code"], err)
-			return
-		}
+		c.testApi(tests)
 
-		for tt := range t.C {
-			ret, err = c.doRename()
-			if err != nil {
-				log.Printf("Hearbeat error: %v %v\n", ret["code"], err, tt)
-				continue
-			}
-			if ret["code"] == uint32(0) {
-				gDone.Inc()
-			}
-			log.Printf("Heartbeat: %v", ret["code"])
+		tests = []testCase{
+			testCase{"doRename", c.doRename},
+		}
+		for range t.C {
+			c.testApi(tests)
+			gDone.Inc()
+		}
+	case "send":
+		tests := []testCase{
+			testCase{"doNewSession", c.doNewSession},
+			testCase{"doRegister", c.doRegister},
+			testCase{"doLogin", c.doLogin},
+			// testCase{"doRename", c.doRename},
+		}
+		c.testApi(tests)
+
+		tests = []testCase{
+			testCase{"doSendMessage", c.doSendMessage},
+		}
+		for range t.C {
+			c.testApi(tests)
+			gDone.Inc()
 		}
 	}
 
@@ -189,51 +208,55 @@ func (c *Client) testBenchmark(name string) {
 // bind
 // heartbeat
 // offline sub
-func (c *Client) testApi() {
-	tests := []testCase{
-		testCase{"doNewSession", c.doNewSession},
-		testCase{"doRegister", c.doRegister},
-		testCase{"doLogin", c.doLogin},
-		testCase{"doRename", c.doRename},
-		//testCase{"doDoBind", c.doDoBind},
-		testCase{"doHeartbeat", c.doHeartbeat},
-		//testCase{"doOfflineSub", c.doOfflineSub},
-		testCase{"doSendMessage", c.doSendMessage},
-	}
+func (c *Client) testApi(tests []testCase) {
 	for _, t := range tests {
 		if t.name != "doHeartbeat" {
-			log.Printf("--- %s ---", t.name)
+			if _testbenchmark != true {
+				glog.Infof("--- %s ---", t.name)
+			}
 			result, err := t.fn()
 			if err != nil {
-				log.Printf("[%v] error: %v", t.name, err)
+				glog.Infof("[%v] error: %v", t.name, err)
 			}
 			if result == nil {
 				continue
 			}
-			for k, v := range result {
-				log.Printf("%s=%v", k, v)
+			if _testbenchmark != true {
+				for k, v := range result {
+					glog.Infof("%s=%v", k, v)
+				}
 			}
 			time.Sleep(time.Millisecond)
 		} else {
 			// go func() {
 			// 	for {
-			log.Printf("--- %s ---", t.name)
+			glog.Infof("--- %s ---", t.name)
 			result, err := t.fn()
 			if err != nil {
-				log.Printf("[%v] error: %v", t.name, err)
+				glog.Infof("[%v] error: %v", t.name, err)
 			}
 			if result == nil {
 				continue
 			}
 			for k, v := range result {
-				log.Printf("%s=%v", k, v)
+				glog.Infof("%s=%v", k, v)
 			}
 			time.Sleep(time.Second)
 			// 	}
 			// }()
 		}
 	}
-	log.Printf("--- All done ---%v", c.MAC[:])
+	if _testbenchmark != true {
+		glog.Infof("--- All done ---%v", c.MAC[:])
+	}
+}
+
+func SetDeviceId(deviceMac string, deviceId int32) error {
+	gRedisMu.Lock()
+	reply := gRedisClient.Cmd("hset", "DeviceMacToDeviceId", deviceMac, deviceId)
+	err := reply.Err
+	gRedisMu.Unlock()
+	return err
 }
 
 func (c *Client) packBody(msgId uint16, otherBody []byte) []byte {
@@ -259,9 +282,10 @@ func (c *Client) packBody(msgId uint16, otherBody []byte) []byte {
 
 func (c *Client) Query(request []byte) ([]byte, error) {
 	// log.Printf("request header: %v, body: %v", request[0:24+12], request[24+12:])
+	// log.Printf("[len]request message: [%v]%v", len(request[:]), request[:])
 	for retry := 0; retry < 5; retry++ {
-		idx := binary.LittleEndian.Uint16(request[2:4])
-		n, err := c.Socket.WriteToUDP(request, c.ServerAddr)
+		/*		idx := binary.LittleEndian.Uint16(request[2:4])
+		 */n, err := c.Socket.WriteToUDP(request, c.ServerAddr)
 		if err != nil {
 			return nil, err
 		}
@@ -281,13 +305,50 @@ func (c *Client) Query(request []byte) ([]byte, error) {
 			return nil, fmt.Errorf("response less than header count(twoHeaderLen bytes)")
 		}
 		bodyLen := binary.LittleEndian.Uint16(response[24+6 : 24+6+2])
-		nidx := binary.LittleEndian.Uint16(response[2:4])
-		if nidx != idx {
-			return nil, fmt.Errorf("wrong seqNum in ACK message")
-		}
-		log.Printf("%d + %d(%v) = %d ?", twoHeaderLen, bodyLen, response[24+6:24+6+2], len(response))
-		log.Printf("response header: %v, body: %v", response[:twoHeaderLen], response[twoHeaderLen:])
+		/*		nidx := binary.LittleEndian.Uint16(response[2:4])
+				if nidx != idx {
+					return nil, fmt.Errorf("wrong seqNum in ACK message %v != %v\n", nidx, idx)
+				}*/
+		// log.Printf("%d + %d(%v) = %d ?", twoHeaderLen, bodyLen, response[24+6:24+6+2], len(response))
+		// log.Printf("response header: %v, body: %v", response[:twoHeaderLen], response[twoHeaderLen:])
 		return response[twoHeaderLen : twoHeaderLen+int(bodyLen)], err
+	}
+	return nil, ErrNoReply
+}
+
+func (c *Client) Query1(request []byte) ([]byte, error) {
+	// log.Printf("request header: %v, body: %v", request[0:24+12], request[24+12:])
+	glog.V(4).Infof("[len]request message: [%v]%v", len(request[:]), request[:])
+	for retry := 0; retry < 5; retry++ {
+		// idx := binary.LittleEndian.Uint16(request[2:4])
+		// log.Printf("idx: %v", idx)
+		n, err := c.Socket.WriteToUDP(request, c.ServerAddr)
+		if err != nil {
+			return nil, err
+		}
+		if n != len(request) {
+			return nil, fmt.Errorf("not sent all message")
+		}
+		response, err := c.read()
+		if err == ErrAckTimeout {
+			c.Sidx++
+			binary.LittleEndian.PutUint16(request[2:4], c.Sidx)
+			time.Sleep(time.Second * 3)
+			continue
+		}
+		twoHeaderLen := 24 + 24
+		// ignore twoHeaderLen header bytes
+		if n < twoHeaderLen {
+			return nil, fmt.Errorf("response less than header count(twoHeaderLen bytes)")
+		}
+		// bodyLen := binary.LittleEndian.Uint16(response[24+6 : 24+6+2])
+		// nidx := binary.LittleEndian.Uint16(response[2:4])
+		// if nidx != idx {
+		// 	return nil, fmt.Errorf("wrong seqNum in ACK message %v != %v\n", nidx, idx)
+		// }
+		// log.Printf("%d + %d(%v) = %d ?", twoHeaderLen, bodyLen, response[24+6:24+6+2], len(response))
+		glog.V(4).Infof("[%v]response header: %v, body: %v", len(response[:]), response[:twoHeaderLen], response[twoHeaderLen:])
+		return response[twoHeaderLen:], err
 	}
 	return nil, ErrNoReply
 }
@@ -298,6 +359,7 @@ func (c *Client) doNewSession() (map[string]interface{}, error) {
 	copy(body[8:24], c.SN[:])
 
 	req := c.packBody(CmdGetToken, body)
+	glog.Infof("req: %v\n", req)
 	rep, err := c.Query(req)
 	if err != nil {
 		return nil, err
@@ -306,11 +368,10 @@ func (c *Client) doNewSession() (map[string]interface{}, error) {
 	ok := binary.LittleEndian.Uint32(rep[:4])
 	m["code"] = ok
 	m["sid"] = hex.EncodeToString(rep[4:20])
-	log.Printf("rep:sid: %v\n", hex.EncodeToString(rep[4:20]))
-	m["platformKey"] = rep[20:28]
+	m["platformKey"] = hex.EncodeToString(rep[20:28])
 	copy(c.Sid[:], rep[4:20])
 	if ok != 0 {
-		log.Fatalf("doNewSession failed: %v", m)
+		glog.Errorf("doNewSession failed: %v", m)
 	}
 	return m, nil
 }
@@ -338,10 +399,16 @@ func (c *Client) doRegister() (map[string]interface{}, error) {
 	sid2 := rep[4:20]
 	m["id"] = int64(binary.LittleEndian.Uint64(rep[20:28]))
 	copy(c.Id[:], rep[20:28])
+	mac := string(c.MAC[:])
+	did := int32(binary.LittleEndian.Uint64(c.Id[:]))
+	err = SetDeviceId(mac, did)
+	if err != nil {
+		glog.Errorf("SetDeviceId failed, Mac: %s, error: %v", mac, err)
+	}
 	m["cookie"] = string(rep[28:92])
 	copy(c.Cookie[:64], rep[28:92])
 	if bytes.Compare(c.Sid[:], sid2) != 0 {
-		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
+		glog.Errorf("wrong session id response: %v != %v", c.Sid, sid2)
 	}
 	return m, nil
 }
@@ -361,7 +428,7 @@ func (c *Client) doLogin() (map[string]interface{}, error) {
 	m["code"] = binary.LittleEndian.Uint32(rep[:4])
 	sid2 := rep[4:20]
 	if bytes.Compare(c.Sid[:], sid2) != 0 {
-		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
+		glog.Errorf("wrong session id response: %v != %v", c.Sid, sid2)
 	}
 	return m, nil
 }
@@ -385,7 +452,7 @@ func (c *Client) doRename() (map[string]interface{}, error) {
 	m["code"] = binary.LittleEndian.Uint32(rep[:4])
 	sid2 := rep[4:20]
 	if bytes.Compare(c.Sid[:], sid2) != 0 {
-		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
+		glog.Errorf("wrong session id response: %v != %v", c.Sid, sid2)
 	}
 	m["GUID"] = hex.EncodeToString(rep[4:20])
 	m["mac"] = hex.EncodeToString(rep[20:28])
@@ -425,13 +492,13 @@ func (c *Client) doHeartbeat() (map[string]interface{}, error) {
 	m["code"] = binary.LittleEndian.Uint32(rep[:4])
 	sid2 := rep[4:20]
 	if bytes.Compare(c.Sid[:], sid2) != 0 {
-		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
+		glog.Errorf("wrong session id response: %v != %v", c.Sid, sid2)
 	}
 	return m, nil
 }
 
 func (c *Client) doSendMessage() (map[string]interface{}, error) {
-	otherBody := []byte("111")
+	otherBody := []byte("p")
 	frameHeader := make([]byte, 24)
 	frameHeader[0] = (frameHeader[0] &^ 0x7) | 0x3
 	c.Sidx++
@@ -442,7 +509,6 @@ func (c *Client) doSendMessage() (map[string]interface{}, error) {
 	copy(frameHeader[16:24], c.Id[:])
 
 	// gUid := make([]byte, 16)
-	log.Printf("c.Sid: %v\n", hex.EncodeToString(c.Sid[:]))
 	// copy(gUid[:], c.Sid)
 	req := append(frameHeader, c.Sid[:]...)
 
@@ -458,17 +524,16 @@ func (c *Client) doSendMessage() (map[string]interface{}, error) {
 	// sum header
 	// req[24+8] = msgs.ChecksumHeader(req, 24+8)
 	// req[24+9] = msgs.ChecksumHeader(req[24+10:], 2+len(otherBody))
-	log.Printf("c.Sid: %v\n", hex.EncodeToString(req[24:40]))
-	rep, err := c.Query(req)
+	rep, err := c.Query1(req)
 	if err != nil {
 		return nil, err
 	}
 	m := make(map[string]interface{})
-	m["code"] = binary.LittleEndian.Uint32(rep[:4])
-	sid2 := rep[4:20]
-	if bytes.Compare(c.Sid[:], sid2) != 0 {
-		log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
-	}
+	m["data"] = string(binary.LittleEndian.Uint32(rep[:4]))
+	// sid2 := rep[4:20]
+	// if bytes.Compare(c.Sid[:], sid2) != 0 {
+	// 	log.Printf("wrong session id response: %v != %v", c.Sid, sid2)
+	// }
 	return m, nil
 }
 
@@ -490,24 +555,6 @@ func (c *Client) doSendMessage() (map[string]interface{}, error) {
 //	return m, nil
 //}
 
-func Mac_Convert(id int32) string {
-	var res string
-	str := fmt.Sprintf("%12x", id)
-	n := len(str)
-	for i := 0; i < n; i++ {
-		ch := string(str[i])
-		if ch == " " {
-			ch = "0"
-		}
-		// if i != 0 && i%2 == 0 {
-		// 	res += "-"
-		// }
-		res += ch
-	}
-	// glog.Infof("res: %v", res)
-	return res
-}
-
 func (c *Client) send() {
 
 }
@@ -517,7 +564,7 @@ func (c *Client) read() ([]byte, error) {
 	case <-time.After(3 * time.Second):
 		return nil, ErrAckTimeout
 	case b := <-c.rch:
-		log.Printf("[msg|in|read] %v\n", b)
+		// log.Printf("[msg|in|read] [%v]%v\n", len(b), b)
 		return b, nil
 	}
 
@@ -534,7 +581,7 @@ func (c *Client) readLoop() {
 			continue
 		}
 		c.rch <- buf[:n]
-		log.Printf("[msg|in|readloop] %v\n", buf[:n])
+		// log.Printf("[msg|in|readloop] [%v]%v\n", len(buf[:n]), buf[:n])
 
 	}
 }
@@ -552,6 +599,10 @@ func init() {
 
 func main() {
 	flag.DurationVar(&gBenchDur, "d", time.Millisecond, "duration for bench")
+	_StartId := flag.Int("s", 1, "设置MAC的初始值自动增加1")
+
+	redisAddr := flag.String("ra", "127.0.0.1:6379", "查找目标MAC设备ID的Redis服务器地址")
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	var (
 		localAddr  = flag.String("l", "", "local udp address, eg: ip:port")
@@ -560,19 +611,30 @@ func main() {
 	)
 	flag.Parse()
 
-	log.SetFlags(log.Flags() | log.Lshortfile)
+	var err error
+	gRedisClient, err = redis.Dial("tcp", *redisAddr)
+	if err != nil {
+		glog.Errorf("Dial to redis failed: %v", *redisAddr)
+		return
+	}
+
+	gRedisMu = &sync.Mutex{}
+	defer gRedisClient.Close()
+
+	glog.Flush()
+	// log.SetFlags(log.Flags() | log.Lshortfile)
 	if len(*localAddr) == 0 || len(*serverAddr) == 0 {
 		flag.Usage()
 		return
 	}
 	server, err := net.ResolveUDPAddr("udp", *serverAddr)
 	if err != nil {
-		fmt.Printf("Resolve server addr %s failed: %v\n", *serverAddr, err)
+		glog.Errorf("Resolve server addr %s failed: %v\n", *serverAddr, err)
 		return
 	}
 	local, err := net.ResolveUDPAddr("udp", *localAddr)
 	if err != nil {
-		fmt.Printf("Resolve local addr %s failed: %v\n", *localAddr, err)
+		glog.Errorf("Resolve local addr %s failed: %v\n", *localAddr, err)
 		return
 	}
 
@@ -582,12 +644,12 @@ func main() {
 		local.Port = firstPort + p
 		socket, err := net.ListenUDP("udp", local)
 		if err != nil {
-			fmt.Printf("Listen on local addr %v failed: %v\n", local, err)
+			glog.Errorf("Listen on local addr %v failed: %v\n", local, err)
 			continue
 		}
 		n++
 		c := Client{
-			Name:        "deviceName",
+			Name:        "dn",
 			ProduceTime: time.Now(),
 			DeviceType:  0xFFFE,
 			// Sid:         make([]byte, 16),
@@ -595,11 +657,12 @@ func main() {
 			ServerAddr: server,
 			rch:        make(chan []byte, 128),
 		}
-		binary.LittleEndian.PutUint32(c.SN[:], uint32(n))
+		id := n + *_StartId
+		binary.LittleEndian.PutUint32(c.SN[:], uint32(id))
 		// str1, _ := strconv.ParseUint("28D244663552", 16, 64)
-		binary.LittleEndian.PutUint32(c.MAC[:], uint32(n))
+		binary.LittleEndian.PutUint32(c.MAC[:], uint32(id))
 		// binary.LittleEndian.PutUint64(c.MAC[:], str1)
-		log.Printf("Client started, mac: %v, sn: %v", hex.EncodeToString(c.MAC[:]), hex.EncodeToString(c.SN[:]))
+		glog.V(1).Infof("Client started, mac: %v, sn: %v", hex.EncodeToString(c.MAC[:]), hex.EncodeToString(c.SN[:]))
 		go c.Run()
 	}
 	c := make(chan os.Signal, 1)
