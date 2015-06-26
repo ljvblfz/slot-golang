@@ -65,7 +65,7 @@ if count == 0 then
 	redis.call('hdel', KEYS[1], KEYS[2])
 end
 return count
-`	
+`
 	// 为用户挑选一个[1,15]中未使用的手机id
 	_scriptSelectMobileId = `
 for mid=1,15,1 do
@@ -134,6 +134,7 @@ func InitRedix(addr string) {
 			panic(err)
 		}
 	}
+	SubOffline()
 }
 
 func ClearRedis(ip string) error {
@@ -190,6 +191,68 @@ func SetUserOffline(uid int64, host string) error {
 		host,
 	))
 	return err
+}
+func ForceUserOffline(uid int64) {
+	glog.Infof("force %v offline begin", uid)
+	r := Redix[_GetDeviceUsers]
+	RedixMu[_GetDeviceUsers].Lock()
+	defer RedixMu[_GetDeviceUsers].Unlock()
+	r.Do("publish", []byte("OfflineChannel"), fmt.Sprint(uid))
+	glog.Infof("force %v offline end", uid)
+}
+
+func SubOffline() error {
+	r := Redix[_SubDeviceUsersKey]
+	RedixMu[_SubDeviceUsersKey].Lock()
+	defer RedixMu[_SubDeviceUsersKey].Unlock()
+
+	psc := redis.PubSubConn{Conn: r}
+	err := psc.Subscribe("OfflineChannel")
+	if err != nil {
+		return err
+	}
+	ch := make(chan []byte, 8)
+	go func() {
+		defer psc.Close()
+		for {
+			data := psc.Receive()
+			switch n := data.(type) {
+			case redis.Message:
+				ch <- n.Data
+			case redis.Subscription:
+				if n.Count == 0 {
+					glog.Fatalf("Subscription: %s %s %d, %v\n", n.Kind, n.Channel, n.Count, n)
+					return
+				}
+			case error:
+				glog.Errorf("[bind|redis] sub of error: %v\n", n)
+				return
+			}
+		}
+	}()
+	go HandleSubOffline(ch)
+	return nil
+}
+
+func HandleSubOffline(ch <-chan []byte) {
+	for buf := range ch {
+		if buf == nil {
+			continue
+		}
+		uid, err := strconv.ParseInt(string(buf), 10, 64)
+		if err != nil {
+			glog.Errorf("[HandleSubOffline] invalid uid %s, error: %v", string(buf), err)
+			continue
+		}
+		gSessionList.onlinedMu.Lock()
+		if v, ok := gSessionList.onlined[uid]; ok {
+			SetUserOffline(uid, gLocalAddr)
+			gSessionList.onlined[uid].Close()
+			gSessionList.RemoveSession(v)
+			glog.Infof("force user %v offline, finish.", uid)
+		}
+		gSessionList.onlinedMu.Unlock()
+	}
 }
 
 func PushDevOnlineMsgToUsers(sess *UdpSession) {
@@ -547,6 +610,7 @@ func SetDeviceSession(sid string, expire int, json string, deviceId int64, addr 
 }
 
 func GetDeviceSid(deviceId int64) (string, error) {
+
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()

@@ -153,17 +153,14 @@ func (this *SessionList) RemoveSession(s *Session) {
 	if s.Conn != nil {
 		s.Close()
 	}
-	_, ok := this.onlined[s.Uid]
-	if ok {
-		delete(this.onlined, s.Uid)
-	}
+	delete(this.onlined, s.Uid)
 	this.onlinedMu.Unlock()
 	glog.Infoln("[ws:over] sess dead. uid:", s.Uid, s.Adr)
 }
 
 func (this *SessionList) GetBindedIds(session *Session, ids *[]int64) {
 	this.onlinedMu.Lock()
-	*ids = session.BindedIds
+	ids = &session.BindedIds
 	this.onlinedMu.Unlock()
 }
 
@@ -256,7 +253,7 @@ func (this *SessionList) KickOffline(uid int64) {
 	msgBody := kickMsg.MarshalBytes()
 	s, ok := this.onlined[uid]
 	if !ok {
-		glog.Errorln("[kick] no session :",uid)
+		glog.Errorln("[kick] no session :", uid)
 		return
 	}
 	_, err := s.Conn.Send(msgBody)

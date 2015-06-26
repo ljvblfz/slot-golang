@@ -81,7 +81,7 @@ func (this *MsgBusServer) Reciver(onCloseEventFunc func(s *MsgBusServer)) {
 		// header
 		n, err := io.ReadFull(this.conn, header)
 		if n == 0 && err == io.EOF {
-			glog.Errorf("[EOF] %v", this.remoteAddr)
+			glog.Errorf("[MSGBUS:EOF] %v", this.remoteAddr)
 			break
 		} else if err != nil {
 			glog.Errorf("[%s] error receiving header: %s\n", this.remoteAddr, err.Error())

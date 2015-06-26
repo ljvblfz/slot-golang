@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -36,7 +35,9 @@ var (
 )
 
 func GetCometUdpUrl() string {
-	return fmt.Sprintf("http://%s:%d%s", gLocalAddr, udpUrlPort.Get(), kApiGetUAddr)
+	//	return fmt.Sprintf("http://%s:%d%s", gLocalAddr, udpUrlPort.Get(), kApiGetUAddr)
+	v, _ := net.ResolveUDPAddr("udp", gUdpSessions.server.addr)
+	return fmt.Sprintf("%v:%v", gLocalAddr, v.Port)
 }
 
 type Handler struct {
@@ -476,7 +477,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	dv := body[16:18]
 	//comType := body[18:20] // HTTP接口暂未实现
 	produceTime := binary.LittleEndian.Uint32(body[20:24])
-	mac := base64.StdEncoding.EncodeToString(body[24:32])
+	mac := fmt.Sprint(body[24:32])
 	sn := body[32:48]
 	//sign := body[48:308] // HTTP接口暂未实现
 	nameLen := body[308]
@@ -532,7 +533,7 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 		return nil, fmt.Errorf("[udp:onLogin] bad body length %v", len(body))
 	}
 
-	mac := base64.StdEncoding.EncodeToString(body[16:24])
+	mac := fmt.Sprint(body[16:24])
 	// C program sent cookie string without trim zero bytes
 	cookie := string(bytes.TrimRight(body[24:88], "\x00"))
 	t.Input["mac"] = mac
@@ -566,10 +567,26 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 					glog.Errorf("[udp|getIds] id [%d] get ids error: %v, ids: %v", sess.DeviceId, err, bindedIds)
 				} else {
 					sess.BindedUsers = bindedIds
-					glog.Infof("[udp|getIds] id [%d] get ids: %v", sess.DeviceId, bindedIds)
-					/**向用户推此设备在线消息*/
-					PushDevOnlineMsgToUsers(sess)
-					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(40*time.Second, func() { PushDevOfflineMsgToUsers(sess); delete(gUdpSessions.udpmap, sess.Addr.String()) })
+				}
+				glog.Infof("[udp|getIds] id [%d] get ids: %v", sess.DeviceId, bindedIds)
+				/**向用户推此设备在线消息*/
+				PushDevOnlineMsgToUsers(sess)
+				gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(40*time.Second, func() {
+					PushDevOfflineMsgToUsers(sess)
+					gUdpSessions.udplk.Lock()
+					delete(gUdpSessions.udpmap, sess.Addr.String())
+					gUdpSessions.udplk.Unlock()
+					gUdpSessions.sidlk.Lock()
+					delete(gUdpSessions.sidmap, gUdpSessions.devmap[sess.DeviceId])
+					gUdpSessions.sidlk.Unlock()
+					gUdpSessions.devlk.Lock()
+					delete(gUdpSessions.devmap, sess.DeviceId)
+					gUdpSessions.devlk.Unlock()
+					SetUserOffline(sess.DeviceId, sess.Addr.String())
+				})
+				_, err = SetUserOnline(sess.DeviceId, sess.Addr.String())
+				if err != nil {
+					glog.Errorf("[udp:err] SetUserOnline error [uid: %d] %v\n", sess.DeviceId, err)
 				}
 			}
 		}
@@ -580,7 +597,7 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 }
 
 func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	mac := base64.StdEncoding.EncodeToString(body[16:24])
+	mac := fmt.Sprint(body[16:24])
 	nameLen := body[24]
 	name := body[25 : 25+nameLen]
 

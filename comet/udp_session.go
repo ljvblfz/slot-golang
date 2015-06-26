@@ -1,18 +1,19 @@
 package main
 
 import (
+	"cloud-socket/msgs"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"net"
-	"time"
-
-	"cloud-socket/msgs"
 	"github.com/golang/glog"
 	uuid "github.com/nu7hatch/gouuid"
+	"net"
+	"sync"
+	"time"
 )
 
-var (	kSidLen                     = 16
+var (
+	kSidLen                     = 16
 	kHeaderCheckPosInDataHeader = 8
 	ErrSessNotExist             = fmt.Errorf("session not exists")
 
@@ -131,53 +132,54 @@ func (s *UdpSession) FromString(data string) error {
 
 type UdpSessionList struct {
 	server *UdpServer
+	udplk  *sync.RWMutex
+	sidlk  *sync.RWMutex
+	devlk  *sync.RWMutex
+	//k:ip;v:
 	udpmap map[string]*time.Timer
+	//k:sid
+	sidmap map[string]*UdpSession
+	//k:deviceId
+	devmap map[int64]string
 }
 
 func NewUdpSessionList() *UdpSessionList {
-	sl := &UdpSessionList{udpmap: make(map[string]*time.Timer)}
+	sl := &UdpSessionList{
+		udplk:  new(sync.RWMutex),
+		sidlk:  new(sync.RWMutex),
+		devlk:  new(sync.RWMutex),
+		udpmap: make(map[string]*time.Timer),
+		sidmap: make(map[string]*UdpSession),
+		devmap: make(map[int64]string),
+	}
 	return sl
 }
-
 func (this *UdpSessionList) GetDeviceAddr(id int64) (string, error) {
-	glog.Infoln("GetDeviceAddr ", id)
-	sid, err := GetDeviceSid(id)
-	if err != nil {
-		return "", fmt.Errorf("get session of device [%d] error: %v", id, err)
+	this.devlk.RLock()
+	sid, ok := this.devmap[id]
+	this.devlk.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("get session of device [%d] error: %v", id, ok)
 	}
 
-	locker := NewDeviceSessionLocker(sid)
-	err = locker.Lock()
-	if err != nil {
-		return "", fmt.Errorf("lock session id [%s] failed: %v", sid, err)
-	}
-	defer locker.Unlock()
-
-	i, err := uuid.ParseHex(sid)
-	if err != nil {
-		return "", fmt.Errorf("wrong session id format: %v", err)
-	}
-	sess, err := this.GetSession(i)
-	if err != nil {
-		return "", fmt.Errorf("get session %s error: %v", sid, err)
+	//	i, err := uuid.ParseHex(sid)
+	//	if err != nil {
+	//		return "", fmt.Errorf("wrong session id format: %v", err)
+	//	}
+	this.sidlk.RLock()
+	sess, ok := this.sidmap[sid]
+	this.sidlk.RUnlock()
+	if !ok {
+		return "", fmt.Errorf("get session %s error: %v", sid, ok)
 	}
 	return sess.Addr.String(), nil
 }
 
 // Get existed session from DB
 func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
-	data, err := GetDeviceSession(sid.String())
-	if err != nil {
-		return nil, err
-	}
-	s := &UdpSession{
-		Addr: &net.UDPAddr{},
-	}
-	err = s.FromString(data)
-	if err != nil {
-		return nil, err
-	}
-	s.Sid = sid.String()
+	this.sidlk.RLock()
+	s, _ := this.sidmap[sid.String()]
+	this.sidlk.RUnlock()
 	return s, nil
 }
 
@@ -189,7 +191,10 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 
 // Save to DB
 func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
-	return SetDeviceSession(sid.String(), gUdpTimeout, s.String(), s.DeviceId, s.Addr)
+	this.sidlk.Lock()
+	this.sidmap[sid.String()] = s
+	this.sidlk.Unlock()
+	return nil
 }
 
 func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byte) error {
@@ -198,22 +203,18 @@ func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byt
 	msg.DataHeader.MsgId = msgId
 	msg.FrameHeader.DstId = did
 
-	sid, err := GetDeviceSid(did)
-	if err != nil {
-		return fmt.Errorf("[udp:err] get session of device [%d] error: %v", did, err)
+	this.devlk.RLock()
+	sid, ok := this.devmap[did]
+	this.devlk.RUnlock()
+	if !ok {
+		return fmt.Errorf("[udp:err] get session of device [%d] error: %v", did, ok)
 	}
-
-	locker := NewDeviceSessionLocker(sid)
-	err = locker.Lock()
-	if err != nil {
-		return fmt.Errorf("[udp:err] lock session id [%s] failed: %v", sid, err)
-	}
-	defer locker.Unlock()
 
 	i, err := uuid.ParseHex(sid)
 	if err != nil {
 		return fmt.Errorf("[udp:err] wrong session id format: %v", err)
 	}
+
 	sess, err := this.GetSession(i)
 	if err != nil {
 		return fmt.Errorf("[udp:err] get session %s error: %v", sid, err)
@@ -222,24 +223,17 @@ func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byt
 	msg.FrameHeader.Sequence = sess.Sidx
 	msgBytes := msg.MarshalBytes()
 	this.server.Send(sess.Addr, msgBytes)
-
-	this.SaveSession(i, sess)
 	return nil
 }
 
 func (this *UdpSessionList) PushMsg(did int64, msg []byte) error {
-	sid, err := GetDeviceSid(did)
-	if err != nil {
-		return fmt.Errorf("[udp:err] get session of device [%d] error: %v", did, err)
-	}
 
-	locker := NewDeviceSessionLocker(sid)
-	err = locker.Lock()
-	if err != nil {
-		return fmt.Errorf("lock session id [%s] failed: %v", sid, err)
+	this.devlk.RLock()
+	sid, ok := this.devmap[did]
+	this.devlk.RUnlock()
+	if !ok {
+		return fmt.Errorf("[udp:err] get session of device [%d] error: %v", did, ok)
 	}
-	defer locker.Unlock()
-
 	i, err := uuid.ParseHex(sid)
 	if err != nil {
 		return fmt.Errorf("wrong session id format: %v", err)
@@ -257,24 +251,18 @@ func (this *UdpSessionList) PushMsg(did int64, msg []byte) error {
 	//msg[hcIndex] = msgs.ChecksumHeader(msg, hcIndex)
 	//glog.Infoln("PushMsg:",did,len(msg),msg,hcIndex)
 	this.server.Send(sess.Addr, msg)
-	this.SaveSession(i, sess)
 	return nil
 }
 
 func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType bool) {
-	sid, err := GetDeviceSid(deviceId)
-	if err != nil {
-		glog.Errorf("get session of device [%d] error: %v", deviceId, err)
-		return
-	}
 
-	locker := NewDeviceSessionLocker(sid)
-	err = locker.Lock()
-	if err != nil {
-		glog.Errorf("lock session id [%s] failed: %v", sid, err)
+	this.devlk.RLock()
+	sid, ok := this.devmap[deviceId]
+	this.devlk.RUnlock()
+	if !ok {
+		glog.Errorf("get session of device [%d] error: %v", deviceId, ok)
 		return
 	}
-	defer locker.Unlock()
 
 	i, err := uuid.ParseHex(sid)
 	if err != nil {
@@ -307,7 +295,7 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 	this.SaveSession(i, sess)
 
 	go func() {
-		mids := TransId(userId)
+		mids := []int64{userId}
 		if bindType {
 			GMsgBusManager.NotifyBindedIdChanged(deviceId, mids, nil)
 		} else {

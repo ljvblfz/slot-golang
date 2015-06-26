@@ -152,8 +152,7 @@ func ReportUsage() {
 				}
 				for _, u := range urls {
 					data := onWriteZkData(u, 0.0, 0, 0, 0)
-					tpath, err := zkConn.Create(zkCometRoot+"/", []byte(data),
-						zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
+					tpath, err := zkConn.Create(zkCometRoot+"/", []byte(data), zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
 					if err != nil {
 						glog.Errorf("[zk|comet] create comet node %s with data %s on zk failed: %v", zkCometRoot, data, err)
 						break

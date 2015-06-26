@@ -11,17 +11,17 @@ const (
 )
 
 type UdpServer struct {
-	addr     string
-	handler  *Handler
-	socket   *net.UDPConn
-	socketMu *sync.Mutex
+	addr    string
+	handler *Handler
+	con     *net.UDPConn
+	conlk   *sync.Mutex
 }
 
 func NewUdpServer(addr string, handler *Handler) *UdpServer {
 	s := &UdpServer{
-		addr:     addr,
-		handler:  handler,
-		socketMu: &sync.Mutex{},
+		addr:    addr,
+		handler: handler,
+		conlk:   &sync.Mutex{},
 	}
 	return s
 }
@@ -31,16 +31,15 @@ func (s *UdpServer) RunLoop() {
 	if err != nil {
 		glog.Fatalf("Resolve server addr failed: %v", err)
 	}
-	socket, err := net.ListenUDP("udp", localAddr)
+	s.con, err = net.ListenUDP("udp", localAddr)
 	if err != nil {
 		glog.Fatalf("Listen on addr failed: %v", err)
 	}
-	s.socket = socket
-	glog.Infof("UdpServer started on %v", socket.LocalAddr())
+	glog.Infof("UDPCOMET started on %v successfully", s.con.LocalAddr())
 
 	input := make([]byte, kMaxPackageSize)
 	for {
-		n, peer, err := socket.ReadFromUDP(input)
+		n, peer, err := s.con.ReadFromUDP(input)
 		if err != nil {
 			if nerr, ok := err.(*net.OpError); ok && !nerr.Temporary() {
 				glog.Fatalf("[udp|received] Read failed: %v", nerr)
@@ -53,14 +52,14 @@ func (s *UdpServer) RunLoop() {
 }
 
 func (s *UdpServer) Send(peer *net.UDPAddr, msg []byte) {
-	s.socketMu.Lock()
-	n, err := s.socket.WriteToUDP(msg, peer)
-	s.socketMu.Unlock()
+	s.conlk.Lock()
+	n, err := s.con.WriteToUDP(msg, peer)
+	s.conlk.Unlock()
 	glog.Infof("[udp|sended] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
 }
 func (s *UdpServer) Send2(peer *net.UDPAddr, msg []byte, id int64, busi string) {
-	s.socketMu.Lock()
-	n, err := s.socket.WriteToUDP(msg, peer)
-	s.socketMu.Unlock()
+	s.conlk.Lock()
+	n, err := s.con.WriteToUDP(msg, peer)
+	s.conlk.Unlock()
 	glog.Infof("[udp|sended %v] peer:%v-%v, msg: len(%d)%v,err:%v", busi, id, peer.String(), n, msg, err)
 }

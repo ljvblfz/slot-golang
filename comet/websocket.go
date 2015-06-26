@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"cloud-base/websocket"
-//	"cloud-socket/msgs"
+	//	"cloud-socket/msgs"
 	"github.com/golang/glog"
 )
 
@@ -260,12 +260,7 @@ func WsHandler(ws *websocket.Conn) {
 	//	} else if id < 0 {
 	//	}
 	bindedIds, err = GetDeviceUsers(id)
-	if err != nil {
-		glog.Errorf("[ws:err] id [%d] get devices error: %v, devices: %v", id, err, bindedIds)
-		websocket.Message.Send(ws, LoginFailed.ErrorId)
-		ws.Close()
-		return
-	}
+	glog.Infof("[ws:devs] id [%d] get devices error: %v, devices: %v", id, err, bindedIds)
 
 	statIncConnTotal()
 	statIncConnOnline()
@@ -278,7 +273,7 @@ func WsHandler(ws *websocket.Conn) {
 		ws.Close()
 		return
 	}
-
+	ForceUserOffline(id)
 	_, err = SetUserOnline(id, gLocalAddr)
 	if err != nil {
 		glog.Errorf("[ws:err] SetUserOnline error [uid: %d] %v\n", id, err)
@@ -319,6 +314,7 @@ func WsHandler(ws *websocket.Conn) {
 		}
 		//		gSessionList.GetBindedIds(s, &bindedIds)
 		if len(reply) == 1 && string(reply) == PING_MSG {
+			glog.Infoln("[ws:ping]", ws.RemoteAddr().Network())
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
 				glog.Errorf("[ws:err] causing ws closed <%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
 				break
