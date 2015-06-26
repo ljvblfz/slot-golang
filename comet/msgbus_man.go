@@ -82,6 +82,7 @@ func (this *MsgBusManager) Push2Bus(srcId int64, ids []int64, msg []byte) {
 	copy(pushData[8+2+size*8:], msg)
 	if this.curr != nil {
 		this.curr.Value.(*MsgBusServer).Send(pushData)
+		glog.Infof("send msg %v from %v to %v ", msg, srcId, ids)
 		this.mu.Lock()
 		next := this.curr.Next()
 		if next != nil {

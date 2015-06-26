@@ -172,7 +172,7 @@ func (this *SessionList) CalcDestIds(s *Session, toId int64) []int64 {
 		ids = s.calcDestIds(toId)
 	}
 	this.onlinedMu.Unlock()
-	glog.Infoln("session.go ids:", ids)
+	glog.Infof("LOK!!!!!!!!!!! ids:%v,session'devs:%v,ses:%v", ids, this.onlined[s.Uid].BindedIds, s.BindedIds)
 	return ids
 }
 func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) {

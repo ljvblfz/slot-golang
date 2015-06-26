@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -212,7 +213,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 	if op != 0x2 && op != 0x3 {
 		return fmt.Errorf("[protocol] reason: wrong opcode, op!=2&&op!=3, op=", op)
 	}
-
+	glog.Infoln("转发类型为", op)
 	if op == 0x2 {
 		if mlen < FrameHeaderLen+DataHeaderLen {
 			return fmt.Errorf("[protocol] invalid message length for protocol,  mlen < FrameHeaderLen+DataHeaderLen ,%v < %v", mlen, FrameHeaderLen+DataHeaderLen)
@@ -360,9 +361,15 @@ func (h *Handler) handle(t *UdpMsg) error {
 		binary.LittleEndian.PutUint16(output[FrameHeaderLen+6:], uint16(len(res)))
 		output[FrameHeaderLen+8] = msgs.ChecksumHeader(output, FrameHeaderLen+8)
 		output[FrameHeaderLen+9] = msgs.ChecksumHeader(output[FrameHeaderLen+10:], 2+len(res))
-		h.Server.Send2(t.Peer, output, sess.DeviceId, busi)
+
+		if sess != nil {
+			h.Server.Send2(t.Peer, output, sess.DeviceId, busi)
+		} else {
+			h.Server.Send2(t.Peer, output, 0, busi)
+		}
 
 	} else if op == 0x3 {
+		glog.Infoln("开始转发消息")
 		if mlen < FrameHeaderLen+kSidLen+FrameHeaderLen+DataHeaderLen {
 			return fmt.Errorf("[protocol] invalid message length for protocol")
 		}
@@ -395,14 +402,9 @@ func (h *Handler) handle(t *UdpMsg) error {
 		if err != nil {
 			return fmt.Errorf("parse session id error: %v", err)
 		}
-		locker = NewDeviceSessionLocker(sid.String())
-		err = locker.Lock()
-		if err != nil {
-			return fmt.Errorf("lock session id [%s] failed: %v", sid, err)
-		}
+
 		sess, err = gUdpSessions.GetSession(sid)
 		if err != nil {
-			locker.Unlock()
 			return fmt.Errorf("[ForwardMsg] sid: [%v], error: %v", sid, err)
 		}
 		err = sess.VerifySession(packNum)
@@ -416,14 +418,9 @@ func (h *Handler) handle(t *UdpMsg) error {
 
 		// check binded ids
 		destIds := sess.CalcDestIds(toId)
+		glog.Infoln(destIds)
 
-		locker.Unlock()
-
-		if glog.V(3) {
-			glog.Infof("[udp|received] %d -> %d udp, calc to: %v, data: (len: %d)%v...", srcId, toId, destIds, len(t.Msg), t.Msg)
-		} else if glog.V(2) {
-			glog.Infof("[udp|received] %d -> %d udp, calc to: %v, data: (len: %d)%v...", srcId, toId, sess.BindedUsers, destIds, len(t.Msg), t.Msg[0:kDstIdEnd])
-		}
+		glog.Infof("[udp|received] %d -> %d udp, calc to: %v, data: (len: %d)%v", srcId, toId, destIds, len(t.Msg), t.Msg)
 
 		GMsgBusManager.Push2Bus(srcId, destIds, t.Msg)
 	}
@@ -477,7 +474,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	dv := body[16:18]
 	//comType := body[18:20] // HTTP接口暂未实现
 	produceTime := binary.LittleEndian.Uint32(body[20:24])
-	mac := fmt.Sprint(body[24:32])
+	mac := hex.EncodeToString(body[24:32])
 	sn := body[32:48]
 	//sign := body[48:308] // HTTP接口暂未实现
 	nameLen := body[308]
@@ -529,11 +526,12 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 }
 
 func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
+	glog.Infoln("h.Server.con.LocalAddr().String()===========", h.Server.con.LocalAddr().String())
 	if len(body) != 88 {
 		return nil, fmt.Errorf("[udp:onLogin] bad body length %v", len(body))
 	}
 
-	mac := fmt.Sprint(body[16:24])
+	mac := hex.EncodeToString(body[16:24])
 	// C program sent cookie string without trim zero bytes
 	cookie := string(bytes.TrimRight(body[24:88], "\x00"))
 	t.Input["mac"] = mac
@@ -582,9 +580,9 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 					gUdpSessions.devlk.Lock()
 					delete(gUdpSessions.devmap, sess.DeviceId)
 					gUdpSessions.devlk.Unlock()
-					SetUserOffline(sess.DeviceId, sess.Addr.String())
+					SetUserOffline(sess.DeviceId, h.Server.con.LocalAddr().String())
 				})
-				_, err = SetUserOnline(sess.DeviceId, sess.Addr.String())
+				_, err = SetUserOnline(sess.DeviceId, h.Server.con.LocalAddr().String())
 				if err != nil {
 					glog.Errorf("[udp:err] SetUserOnline error [uid: %d] %v\n", sess.DeviceId, err)
 				}
@@ -597,7 +595,7 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 }
 
 func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	mac := fmt.Sprint(body[16:24])
+	mac := hex.EncodeToString(body[16:24])
 	nameLen := body[24]
 	name := body[25 : 25+nameLen]
 

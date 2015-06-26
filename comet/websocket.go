@@ -226,7 +226,6 @@ func WsHandler(ws *websocket.Conn) {
 		ws.Close()
 		return
 	}
-	var bindedIds []int64
 	//	var mid byte
 	//	if id > 0 {
 	// 用户登录，检查其id是否为16整数倍，并为其分配一个1到15内的未使用的手机子id，相加后作为手机
@@ -259,7 +258,7 @@ func WsHandler(ws *websocket.Conn) {
 	//		id = newId // 防止错误的手机id溢出可用的范围
 	//	} else if id < 0 {
 	//	}
-	bindedIds, err = GetDeviceUsers(id)
+	bindedIds, err := GetUserDevices(id)
 	glog.Infof("[ws:devs] id [%d] get devices error: %v, devices: %v", id, err, bindedIds)
 
 	statIncConnTotal()
@@ -285,6 +284,7 @@ func WsHandler(ws *websocket.Conn) {
 	}
 
 	s := NewWsSession(id, bindedIds, NewWsConn(ws), ws.RemoteAddr().Network())
+	glog.Infof("user %v 's devs:%", id, bindedIds)
 	gSessionList.AddSession(s)
 
 	//	if id < 0 {

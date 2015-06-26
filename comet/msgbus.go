@@ -117,6 +117,7 @@ func (this *MsgBusServer) Send(msg []byte) {
 	binary.Write(buf, binary.LittleEndian, msg)
 	_, err := this.conn.Write(buf.Bytes())
 	if err != nil {
+		glog.Infoln("forward msg error:", err)
 		this.conn.Close()
 	}
 }

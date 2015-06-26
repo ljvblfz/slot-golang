@@ -86,27 +86,15 @@ func (s *UdpSession) isBinded(id int64) bool {
 }
 
 func (s *UdpSession) CalcDestIds(toId int64) []int64 {
-	var destIds []int64
 	if toId == 0 {
-		for i, ci := 0, len(s.BindedUsers); i < ci; i++ {
-			for j := int64(1); j < int64(kUseridUnit); j++ {
-				destIds = append(destIds, s.BindedUsers[i]+j)
-			}
-		}
+		return s.BindedUsers
 	} else {
 		if !s.isBinded(int64(toId)) {
 			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", s.DeviceId, toId, s.BindedUsers)
 			return nil
 		}
-		if toId%int64(kUseridUnit) == 0 {
-			destIds = make([]int64, kUseridUnit-1)
-			for i, c := 0, int(kUseridUnit-1); i < c; i++ {
-				toId++
-				destIds[i] = toId
-			}
-		}
+		return []int64{toId}
 	}
-	return destIds
 }
 
 // Caller should have lock on UdpSession
