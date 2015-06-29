@@ -96,8 +96,8 @@ func InitZK(zkAddrs []string, msgbusName string, cometName string) {
 			continue
 		}
 		var addrs []string = make([]string, 0, len(nodes))
-		for _, n := range nodes {
-			addr, err = zk.GetNodeData(conn, zkMsgBusRoot+"/"+n)
+		for _, node := range nodes {
+			addr, err = zk.GetNodeData(conn, zkMsgBusRoot+"/"+node)
 			if err != nil {
 				glog.Errorf("[%s] cannot get", addr)
 				continue
