@@ -5,6 +5,7 @@ import (
 
 	//	"cloud-base/hlist"
 	"cloud-socket/msgs"
+	"fmt"
 	"github.com/golang/glog"
 	//"strings"
 	//"strconv"
@@ -40,8 +41,9 @@ type Session struct {
 func NewWsSession(uid int64, bindedIds []int64, conn Connection, adr string) *Session {
 	s, ok := gSessionList.onlined[uid]
 	if ok {
-		s.Conn.Send([]byte{1})
-		s.Close()
+		glog.Infoln("踢用户", uid)
+		//踢当前用户
+		s.Conn.Send([]byte{0x0F})
 		gSessionList.RemoveSession(s)
 	}
 	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn, Adr: adr}
@@ -232,12 +234,10 @@ func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte
 	_, err := s.Conn.Send(msgBytes)
 	if err != nil {
 		glog.Warningf("[ch:err] id: %d, MsgId %d, error: %v", dstId, msgid, err)
-		err = s.Conn.Close()
-		if err != nil && glog.V(2) {
-			glog.Warningf("[ch:err] id: %d, MsgId: %d, error: %v", dstId, msgid, err)
-		}
+		SetUserOffline(dstId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
+		this.RemoveSession(s)
 	}
-	glog.Infof("[ch:sended]%v->%v, MsgID:%v,ctn:%v ", s.Uid, dstId, msgid, msgBytes)
+	glog.Infof("[ch:sended]wscomet's %v->%v, MsgID:%v,ctn:%v ", s.Adr, dstId, msgid, msgBytes)
 }
 
 func (this *SessionList) KickOffline(uid int64) {

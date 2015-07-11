@@ -62,6 +62,7 @@ var (
 	AckWrongLoginTimeout   = []byte{byte(8)}  // 超时解析错误
 	AckServerError         = []byte{byte(9)}  // 服务器错误
 	AckModifiedPasswd      = []byte{byte(10)} // 密码已修改
+	AckSecondLogin         = []byte{byte(11)} // 密码已修改
 
 	websocketUrl []string
 	urlLock      sync.Mutex
@@ -197,31 +198,39 @@ func setReadTimeout(conn *websocket.Conn, delaySec int) error {
 }
 
 func WsHandler(ws *websocket.Conn) {
-	addr := ws.Request().RemoteAddr
+	clientAdr := ws.Request().RemoteAddr
+	glog.Infoln(clientAdr, ws.Request().URL)
 	var err error
 	if err = setReadTimeout(ws, 60); err != nil {
-		glog.Errorf("[ws:err] %v websocket.SetReadDeadline() error(%s)\n", addr, err)
+		glog.Errorf("[ws:err] %v websocket.SetReadDeadline() error(%s)\n", clientAdr, err)
 		ws.Close()
 		return
 	}
 	reply := make([]byte, 0, 256)
 	if err = websocket.Message.Receive(ws, &reply); err != nil {
-		glog.Errorf("[ws:err] %v websocket.Message.Receive() error(%v)\n", addr, err)
+		glog.Errorf("[ws:err] %v websocket.Message.Receive() error(%v)\n", clientAdr, err)
+		ws.Close()
+		return
+	}
+	glog.Infoln("[ws:firstrecevie]", string(reply))
+	// parse login params
+	id, timestamp, timeout, encryShadow, loginErr := verifyLoginParams(string(reply))
+	if _, ok := gSessionList.onlined[id]; ok {
+		glog.Errorf("[ws:err] %v has been logined. [%s] params (%s) error (%v)\n", id, clientAdr, string(reply), loginErr)
+		websocket.Message.Send(ws, AckSecondLogin)
 		ws.Close()
 		return
 	}
 
-	// parse login params
-	id, timestamp, timeout, encryShadow, loginErr := verifyLoginParams(string(reply))
 	if loginErr != nil {
-		glog.Errorf("[ws:err] [%s] params (%s) error (%v)\n", addr, string(reply), loginErr)
+		glog.Errorf("[ws:err] [%s] params (%s) error (%v)\n", clientAdr, string(reply), loginErr)
 		websocket.Message.Send(ws, AckWrongParams)
 		ws.Close()
 		return
 	}
 	// check login
 	if err = isAuth(id, timestamp, timeout, encryShadow); err != nil {
-		glog.Errorf("[ws:err] [%s] auth failed:\"%s\", error: %v", addr, string(reply), err)
+		glog.Errorf("[ws:err] [%s] auth failed:\"%s\", error: %v", clientAdr, string(reply), err)
 		websocket.Message.Send(ws, LoginFailed.ErrorId)
 		ws.Close()
 		return
@@ -268,23 +277,22 @@ func WsHandler(ws *websocket.Conn) {
 	// 成功登陆后的一次回复
 	err = websocket.Message.Send(ws, []byte{0})
 	if err != nil {
-		glog.Errorf("[ws:err]  [%s] [uid: %d] sent login-ack error (%v)\n", addr, id, err)
+		glog.Errorf("[ws:err]  [%s] [uid: %d] sent login-ack error (%v)\n", clientAdr, id, err)
 		ws.Close()
 		return
 	}
 	ForceUserOffline(id)
-	_, err = SetUserOnline(id, gLocalAddr)
+	_, err = SetUserOnline(id, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 	if err != nil {
 		glog.Errorf("[ws:err] SetUserOnline error [uid: %d] %v\n", id, err)
 		ws.Close()
 		return
 	}
-	if glog.V(2) {
-		glog.Infof("[ws:online] success id: %d, ip: %v, comet: %s, param: %s, binded ids: %v", id, addr, gLocalAddr, reply, bindedIds)
-	}
 
-	s := NewWsSession(id, bindedIds, NewWsConn(ws), ws.RemoteAddr().Network())
-	glog.Infof("user %v 's devs:%", id, bindedIds)
+	glog.Infof("[ws:online] success id: %d, ip: %v, comet: %s, param: %s, binded ids: %v", id, clientAdr, fmt.Sprintf("%v|%v", gLocalAddr, gCometType), reply, bindedIds)
+
+	s := NewWsSession(id, bindedIds, NewWsConn(ws), clientAdr)
+	glog.Infof("user %v 's devs:%v", id, bindedIds)
 	gSessionList.AddSession(s)
 
 	//	if id < 0 {
@@ -306,17 +314,18 @@ func WsHandler(ws *websocket.Conn) {
 		timeout = TIME_OUT
 	}
 	ws.ReadTimeout = time.Duration(3*timeout) * time.Second
-	glog.Infoln("[ws:info] ws.ReadTimeout:", ws.ReadTimeout)
+	glog.Infoln("[ws:info] enter main loop, ws.ReadTimeout:", ws.ReadTimeout)
 	for {
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
 			glog.Errorf("[ws:err] [err:%v] causing ws closed", err)
 			break
 		}
+		glog.Infoln("[ws:received]", string(reply))
 		//		gSessionList.GetBindedIds(s, &bindedIds)
 		if len(reply) == 1 && string(reply) == PING_MSG {
-			glog.Infoln("[ws:ping]", ws.RemoteAddr().Network())
+			glog.Infoln("[ws:ping]", ws.RemoteAddr().String())
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
-				glog.Errorf("[ws:err] causing ws closed <%s> user_id:\"%d\" write heartbeat to client error(%s)\n", addr, id, err)
+				glog.Errorf("[ws:err] causing ws closed <%s> user_id:\"%d\" write heartbeat to client error(%s)\n", clientAdr, id, err)
 				break
 			}
 		} else {
@@ -340,13 +349,13 @@ func WsHandler(ws *websocket.Conn) {
 			GMsgBusManager.Push2Bus(id, destIds, msg)
 		}
 		//end = time.Now().UnixNano()
-	}
+	} //end main loop
 	offlineErr := err
-	err = SetUserOffline(id, gLocalAddr)
+	err = SetUserOffline(id, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 	if err != nil {
 		glog.Errorf("[ws:offline|error] uid %d, error: %v", id, err)
 	}
-	glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, gLocalAddr, offlineErr)
+	glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, ws.LocalAddr().String(), offlineErr)
 	//	if id > 0 && mid > 0 {
 	//		id -= int64(mid)
 	//		ReturnMobileId(id, mid)

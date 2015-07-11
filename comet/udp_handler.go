@@ -240,47 +240,39 @@ func (h *Handler) handle(t *UdpMsg) error {
 		)
 
 		bodyIndex = FrameHeaderLen + DataHeaderLen
-		if bodyLen != len(t.Msg[bodyIndex:]) {
+		if bodyLen != len(t.Msg[bodyIndex:]) { //报文实际长度与报文体内设置的长度不一致
 			return fmt.Errorf("wrong body length in data header: %d != %d", bodyLen, len(t.Msg[bodyIndex:]))
 		}
 		body = t.Msg[bodyIndex : bodyIndex+bodyLen]
 
 		// parse data(udp)
 		// 28 = FrameHeaderLen + 4
-		c := binary.LittleEndian.Uint16(t.Msg[28:30])
-		if c == CmdSyncState {
+		MsgId := binary.LittleEndian.Uint16(t.Msg[28:30])
+		if MsgId == CmdSyncState {
 			busi = "CmdSyncState"
 			glog.Infoln("执行设备状态同步")
 			GMsgBusManager.Push2Bus(0, nil, t.Msg)
 			return nil
-		} else if c == 0x31 {
+		} else if MsgId == 0x31 {
 			glog.Infoln("执行报警信息同步")
 			busi = "报警信息同步"
 			GMsgBusManager.Push2Bus(0, nil, t.Msg)
 			return nil
 			//TODO alarm msg synchronization
-		} else if c != CmdGetToken {
-			busi = "CmdGetToken"
+		} else if MsgId != CmdGetToken {
 			sid, err = uuid.Parse(t.Msg[bodyIndex : bodyIndex+16])
 			if err != nil {
 				return fmt.Errorf("parse session id error: %v", err)
 			}
-
-			locker = NewDeviceSessionLocker(sid.String())
-			err = locker.Lock()
-			if err != nil {
-				return fmt.Errorf("lock session id [%s] failed: %v", sid, err)
-			}
 			sess, err = gUdpSessions.GetSession(sid)
-			if err != nil {
-				locker.Unlock()
-				return fmt.Errorf("cmd: %X, sid: [%v], error: %v", c, sid, err)
+			if err != nil || sess == nil {
+				return fmt.Errorf("cmd: %X, sid: [%v], error: %v", MsgId, sid, err)
 			}
 			err = sess.VerifySession(packNum)
 			if err != nil {
-				locker.Unlock()
-				return fmt.Errorf("cmd: %X, verify session error: %v", c, err)
+				return fmt.Errorf("cmd: %X, verify session error: %v", MsgId, err)
 			}
+			sess.Sid = sid.String()
 		}
 
 		output := make([]byte, bodyIndex)
@@ -288,21 +280,21 @@ func (h *Handler) handle(t *UdpMsg) error {
 		copy(output[:bodyIndex], t.Msg[:bodyIndex])
 
 		var res []byte
-		t.CmdType = c
-		switch c {
+		t.CmdType = MsgId
+		switch MsgId {
 		case CmdGetToken:
 			res, err = h.onGetToken(t, body)
 			busi = "CmdGetToken"
 		case CmdRegister:
-			t.Url = h.kApiUrls[c]
+			t.Url = h.kApiUrls[MsgId]
 			res, err = h.onRegister(t, sess, body)
 			busi = "CmdRegister"
 		case CmdLogin:
-			t.Url = h.kApiUrls[c]
+			t.Url = h.kApiUrls[MsgId]
 			res, err = h.onLogin(t, sess, body)
 			busi = "CmdLogin"
 		case CmdRename:
-			t.Url = h.kApiUrls[c]
+			t.Url = h.kApiUrls[MsgId]
 			res, err = h.onRename(t, sess, body)
 			busi = "CmdRename"
 		//case CmdDoBind:
@@ -320,7 +312,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 			//			GMsgBusManager.Push2Bus(0, nil, t.Msg)
 
 		default:
-			glog.Warningf("invalid command type %v", c)
+			glog.Warningf("invalid command type %v", MsgId)
 			if sess != nil {
 				locker.Unlock()
 			}
@@ -342,14 +334,13 @@ func (h *Handler) handle(t *UdpMsg) error {
 		}
 		if sess != nil {
 			gUdpSessions.SaveSession(sid, sess)
-			locker.Unlock()
 		}
 		if err != nil {
 			if glog.V(1) {
-				glog.Errorf("[handle] cmd: %X, error: %v", c, err)
+				glog.Errorf("[handle] cmd: %X, error: %v", MsgId, err)
 			}
 		}
-		if c != CmdGetToken {
+		if MsgId != CmdGetToken {
 			copy(res[4:20], t.Msg[bodyIndex:bodyIndex+16])
 			copy(res[4:20], sid[:])
 		}
@@ -371,7 +362,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 	} else if op == 0x3 {
 		glog.Infoln("开始转发消息")
 		if mlen < FrameHeaderLen+kSidLen+FrameHeaderLen+DataHeaderLen {
-			return fmt.Errorf("[protocol] invalid message length for protocol")
+			return fmt.Errorf("[udp|forward] invalid message length for protocol")
 		}
 		packNum := binary.LittleEndian.Uint16(t.Msg[2:4])
 		//		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+6:]))
@@ -405,12 +396,12 @@ func (h *Handler) handle(t *UdpMsg) error {
 
 		sess, err = gUdpSessions.GetSession(sid)
 		if err != nil {
-			return fmt.Errorf("[ForwardMsg] sid: [%v], error: %v", sid, err)
+			return fmt.Errorf("[udp|forward] sid: [%v], error: %v", sid, err)
 		}
 		err = sess.VerifySession(packNum)
 		if err != nil {
 			locker.Unlock()
-			return fmt.Errorf("[ForwardMsg] verify session error: %v", err)
+			return fmt.Errorf("[udp|forward] verify session error: %v", err)
 		}
 
 		toId := int64(binary.LittleEndian.Uint64(t.Msg[8:16]))
@@ -418,11 +409,13 @@ func (h *Handler) handle(t *UdpMsg) error {
 
 		// check binded ids
 		destIds := sess.CalcDestIds(toId)
-		glog.Infoln(destIds)
 
-		glog.Infof("[udp|received] %d -> %d udp, calc to: %v, data: (len: %d)%v", srcId, toId, destIds, len(t.Msg), t.Msg)
-
-		GMsgBusManager.Push2Bus(srcId, destIds, t.Msg)
+		glog.Infof("[udp|forward] %d -> %d udp, calc to: %v, data: (len: %d)%v", srcId, toId, destIds, len(t.Msg), t.Msg)
+		if len(destIds) > 0 {
+			GMsgBusManager.Push2Bus(srcId, destIds, t.Msg)
+		} else {
+			glog.Infof("[udp|forward] from %v to %v | destination is empty", srcId, toId)
+		}
 	}
 	return nil
 }
@@ -460,8 +453,8 @@ func (h *Handler) onGetToken(t *UdpMsg, body []byte) ([]byte, error) {
 		glog.Fatalf("[udp:onGetToken] SaveSession failed: %v", err)
 	}
 	output := make([]byte, 28)
-	binary.LittleEndian.PutUint32(output[:4], 0)
-	copy(output[4:20], sid[:16]) //把sid传给板子
+	binary.LittleEndian.PutUint32(output[:4], 0) //返回结果
+	copy(output[4:20], sid[:16])                 //把sid传给板子
 
 	return output, nil
 }
@@ -472,11 +465,11 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	}
 
 	dv := body[16:18]
-	//comType := body[18:20] // HTTP接口暂未实现
+	//comType := body[18:20] //通讯类型
 	produceTime := binary.LittleEndian.Uint32(body[20:24])
 	mac := hex.EncodeToString(body[24:32])
 	sn := body[32:48]
-	//sign := body[48:308] // HTTP接口暂未实现
+	//sign := body[48:308] //签名
 	nameLen := body[308]
 
 	var name []byte
@@ -542,6 +535,7 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 	output := make([]byte, 21)
 	httpStatus, rep, err := t.DoHTTPTask()
 	if err != nil {
+		glog.Infoln("err occurs when device login", httpStatus, err)
 		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
 		return output, err
 	}
@@ -564,27 +558,43 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 				if err != nil {
 					glog.Errorf("[udp|getIds] id [%d] get ids error: %v, ids: %v", sess.DeviceId, err, bindedIds)
 				} else {
-					sess.BindedUsers = bindedIds
+					if len(bindedIds) > 0 {
+						sess.BindedUsers = bindedIds
+						output = append(output, make([]byte, len(bindedIds)*8)...)
+						for idx, id := range bindedIds {
+							binary.LittleEndian.PutUint64(output[(21+idx*8):(21+idx*8+8)], uint64(id))
+						}
+					}
 				}
 				glog.Infof("[udp|getIds] id [%d] get ids: %v", sess.DeviceId, bindedIds)
-				/**向用户推此设备在线消息*/
-				PushDevOnlineMsgToUsers(sess)
-				gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(40*time.Second, func() {
-					PushDevOfflineMsgToUsers(sess)
-					gUdpSessions.udplk.Lock()
-					delete(gUdpSessions.udpmap, sess.Addr.String())
-					gUdpSessions.udplk.Unlock()
-					gUdpSessions.sidlk.Lock()
-					delete(gUdpSessions.sidmap, gUdpSessions.devmap[sess.DeviceId])
-					gUdpSessions.sidlk.Unlock()
-					gUdpSessions.devlk.Lock()
-					delete(gUdpSessions.devmap, sess.DeviceId)
-					gUdpSessions.devlk.Unlock()
-					SetUserOffline(sess.DeviceId, h.Server.con.LocalAddr().String())
-				})
-				_, err = SetUserOnline(sess.DeviceId, h.Server.con.LocalAddr().String())
+
+				_, err = SetUserOnline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 				if err != nil {
 					glog.Errorf("[udp:err] SetUserOnline error [uid: %d] %v\n", sess.DeviceId, err)
+				} else {
+					/**向用户推此设备在线消息*/
+					PushDevOnlineMsgToUsers(sess)
+					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(25*time.Second, func() {
+						PushDevOfflineMsgToUsers(sess)
+						gUdpSessions.udplk.Lock()
+						delete(gUdpSessions.udpmap, sess.Addr.String())
+						gUdpSessions.udplk.Unlock()
+						gUdpSessions.sidlk.Lock()
+						delete(gUdpSessions.sidmap, gUdpSessions.devmap[sess.DeviceId])
+						gUdpSessions.sidlk.Unlock()
+						gUdpSessions.devlk.Lock()
+						delete(gUdpSessions.devmap, sess.DeviceId)
+						gUdpSessions.devlk.Unlock()
+						//					SetUserOffline(sess.DeviceId, h.Server.con.LocalAddr().String())
+						SetUserOffline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
+					})
+					glog.Infoln("--------------------------------sess.Sid:", sess.Sid)
+					gUdpSessions.sidlk.Lock()
+					gUdpSessions.sidmap[sess.Sid] = sess
+					gUdpSessions.sidlk.Unlock()
+					gUdpSessions.devlk.Lock()
+					gUdpSessions.devmap[sess.DeviceId] = sess.Sid
+					gUdpSessions.devlk.Unlock()
 				}
 			}
 		}
@@ -662,10 +672,11 @@ func (h *Handler) onHearBeat(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 		binary.LittleEndian.PutUint32(output[:4], 0)
 	}
 
-	//set over device offine event's time
+	//set device offine event's time
 	v, ok := gUdpSessions.udpmap[sess.Addr.String()]
 	if ok {
-		v.Reset(40 * time.Second)
+		glog.Infoln("会话被刷新..")
+		v.Reset(25 * time.Second)
 	}
 	return output, err
 }

@@ -218,22 +218,25 @@ func (this *UdpSessionList) PushMsg(did int64, msg []byte) error {
 
 	this.devlk.RLock()
 	sid, ok := this.devmap[did]
-	this.devlk.RUnlock()
+	glog.Infoln("sid:", sid)
 	if !ok {
-		return fmt.Errorf("[udp:err] get session of device [%d] error: %v", did, ok)
+		return fmt.Errorf("[udp:err] [%d] can't got sid.", did)
 	}
-	i, err := uuid.ParseHex(sid)
+	this.devlk.RUnlock()
+	siduuid, err := uuid.ParseHex(sid)
 	if err != nil {
 		return fmt.Errorf("wrong session id format: %v", err)
 	}
-	sess, err := this.GetSession(i)
-	if err != nil {
-		return fmt.Errorf("get session %s error: %v", sid, err)
+	this.sidlk.RLock()
+	sess, ok := this.sidmap[sid]
+	if !ok {
+		return fmt.Errorf("[%v] can't got udpsess", sid)
 	}
-	sess.Sidx++
+	this.sidlk.RUnlock()
 
+	sess.Sidx++
 	binary.LittleEndian.PutUint16(msg[2:4], sess.Sidx)
-	copy(msg[FrameHeaderLen:FrameHeaderLen+kSidLen], i[:])
+	copy(msg[FrameHeaderLen:FrameHeaderLen+kSidLen], siduuid[:])
 	//hcIndex := FrameHeaderLen + kSidLen + FrameHeaderLen + kHeaderCheckPosInDataHeader
 	//glog.Infoln("PushMsg----------sess:",	sess)
 	//msg[hcIndex] = msgs.ChecksumHeader(msg, hcIndex)

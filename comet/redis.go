@@ -17,7 +17,7 @@ import (
 
 const (
 	HostUsers             = "Host:%s" // (1, 2, 3)
-	PubKey                = "PubKey"
+	OnOff                 = "OnOff"
 	SubDeviceUsersKey     = "PubDeviceUsers"
 	SubModifiedPasswdKey  = "PubModifiedPasswdUser"
 	SubCommonMsgKeyPrefix = "PubCommonMsg:"
@@ -46,10 +46,11 @@ const (
 	_GetDeviceSession
 	_SetDeviceSession
 	_DeleteDeviceSession
+	_SubOffline
 	//_ExpireDeviceSession
 	_Max
 
-	// eval, script, 2, htable, id, PubKey, cometIP
+	// eval, script, 2, htable, id, OnOff, cometIP
 	_scriptOnline = `
 local count = redis.call('hincrby', KEYS[1], KEYS[2], 1)
 if count == 1 then
@@ -59,6 +60,18 @@ return count
 `
 
 	_scriptOffline = `
+redis.call('publish', ARGV[1], KEYS[2].."|"..ARGV[2].."|0")
+redis.call('hdel', KEYS[1], KEYS[2])
+`
+	_scriptOnlineb = `
+local count = redis.call('hincrby', KEYS[1], KEYS[2], 1)
+if count == 1 then
+	redis.call('publish', ARGV[1], KEYS[2].."|"..ARGV[2].."|1")
+end
+return count
+`
+
+	_scriptOfflineb = `
 local count = redis.call('hincrby', KEYS[1], KEYS[2], -1)
 if count == 0 then
 	redis.call('publish', ARGV[1], KEYS[2].."|"..ARGV[2].."|0")
@@ -119,22 +132,27 @@ func InitRedix(addr string) {
 	ScriptOffline.Load(Redix[_SetUserOffline])
 
 	if gCometType != msgs.CometUdp || gCometUdpSubBindingEvent {
+		glog.Infoln("SubDeviceUsers")
 		err = SubDeviceUsers()
 		if err != nil {
 			panic(err)
 		}
 	}
-	err = SubModifiedPasswd()
-	if err != nil {
-		panic(err)
-	}
 	if gCometType != msgs.CometUdp || gCometPushUdp {
+		glog.Infoln("SubCommonMsg")
 		err = SubCommonMsg()
 		if err != nil {
 			panic(err)
 		}
 	}
-	SubOffline()
+	if gCometType == msgs.CometWs {
+		glog.Infoln("SubModifiedPasswd SubOffline")
+		err = SubModifiedPasswd()
+		if err != nil {
+			panic(err)
+		}
+		SubOffline()
+	}
 }
 
 func ClearRedis(ip string) error {
@@ -146,7 +164,7 @@ func ClearRedis(ip string) error {
 	if err != nil {
 		return err
 	}
-	err = r.Send("publish", PubKey, fmt.Sprintf("0|%s|0", ip))
+	err = r.Send("publish", OnOff, fmt.Sprintf("0|%s|0", ip))
 	if err != nil {
 		return err
 	}
@@ -174,7 +192,7 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 	return redis.Bool(ScriptOnline.Do(r,
 		fmt.Sprintf(HostUsers, host),
 		uid,
-		PubKey,
+		OnOff,
 		host,
 	))
 }
@@ -187,27 +205,26 @@ func SetUserOffline(uid int64, host string) error {
 	_, err := redis.Bool(ScriptOffline.Do(r,
 		fmt.Sprintf(HostUsers, host),
 		uid,
-		PubKey,
+		OnOff,
 		host,
 	))
 	return err
 }
 func ForceUserOffline(uid int64) {
 	glog.Infof("force %v offline begin", uid)
-	r := Redix[_GetDeviceUsers]
-	RedixMu[_GetDeviceUsers].Lock()
-	defer RedixMu[_GetDeviceUsers].Unlock()
-	r.Do("publish", []byte("OfflineChannel"), fmt.Sprint(uid))
-	glog.Infof("force %v offline end", uid)
+	r := Redix[_SetUserOffline]
+	RedixMu[_SetUserOffline].Lock()
+	defer RedixMu[_SetUserOffline].Unlock()
+	r.Do("publish", []byte("UserOffline"), fmt.Sprint(uid))
 }
 
 func SubOffline() error {
-	r := Redix[_SubDeviceUsersKey]
-	RedixMu[_SubDeviceUsersKey].Lock()
-	defer RedixMu[_SubDeviceUsersKey].Unlock()
+	r := Redix[_SubOffline]
+	RedixMu[_SubOffline].Lock()
+	defer RedixMu[_SubOffline].Unlock()
 
 	psc := redis.PubSubConn{Conn: r}
-	err := psc.Subscribe("OfflineChannel")
+	err := psc.Subscribe("UserOffline")
 	if err != nil {
 		return err
 	}
@@ -225,33 +242,35 @@ func SubOffline() error {
 					return
 				}
 			case error:
-				glog.Errorf("[bind|redis] sub of error: %v\n", n)
+				glog.Errorf("[bind|redis] sub of error: %v\n", data)
 				return
 			}
 		}
 	}()
-	go HandleSubOffline(ch)
+	go HandleOffline(ch)
 	return nil
 }
 
-func HandleSubOffline(ch <-chan []byte) {
+func HandleOffline(ch <-chan []byte) {
 	for buf := range ch {
 		if buf == nil {
 			continue
 		}
 		uid, err := strconv.ParseInt(string(buf), 10, 64)
+		glog.Infoln("HandleOffline:", uid)
 		if err != nil {
 			glog.Errorf("[HandleSubOffline] invalid uid %s, error: %v", string(buf), err)
 			continue
 		}
-		gSessionList.onlinedMu.Lock()
 		if v, ok := gSessionList.onlined[uid]; ok {
-			SetUserOffline(uid, gLocalAddr)
-			gSessionList.onlined[uid].Close()
+			glog.Infof("force user %v offline, continue.", uid)
+			SetUserOffline(uid, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
+			glog.Infof("force user %v offline, finish1.", uid)
 			gSessionList.RemoveSession(v)
-			glog.Infof("force user %v offline, finish.", uid)
+			glog.Infof("force user %v offline, finish2.", uid)
+		} else {
+			glog.Infof("force user %v offline, failed.", uid)
 		}
-		gSessionList.onlinedMu.Unlock()
 	}
 }
 
@@ -272,13 +291,17 @@ func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	b_buf := bytes.NewBuffer([]byte{})
 	binary.Write(b_buf, binary.LittleEndian, sess.DeviceId)
 	DevOnlineMsg = append(DevOnlineMsg, b_buf.Bytes()...)
-	DevOnlineMsg = append(DevOnlineMsg, byte(0))
+	DevOnlineMsg = append(DevOnlineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOnlineMsg)
 	glog.Infof("%v向%v推设备上线消息结束", sess.DeviceId, sess.BindedUsers)
 
 }
 func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	glog.Infof("%v向%v推设备下线消息开始", sess.DeviceId, sess.BindedUsers)
+	if len(sess.BindedUsers) == 0 {
+		glog.Infof("%v向%v推设备下线消息结束 dest is empty", sess.DeviceId, sess.BindedUsers)
+		return
+	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
@@ -294,7 +317,7 @@ func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	b_buf := bytes.NewBuffer([]byte{})
 	binary.Write(b_buf, binary.LittleEndian, sess.DeviceId)
 	DevOfflineMsg = append(DevOfflineMsg, b_buf.Bytes()...)
-	DevOfflineMsg = append(DevOfflineMsg, byte(0))
+	DevOfflineMsg = append(DevOfflineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOfflineMsg)
 	glog.Infof("%v向%v推设备下线消息结束", sess.DeviceId, sess.BindedUsers)
 
@@ -394,6 +417,7 @@ func HandleDeviceUsers(ch <-chan []byte) {
 		if buf == nil {
 			continue
 		}
+		glog.Infoln("HandleDeviceUsers ", string(buf))
 		strs := strings.SplitN(string(buf), "|", 3)
 		if len(strs) != 3 || len(strs) == 0 {
 			glog.Errorf("[binded id] invalid pub-sub msg format: %s", string(buf))

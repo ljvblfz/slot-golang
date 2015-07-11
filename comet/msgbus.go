@@ -99,6 +99,7 @@ func (this *MsgBusServer) Reciver(onCloseEventFunc func(s *MsgBusServer)) {
 
 		data := buf[:size]
 		n, err = io.ReadFull(this.conn, data)
+		glog.Infoln("[receive msg from msgbus]", data)
 		if n == 0 && err == io.EOF {
 			glog.Errorf("[EOF] %v", this.remoteAddr)
 			break
