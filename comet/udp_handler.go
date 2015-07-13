@@ -560,9 +560,10 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 				} else {
 					if len(bindedIds) > 0 {
 						sess.BindedUsers = bindedIds
-						output = append(output, make([]byte, len(bindedIds)*8)...)
+						output = append(output, make([]byte, len(bindedIds)*8+1)...)
+						output[21] = byte(len(bindedIds))
 						for idx, id := range bindedIds {
-							binary.LittleEndian.PutUint64(output[(21+idx*8):(21+idx*8+8)], uint64(id))
+							binary.LittleEndian.PutUint64(output[(22+idx*8):(22+idx*8+8)], uint64(id))
 						}
 					}
 				}
