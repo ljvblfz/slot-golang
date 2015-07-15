@@ -28,7 +28,8 @@ type (
 
 func NewServer(addr string) Server {
 	return &myServer{
-		addr: addr,
+		addr:     addr,
+		socketMu: &sync.Mutex{},
 	}
 }
 
@@ -58,10 +59,9 @@ func (this *myServer) RunLoop() bool {
 			}
 			continue
 		}
-		// TODO hand msg
-		handMsg()
-
-		glog.Infoln(n, peer)
+		adr := selectUDPServer()
+		this.Send(peer, []byte(adr))
+		glog.Infoln(n, peer, adr)
 	}
 	return true
 }
@@ -75,8 +75,4 @@ func (this *myServer) Send(peer *net.UDPAddr, msg []byte) {
 
 func (this *myServer) GetProxySeriveAddr() string {
 	return this.addr
-}
-
-func handMsg() {
-
 }

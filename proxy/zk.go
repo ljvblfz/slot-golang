@@ -107,7 +107,6 @@ func getUdpCometStat() {
 
 	for _, childzode := range zkNodes {
 		zdata, err := zk.GetNodeData(zkConn, zkCometRoot+"/"+childzode)
-		glog.Infoln("addr:", zdata, "err:", err)
 		if err != nil {
 			glog.Errorf("[%s] cannot get", zdata)
 			continue
