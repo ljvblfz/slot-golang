@@ -395,7 +395,8 @@ func (h *Handler) handle(t *UdpMsg) error {
 		}
 
 		sess, err = gUdpSessions.GetSession(sid)
-		if err != nil {
+		glog.Infof("sid:%v | sess:%v", sid.String(), sess)
+		if err != nil || sess == nil {
 			return fmt.Errorf("[udp|forward] sid: [%v], error: %v", sid, err)
 		}
 		err = sess.VerifySession(packNum)

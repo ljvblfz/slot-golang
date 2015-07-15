@@ -76,12 +76,12 @@ func (s *UdpSession) VerifySession(packNum uint16) error {
 
 func (s *UdpSession) isBinded(id int64) bool {
 	// 当s代表板子时，检查id是否属于已绑定用户下的手机
-	id = id - id%int64(kUseridUnit)
 	for _, v := range s.BindedUsers {
 		if v == id {
 			return true
 		}
 	}
+	//s.BindedUsers = GetDeviceUsers(s.DeviceId)
 	return false
 }
 
