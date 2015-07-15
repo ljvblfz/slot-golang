@@ -6,10 +6,11 @@ import (
 	"cloud-base/procinfo"
 	"cloud-base/zk"
 	"fmt"
-	"time"
-
 	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var (
@@ -19,7 +20,7 @@ var (
 	zkProxyRoot string
 	zkCometRoot string
 	zkNodes     []string
-	zkData      []string // the data get from zookeeper
+	gQueue      *Queue // the data get from zookeeper
 )
 
 type (
@@ -31,6 +32,7 @@ type (
 )
 
 func init() {
+	gQueue = NewQueue()
 	zkReportCh = make(chan zookeeper.Event, 1)
 	zkConnOk.Set(false)
 }
@@ -102,7 +104,7 @@ func UdpCometStat(zkAddrs []string) {
 }
 
 func getUdpCometStat() {
-	zkData = make([]string, 0, len(zkNodes))
+
 	for _, childzode := range zkNodes {
 		zdata, err := zk.GetNodeData(zkConn, zkCometRoot+"/"+childzode)
 		glog.Infoln("addr:", zdata, "err:", err)
@@ -110,7 +112,37 @@ func getUdpCometStat() {
 			glog.Errorf("[%s] cannot get", zdata)
 			continue
 		}
-		zkData = append(zkData, zdata)
+
+		items := strings.Split(zdata, ",")
+		if len(items) == 5 {
+			cpuUsage, errT := strconv.ParseFloat(items[1], 64)
+			if errT != nil {
+				glog.Errorf("get cpu usage err:%v", errT)
+			}
+			menTotal, errT := strconv.ParseFloat(items[2], 64)
+			if errT != nil {
+				glog.Errorf("get total memory err:%v", errT)
+			}
+			memUsage, errT := strconv.ParseFloat(items[3], 64)
+			if errT != nil {
+				glog.Errorf("get  memory usage err:%v", errT)
+			}
+			onlineCount, errT := strconv.ParseInt(items[4], 10, 64)
+			if errT != nil {
+				glog.Errorf("get  online count err:%v", errT)
+			}
+			if cpuUsage < gCPUUsage && menTotal-memUsage > gMEMFree && onlineCount < gCount {
+				if !gQueue.contains(items[0]) {
+					gQueue.Put(items[0]) //如果满足条件并且队列中没有，则入队
+				}
+			} else {
+				if gQueue.contains(items[0]) {
+					gQueue.Remove(items[0]) //如果不满足条件并且队列有，则移除
+				}
+				glog.Errorf("no suitable server can use %v", zdata)
+			}
+		}
+
 	}
 }
 

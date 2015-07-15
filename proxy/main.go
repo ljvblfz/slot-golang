@@ -56,11 +56,7 @@ func main() {
 
 	go func() {
 		for {
-			serviceAddr, err := selectUDPServer()
-			if err != nil {
-				glog.Errorln("===>>", err)
-			}
-
+			serviceAddr := selectUDPServer()
 			glog.Infoln("===>> serviceAddr ", serviceAddr)
 			time.Sleep(2 * time.Second)
 		}
