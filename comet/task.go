@@ -19,13 +19,13 @@ const (
 	CmdRegister         = uint16(0xE1)
 	CmdLogin            = uint16(0xE2)
 	CmdRename           = uint16(0xE3)
-	CmdDoBind           = uint16(0xE4)
+	CmdUnbind           = uint16(0xE4)
 	CmdHeartBeat        = uint16(0xE5)
 	CmdSubDeviceOffline = uint16(0xE6)
 
 	UrlRegister   = "/api/device/register"
 	UrlLogin      = "/api/device/login"
-	UrlBind       = "/api/bind/in"
+	UrlUnbind       = "/api/device/unbindbydv"
 	UrlChangeName = "/api/device/changingname"
 )
 

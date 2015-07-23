@@ -263,19 +263,21 @@ func HandleOffline(ch <-chan []byte) {
 			continue
 		}
 		if v, ok := gSessionList.onlined[uid]; ok {
-			glog.Infof("force user %v offline, continue.", uid)
 			SetUserOffline(uid, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
-			glog.Infof("force user %v offline, finish1.", uid)
+			v.Conn.Send(AckForceUserOffline) //
 			gSessionList.RemoveSession(v)
-			glog.Infof("force user %v offline, finish2.", uid)
+			glog.Infof("force user %v offline, finish.", uid)
 		} else {
-			glog.Infof("force user %v offline, failed.", uid)
+			glog.Infof("this comet has not user's ws session [%v]", uid)
 		}
 	}
 }
 
 func PushDevOnlineMsgToUsers(sess *UdpSession) {
-	glog.Infof("%v向%v推设备上线消息开始", sess.DeviceId, sess.BindedUsers)
+	if len(sess.BindedUsers) == 0 {
+		glog.Infof("dev {%v} send to usr:{%v} for dev online msg, dest is empty", sess.DeviceId, sess.BindedUsers)
+		return
+	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
@@ -293,13 +295,11 @@ func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	DevOnlineMsg = append(DevOnlineMsg, b_buf.Bytes()...)
 	DevOnlineMsg = append(DevOnlineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOnlineMsg)
-	glog.Infof("%v向%v推设备上线消息结束", sess.DeviceId, sess.BindedUsers)
 
 }
 func PushDevOfflineMsgToUsers(sess *UdpSession) {
-	glog.Infof("%v向%v推设备下线消息开始", sess.DeviceId, sess.BindedUsers)
 	if len(sess.BindedUsers) == 0 {
-		glog.Infof("%v向%v推设备下线消息结束 dest is empty", sess.DeviceId, sess.BindedUsers)
+		glog.Infof("dev {%v} send to usr:{%v} for dev offline msg, dest is empty", sess.DeviceId, sess.BindedUsers)
 		return
 	}
 	r := Redix[_GetDeviceUsers]
@@ -319,25 +319,25 @@ func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	DevOfflineMsg = append(DevOfflineMsg, b_buf.Bytes()...)
 	DevOfflineMsg = append(DevOfflineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOfflineMsg)
-	glog.Infof("%v向%v推设备下线消息结束", sess.DeviceId, sess.BindedUsers)
 
 }
-func GetDeviceUsers(deviceId int64) ([]int64, error) {
+func GetDeviceUsers(deviceId int64) ([]int64, int64, error) {
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
 	user, err := redis.String(r.Do("hget", RedisDeviceUsers, deviceId))
 	if err != nil {
-		return nil, err
+		return nil, 0xFF, err
 	}
+	u_id, _ := strconv.ParseInt(user, 10, 64)
 	host, err2 := redis.String(r.Do("hget", "user:family", user))
 	//如果找不到host，说明此用户是孤儿，那么只返回此设备的直接关联用户
 	//如果找到host,就返回此设备直接关联用户所属家庭所有成员
 	if host == "" || err2 != nil {
 		bindedIds := make([]int64, 0, 1)
-		u_id, _ := strconv.ParseInt(user, 10, 64)
+
 		bindedIds = append(bindedIds, int64(u_id))
-		return bindedIds, nil
+		return bindedIds, u_id, nil
 	} else {
 		mems, _ := redis.Strings(r.Do("smembers", fmt.Sprintf("family:%v", host)))
 		bindedIds := make([]int64, 0, len(mems))
@@ -347,7 +347,7 @@ func GetDeviceUsers(deviceId int64) ([]int64, error) {
 				bindedIds = append(bindedIds, int64(u_id))
 			}
 		}
-		return bindedIds, nil
+		return bindedIds, int64(u_id), nil
 	}
 }
 func GetUserDevices(userId int64) ([]int64, error) {
@@ -529,6 +529,7 @@ func SubCommonMsg() error {
 
 func HandleCommonMsg(ch <-chan redis.PMessage) {
 	for m := range ch {
+		glog.Infof("[comon ch received] [%v][%v]", string(m.Data), m.Data)
 		msgid := strings.TrimPrefix(m.Channel, SubCommonMsgKeyPrefix)
 		if len(msgid) == 0 {
 			continue
@@ -550,7 +551,7 @@ func HandleCommonMsg(ch <-chan redis.PMessage) {
 		for _, i := range ids {
 			id, err := strconv.ParseInt(i, 10, 64)
 			if err != nil {
-				glog.Errorf("[channel err] invalid dest id %s, error: %v", i, err)
+				glog.Errorf("[channel err] invalid dest id [%s], error: %v", i, err)
 				continue
 			}
 			dstIds = append(dstIds, id)

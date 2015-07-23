@@ -48,24 +48,22 @@ const (
 
 var (
 	LOGIN_PARAM_ERROR = errors.New("Login params parse error!")
-	ParamsError       = &ErrorCode{2001, "登陆参数错误"}
-	LoginFailed       = &ErrorCode{2002, "登陆失败"}
 
-	AckLoginOK             = []byte{byte(0)}  // 登陆成功
-	AckWrongParams         = []byte{byte(1)}  // 错误的登陆参数
-	AckWrongLoginType      = []byte{byte(2)}  // 登陆类型解析错误
-	AckWrongLoginDevice    = []byte{byte(3)}  // 登陆设备ID解析错误
-	AckWrongLoginTimestamp = []byte{byte(4)}  // 登陆时间戳解析错误
-	AckLoginTimeout        = []byte{byte(5)}  // 登陆超时
-	AckWrongMD5            = []byte{byte(6)}  // 错误的md5
-	AckOtherglogoned       = []byte{byte(7)}  // 您已在别处登陆
-	AckWrongLoginTimeout   = []byte{byte(8)}  // 超时解析错误
-	AckServerError         = []byte{byte(9)}  // 服务器错误
-	AckModifiedPasswd      = []byte{byte(10)} // 密码已修改
-	AckSecondLogin         = []byte{byte(11)} // 密码已修改
-
-	websocketUrl []string
-	urlLock      sync.Mutex
+	AckLoginOK          = []byte{byte(0)} // 登陆成功
+	AckWrongParams      = []byte{byte(1)} // 错误的登陆参数
+	AckCheckFail        = []byte{byte(2)} // 登录验证失败
+	AckNotifyMsgbusFail = []byte{byte(3)} // 通知MSGBUS用户登录MSGBUS失败
+	//	AckWrongLoginTimestamp = []byte{byte(4)}  // 登陆时间戳解析错误
+	//	AckLoginTimeout        = []byte{byte(5)}  // 登陆超时
+	//	AckWrongMD5            = []byte{byte(6)}  // 错误的md5
+	//	AckOtherglogoned       = []byte{byte(7)}  // 您已在别处登陆
+	//	AckWrongLoginTimeout   = []byte{byte(8)}  // 超时解析错误
+	AckServerError      = []byte{9}  // 服务器错误
+	AckModifiedPasswd   = []byte{10} // 密码已修改
+	AckSecondLogin      = []byte{11}
+	AckForceUserOffline = []byte{12}
+	websocketUrl        []string
+	urlLock             sync.Mutex
 )
 
 type ErrorCode struct {
@@ -215,12 +213,12 @@ func WsHandler(ws *websocket.Conn) {
 	glog.Infoln("[ws:firstrecevie]", string(reply))
 	// parse login params
 	id, timestamp, timeout, encryShadow, loginErr := verifyLoginParams(string(reply))
-	if _, ok := gSessionList.onlined[id]; ok {
-		glog.Errorf("[ws:err] %v has been logined. [%s] params (%s) error (%v)\n", id, clientAdr, string(reply), loginErr)
-		websocket.Message.Send(ws, AckSecondLogin)
-		ws.Close()
-		return
-	}
+	//	if _, ok := gSessionList.onlined[id]; ok {
+	//		glog.Errorf("[ws:err] %v has been logined. [%s] params (%s) error (%v)\n", id, clientAdr, string(reply), loginErr)
+	//		websocket.Message.Send(ws, AckSecondLogin)
+	//		ws.Close()
+	//		return
+	//	}
 
 	if loginErr != nil {
 		glog.Errorf("[ws:err] [%s] params (%s) error (%v)\n", clientAdr, string(reply), loginErr)
@@ -231,7 +229,7 @@ func WsHandler(ws *websocket.Conn) {
 	// check login
 	if err = isAuth(id, timestamp, timeout, encryShadow); err != nil {
 		glog.Errorf("[ws:err] [%s] auth failed:\"%s\", error: %v", clientAdr, string(reply), err)
-		websocket.Message.Send(ws, LoginFailed.ErrorId)
+		websocket.Message.Send(ws, AckCheckFail)
 		ws.Close()
 		return
 	}
@@ -268,23 +266,17 @@ func WsHandler(ws *websocket.Conn) {
 	//	} else if id < 0 {
 	//	}
 	bindedIds, err := GetUserDevices(id)
-	glog.Infof("[ws:devs] id [%d] get devices error: %v, devices: %v", id, err, bindedIds)
 
 	statIncConnTotal()
 	statIncConnOnline()
 	defer statDecConnOnline()
 
-	// 成功登陆后的一次回复
-	err = websocket.Message.Send(ws, []byte{0})
-	if err != nil {
-		glog.Errorf("[ws:err]  [%s] [uid: %d] sent login-ack error (%v)\n", clientAdr, id, err)
-		ws.Close()
-		return
-	}
 	ForceUserOffline(id)
+	time.Sleep(1 * time.Second)
 	_, err = SetUserOnline(id, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 	if err != nil {
 		glog.Errorf("[ws:err] SetUserOnline error [uid: %d] %v\n", id, err)
+		websocket.Message.Send(ws, AckNotifyMsgbusFail)
 		ws.Close()
 		return
 	}
@@ -292,9 +284,15 @@ func WsHandler(ws *websocket.Conn) {
 	glog.Infof("[ws:online] success id: %d, ip: %v, comet: %s, param: %s, binded ids: %v", id, clientAdr, fmt.Sprintf("%v|%v", gLocalAddr, gCometType), reply, bindedIds)
 
 	s := NewWsSession(id, bindedIds, NewWsConn(ws), clientAdr)
-	glog.Infof("user %v 's devs:%v", id, bindedIds)
 	gSessionList.AddSession(s)
 
+	// 成功登陆后的一次回复
+	err = websocket.Message.Send(ws, AckLoginOK)
+	if err != nil {
+		glog.Errorf("[ws:err]  [%s] [uid: %d] sent login-ack error (%v)\n", clientAdr, id, err)
+		ws.Close()
+		return
+	}
 	//	if id < 0 {
 	//		destIds := gSessionList.CalcDestIds(s, 0)
 

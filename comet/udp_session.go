@@ -26,7 +26,9 @@ type UdpSession struct {
 	DeviceId      int64        `json:"DeviceID"`
 	Addr          *net.UDPAddr `json:"Addr"`
 	LastHeartbeat time.Time    `json:"LastHeartbeat"`
-
+	Owner         int64
+	Mac           []byte
+	GUID          *uuid.UUID
 	// 自身的包序号
 	// 暂时不使用到该包序号，只有当服务器会主动推送消息给设备时才需要
 	Sidx uint16 `json:"Sidx"`
@@ -168,6 +170,9 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 	this.sidlk.RLock()
 	s, _ := this.sidmap[sid.String()]
 	this.sidlk.RUnlock()
+	if s == nil {
+		return s, fmt.Errorf("%v is not in udpcomet", sid.String())
+	}
 	return s, nil
 }
 
@@ -181,6 +186,7 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
 	this.sidlk.Lock()
 	this.sidmap[sid.String()] = s
+	s.GUID = sid
 	this.sidlk.Unlock()
 	return nil
 }
