@@ -1,15 +1,15 @@
 package main
 
 import (
+	"cloud-socket/msgs"
+	"cloud-socket/ver"
 	"flag"
 	"fmt"
+	"github.com/golang/glog"
 	"net/url"
 	"os"
 	"runtime"
 	"strings"
-	"cloud-socket/msgs"
-	"cloud-socket/ver"
-	"github.com/golang/glog"
 )
 
 var (
@@ -21,7 +21,7 @@ var (
 	gCometType               msgs.CometType
 	gCometPushUdp            bool
 	gCometUdpSubBindingEvent bool
-	gUdpTimeout              int64 = 125
+	gUdpTimeout              int64 = 25
 )
 
 func main() {
