@@ -12,7 +12,7 @@ import (
 	"encoding/binary"
 	"github.com/garyburd/redigo/redis"
 	"github.com/golang/glog"
-//	"github.com/hjr265/redsync.go/redsync"
+	//	"github.com/hjr265/redsync.go/redsync"
 )
 
 const (
@@ -277,7 +277,12 @@ func HandleOffline(ch <-chan []byte) {
 		}
 	}
 }
-
+func UpdateDevAdr(sess *UdpSession) {
+	r := Redix[_GetDeviceUsers]
+	RedixMu[_GetDeviceUsers].Lock()
+	defer RedixMu[_GetDeviceUsers].Unlock()
+	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.String())
+}
 func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
@@ -578,12 +583,12 @@ func SubDevOnlineChannel() error {
 			glog.Infof("[SubDevOnlineChannel received] [%v][%v]", string(m.Data), m.Data)
 			strDevId := string(m.Data)
 			devId, _ := strconv.ParseInt(strDevId, 10, 64)
-			glog.Infof("stop dev %v",devId)
+			glog.Infof("stop dev %v", devId)
 			if strSid, ok := gUdpSessions.devmap[devId]; ok {
 				gUdpSessions.udpmap[gUdpSessions.sidmap[strSid].Addr.String()].Stop()
-				glog.Infof("%v stop the offline event",strDevId)
-			}else{
-				glog.Infof("%v stop the offline event fail.",strDevId)
+				glog.Infof("%v stop the offline event", strDevId)
+			} else {
+				glog.Infof("%v stop the offline event fail.", strDevId)
 			}
 		}
 	}(ch)

@@ -714,6 +714,8 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 					glog.Infoln("--------------------------------sess.Sid:", sess.Sid,devAdr)
 					if devAdr == "" {
 						PushDevOnlineMsgToUsers(sess)
+					}else{
+						UpdateDevAdr(sess)
 					}
 					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(time.Duration(gUdpTimeout)*time.Second, func() {
 						PushDevOfflineMsgToUsers(sess)
