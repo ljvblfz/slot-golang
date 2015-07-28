@@ -179,7 +179,7 @@ func (this *SessionList) CalcDestIds(s *Session, toId int64) []int64 {
 }
 func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) {
 	// add or remove deviceId from mobileIds session
-	mids := []int64{userId}
+	//	mids := []int64{userId}
 	lock := this.onlinedMu
 	lock.Lock()
 	if s, ok := this.onlined[userId]; ok {
@@ -207,12 +207,12 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 		}
 	}
 	lock.Unlock()
-	// if found deviceId, send bind/unbind message to mids
-	if bindType {
-		GMsgBusManager.NotifyBindedIdChanged(deviceId, mids, nil)
-	} else {
-		GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, mids)
-	}
+	//	// if found deviceId, send bind/unbind message to mids
+	//	if bindType {
+	//		GMsgBusManager.NotifyBindedIdChanged(deviceId, mids, nil)
+	//	} else {
+	//		GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, mids)
+	//	}
 }
 
 func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte) {
@@ -236,6 +236,7 @@ func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte
 		glog.Warningf("[ch:err] id: %d, MsgId %d, error: %v", dstId, msgid, err)
 		SetUserOffline(dstId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 		this.RemoveSession(s)
+		return
 	}
 	glog.Infof("[ch:sended]wscomet's %v->%v, MsgID:%v,ctn:%v ", s.Adr, dstId, msgid, msgBytes)
 }

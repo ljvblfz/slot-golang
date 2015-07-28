@@ -21,7 +21,7 @@ var (
 	gCometType               msgs.CometType
 	gCometPushUdp            bool
 	gCometUdpSubBindingEvent bool
-	gUdpTimeout              int64 = 25
+	gUdpTimeout              int64 = 125
 )
 
 func main() {

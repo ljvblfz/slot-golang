@@ -275,7 +275,7 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 		// 绑定
 		sess.BindedUsers = append(sess.BindedUsers, userId)
 		glog.Infof("[bind|bind] deviceId %d add userId %d", deviceId, userId)
-
+		GMsgBusManager.NotifyBindedIdChanged(deviceId, mids, nil)
 	} else {
 		// 解绑
 		for k, v := range sess.BindedUsers {
@@ -288,17 +288,9 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 			glog.Infof("[bind|unbind] deviceId %d remove userId %d", deviceId, userId)
 			break
 		}
+		GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, mids)
 	}
 	this.SaveSession(i, sess)
-
-	go func() {
-		mids := []int64{userId}
-		if bindType {
-			GMsgBusManager.NotifyBindedIdChanged(deviceId, mids, nil)
-		} else {
-			GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, mids)
-		}
-	}()
 }
 
 //func (this *UdpSessionList) GetDeviceIdAndDstIds(sid *uuid.UUID) (int64, []int64, error) {

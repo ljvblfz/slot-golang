@@ -449,10 +449,14 @@ func HandleDeviceUsers(ch <-chan []byte) {
 			continue
 		}
 		// new code for udp
-		go gUdpSessions.UpdateIds(deviceId, userId, msgType != 0)
+		if gCometType == msgs.CometUdp {
+			go gUdpSessions.UpdateIds(deviceId, userId, msgType != 0)
+		}
 
-		// old code for websocket
-		//go gSessionList.UpdateIds(deviceId, userId, msgType != 0)
+		if gCometType == msgs.CometWs {
+
+			go gSessionList.UpdateIds(deviceId, userId, msgType != 0)
+		}
 	}
 }
 
@@ -687,4 +691,10 @@ func DeleteDeviceSession(sid string) error {
 
 	_, err := r.Do("del", fmt.Sprintf(RedisSessionDevice, sid))
 	return err
+}
+func SetLoginFlag(usrId int64, flag string) {
+	r := Redix[_Short]
+	RedixMu[_Short].Lock()
+	defer RedixMu[_Short].Unlock()
+	r.Do("hset", []byte("user:logined"), fmt.Sprintf("%v", usrId), flag)
 }

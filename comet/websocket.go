@@ -293,6 +293,7 @@ func WsHandler(ws *websocket.Conn) {
 		ws.Close()
 		return
 	}
+	SetLoginFlag(id, "Y")
 	//	if id < 0 {
 	//		destIds := gSessionList.CalcDestIds(s, 0)
 
@@ -379,5 +380,6 @@ func WsHandler(ws *websocket.Conn) {
 	//		GMsgBusManager.Push2Bus(id, destIds, m.MarshalBytes())
 	//	}
 	gSessionList.RemoveSession(s)
+	SetLoginFlag(id, "N")
 	return
 }
