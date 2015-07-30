@@ -35,7 +35,9 @@ func onSentMsg(msg []byte) {
 
 func MainHandle(srcMsg []byte) {
 	statIncUpStreamIn()
-	glog.Infof("[mb:received] len:%v msg:%v", len(srcMsg), srcMsg)
+	if glog.V(3) {
+		glog.Infof("[mb:received] len:%v msg:%v", len(srcMsg), srcMsg)
+	}
 	srcId := int64(binary.LittleEndian.Uint64(srcMsg[:8]))
 	msg := srcMsg[8:]
 	idsSize := binary.LittleEndian.Uint16(msg[:2])
@@ -45,12 +47,12 @@ func MainHandle(srcMsg []byte) {
 	data := msg[2+idsSize*8:]
 	glog.Infof("len:%v,data:%v", len(data), data)
 
-	if glog.V(2) {
+	if glog.V(3) {
 		var ids []int64
 		for i := uint16(0); i < idsSize; i++ {
 			ids = append(ids, int64(binary.LittleEndian.Uint64(toIds[i*8:i*8+8])))
 		}
-		glog.Infof("[bus|in] from: %d  to ids: %v, ids count: %d, total len: %d, data: %v", srcId, ids, idsSize, len(data), data)
+		glog.Infof("[mb|in] from: %d  to ids: %v, ids count: %d, total len: %d, data: %v", srcId, ids, idsSize, len(data), data)
 	}
 
 	if srcId < 0 {
@@ -83,7 +85,9 @@ func MainHandle(srcMsg []byte) {
 		uid := int64(binary.LittleEndian.Uint64(toIds))
 		var err error
 		//		if uid > 0 {
-		glog.Infoln("GUserMap.PushToComet(uid, msg)", uid, msg)
+		if glog.V(3) {
+			glog.Infof("sending %v to %v", msg, uid)
+		}
 		err = GUserMap.PushToComet(uid, msg)
 		//		} else if uid < 0 {
 		//			glog.Infoln("GComets.PushUdpMsg(msg)", uid, msg)
@@ -146,9 +150,9 @@ func MainHandle(srcMsg []byte) {
 
 		err := GComets.PushMsg(pushData, k)
 		if err != nil {
-			glog.Errorf("[bus|down] Broadcast to websocket comet failed, comet: %s, ids: %s, err: %v", k, v, err)
+			glog.Errorf("[bus|down] FAIL!!, to comet: %s, ids: %s, err: %v", k, v, err)
 		} else {
-			glog.Infof("[bus|down] to comet: %s, ids: %s, data: (len: %d)%v", k, v, len(msg), pushData)
+			glog.Infof("[bus|down] DONE!!, to comet: %s, ids: %s, data: (len: %d)%v", k, v, len(msg), pushData)
 		}
 	}
 	//	if udpIds != nil {

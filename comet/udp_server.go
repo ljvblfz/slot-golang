@@ -46,7 +46,9 @@ func (s *UdpServer) RunLoop() {
 			}
 			continue
 		}
-		glog.Infof("[udp|received] peer: %v, msg: len(%d)%v", peer, n, input[:n])
+		if glog.V(3) {
+			glog.Infof("[UDPCOMET] received dev:%v,msg:len(%d)%v", peer, n, input[:n])
+		}
 		s.handler.Process(peer, input[:n])
 	}
 }
@@ -55,12 +57,17 @@ func (s *UdpServer) Send(peer *net.UDPAddr, msg []byte) {
 	s.conlk.Lock()
 	n, err := s.con.WriteToUDP(msg, peer)
 	s.conlk.Unlock()
-	glog.Infof("[udp|sended] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
+	if glog.V(3) {
+		glog.Infof("[udp|sended] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
+		glog.Infof("-----------------------------------------------------------------------------------------------------------------------------")
+	}
 }
 func (s *UdpServer) Send2(peer *net.UDPAddr, msg []byte, id int64, busi string) {
 	s.conlk.Lock()
 	n, err := s.con.WriteToUDP(msg, peer)
 	s.conlk.Unlock()
-	glog.Infof("[udp|sended %v] peer:%v-%v, response: len(%d)%v,err:%v", busi, id, peer.String(), n, msg, err)
-	glog.Infof("-----------------------------------------------------------------------------------------------------------------------------")
+	if glog.V(3) {
+		glog.Infof("[udp|sended %v] [dev:%v-%v], response: len(%d)%v,%v", busi, id, peer.String(), n, msg, err)
+		glog.Infof("-----------------------------------------------------------------------------------------------------------------------------")
+	}
 }

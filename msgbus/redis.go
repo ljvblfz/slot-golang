@@ -97,7 +97,7 @@ func GetAllUsers(hosts []string) error {
 	)
 	for _, host := range hosts {
 		users, e := redis.Strings(r.Do("hkeys", host))
-		glog.Infoln("registed user under host", host, users)
+		glog.Infoln("got users %v from comet-%v", users, host)
 		if e != nil {
 			glog.Errorf("redis error %v", e)
 			continue

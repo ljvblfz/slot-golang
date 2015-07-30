@@ -26,7 +26,9 @@ func NewMsgBusServer(localAddr, remoteAddr string) *MsgBusServer {
 }
 
 func (this *MsgBusServer) Dail() error {
-	glog.Infof("Dail to [%s]->[%s]\n", this.localAddr, this.remoteAddr)
+	if glog.V(3) {
+		glog.Infof("[COMET:MSGBUS] Dail MsgBusSrv [%s]->[%s]", this.localAddr, this.remoteAddr)
+	}
 	var (
 		err           error
 		tcpLocalAddr  net.TCPAddr
@@ -35,7 +37,7 @@ func (this *MsgBusServer) Dail() error {
 
 	ip, err := net.ResolveIPAddr("ip", this.localAddr)
 	if err != nil || ip.IP == nil {
-		glog.Fatalf("Resovle Local TcpAddr [%s], error: %v\n", this.localAddr, err)
+		glog.Fatalf("[COMET:MSGBUS] Resovle Local TcpAddr [%s], error: %v", this.localAddr, err)
 	}
 	tcpLocalAddr.IP = ip.IP
 	//tcpLocalAddr, err = net.ResolveTCPAddr("tcp", this.localAddr)
@@ -46,28 +48,29 @@ func (this *MsgBusServer) Dail() error {
 
 	tcpRemoteAddr, err = net.ResolveTCPAddr("tcp", this.remoteAddr)
 	if err != nil {
-		glog.Errorf("Resovle Remote TcpAddr [%s] [%s]\n", this.remoteAddr, err.Error())
+		glog.Errorf("[COMET:MSGBUS] Resovle Remote TcpAddr [%s] [%s]", this.remoteAddr, err.Error())
 		return err
 	}
 	this.conn, err = net.DialTCP("tcp", &tcpLocalAddr, tcpRemoteAddr)
 	if err != nil {
-		glog.Errorf("Dail [%s]->[%s] [%s]\n", this.localAddr, this.remoteAddr, err.Error())
+		glog.Errorf("[COMET:MSGBUS] Dail [%s]->[%s] [%s]", this.localAddr, this.remoteAddr, err.Error())
 		return err
 	}
 	buf := make([]byte, 1)
 	buf[0] = byte(gCometType)
 	_, err = this.conn.Write(buf)
 	if err != nil {
-		glog.Errorf("Send info error [%s]->[%s] [%s]\n", this.localAddr, this.remoteAddr, err.Error())
+		glog.Errorf("[COMET:MSGBUS] Send info error [%s]->[%s] [%s]", this.localAddr, this.remoteAddr, err.Error())
 		return err
 	}
 	n, err := this.conn.Read(buf)
 	if err != nil || n != 1 {
-		glog.Errorf("Read ack error [%s]<-[%s] [%s]\n", this.localAddr, this.remoteAddr, err.Error())
+		glog.Errorf("[COMET:MSGBUS] Read ack error [%s]<-[%s] [%s]", this.localAddr, this.remoteAddr, err.Error())
 		return err
 	}
-
-	// glog.Infof("Dail to [%s] ok\n", this.addr)
+	if glog.V(3) {
+		glog.Infof("[COMET:MSGBUS] Conecting MsgBusSrv [%s] ok", this.remoteAddr)
+	}
 	return nil
 }
 
@@ -79,17 +82,14 @@ func (this *MsgBusServer) Reciver(onCloseEventFunc func(s *MsgBusServer)) {
 
 	for {
 		// header
-		n, err := io.ReadFull(this.conn, header)
-		if n == 0 && err == io.EOF {
-			glog.Errorf("[MSGBUS:EOF] %v", this.remoteAddr)
-			break
-		} else if err != nil {
-			glog.Errorf("[%s] error receiving header: %s\n", this.remoteAddr, err.Error())
+		_, err := io.ReadFull(this.conn, header)
+		if err != nil {
+			glog.Errorf("[COMET:MSGBUS] %v,%v", this.remoteAddr, err)
 			break
 		}
 		size := binary.LittleEndian.Uint32(header)
 		if size > PAYLOAD_MAX {
-			glog.Errorf("[%s] overload the max[%d]>[%d]\n", this.remoteAddr, size, PAYLOAD_MAX)
+			glog.Errorf("[COMET:MSGBUS] [%s] HeaderLength ERR [%d]>[%d]", this.remoteAddr, size, PAYLOAD_MAX)
 			_, err = io.CopyN(ioutil.Discard, this.conn, int64(size))
 			if err != nil {
 				break
@@ -98,13 +98,12 @@ func (this *MsgBusServer) Reciver(onCloseEventFunc func(s *MsgBusServer)) {
 		}
 
 		data := buf[:size]
-		n, err = io.ReadFull(this.conn, data)
-		glog.Infoln("[receive msg from msgbus]", data)
-		if n == 0 && err == io.EOF {
-			glog.Errorf("[EOF] %v", this.remoteAddr)
-			break
-		} else if err != nil {
-			glog.Errorf("[%s] error receiving [%s]\n", this.remoteAddr, err.Error())
+		_, err = io.ReadFull(this.conn, data)
+		if glog.V(3) {
+			glog.Infof("[COMET:MSGBUS] Received |%v|", data)
+		}
+		if err != nil {
+			glog.Errorf("[COMET:MSGBUS] [%s] receiving [%v]", this.remoteAddr, err)
 			break
 		}
 		HandleMsg(data)
@@ -118,7 +117,13 @@ func (this *MsgBusServer) Send(msg []byte) {
 	binary.Write(buf, binary.LittleEndian, msg)
 	_, err := this.conn.Write(buf.Bytes())
 	if err != nil {
-		glog.Infoln("forward msg error:", err)
+		if glog.V(3) {
+			glog.Infof("[COMET:MSGBUS] FAILED!! Forward msg |%v| to MsgBusSrv.|%v|", msg, err)
+		}
 		this.conn.Close()
+	} else {
+		if glog.V(3) {
+			glog.Infof("[COMET:MSGBUS] DONE!!,Forward msg|%v| to MsgBusSrv.", msg)
+		}
 	}
 }

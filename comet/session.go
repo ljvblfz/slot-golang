@@ -32,21 +32,14 @@ type SessionList struct {
 	onlinedMu *sync.Mutex
 }
 type Session struct {
-	Uid       int64
-	BindedIds []int64 // Uid为手机:包含所有已绑定的板子id;Uid为板子时，包含所有已绑定的用户id
-	Conn      Connection
-	Adr       string
+	Uid  int64
+	devs []int64 // Uid为手机:包含所有已绑定的板子id;Uid为板子时，包含所有已绑定的用户id
+	Conn Connection
+	Adr  string
 }
 
 func NewWsSession(uid int64, bindedIds []int64, conn Connection, adr string) *Session {
-	s, ok := gSessionList.onlined[uid]
-	if ok {
-		glog.Infoln("踢用户", uid)
-		//踢当前用户
-		s.Conn.Send([]byte{0x0F})
-		gSessionList.RemoveSession(s)
-	}
-	return &Session{Uid: uid, BindedIds: bindedIds, Conn: conn, Adr: adr}
+	return &Session{Uid: uid, devs: bindedIds, Conn: conn, Adr: adr}
 }
 
 func (this *Session) Close() {
@@ -54,11 +47,7 @@ func (this *Session) Close() {
 }
 
 func (this *Session) isBinded(id int64) bool {
-	//	if this.Uid < 0 {
-	//		// 当this代表板子时，检查id是否属于已绑定用户下的手机
-	//		id = id - id%int64(kUseridUnit)
-	//	}
-	for _, v := range this.BindedIds {
+	for _, v := range this.devs {
 		if v == id {
 			return true
 		}
@@ -67,11 +56,10 @@ func (this *Session) isBinded(id int64) bool {
 }
 
 func (this *Session) calcDestIds(toId int64) []int64 {
-	glog.Infoln("session.go told:", toId)
 	var destIds []int64
 	if toId == 0 {
 		//		if this.Uid > 0 {
-		destIds = this.BindedIds
+		destIds = this.devs
 		//		} else {
 		//			for i, ci := 0, len(this.BindedIds); i < ci; i++ {
 		//				for j := int64(1); j < int64(kUseridUnit); j++ {
@@ -83,7 +71,7 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 
 	} else {
 		if !this.isBinded(int64(toId)) {
-			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", this.Uid, toId, this.BindedIds)
+			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", this.Uid, toId, this.devs)
 			return nil
 		}
 		//		if this.Uid < 0 && toId%int64(kUseridUnit) == 0 {
@@ -97,6 +85,9 @@ func (this *Session) calcDestIds(toId int64) []int64 {
 		//		} else {
 		destIds = append(destIds, toId)
 		//		}
+	}
+	if glog.V(3) {
+		glog.Infof("%v became %v", toId, destIds)
 	}
 	return destIds
 }
@@ -157,51 +148,40 @@ func (this *SessionList) RemoveSession(s *Session) {
 	}
 	delete(this.onlined, s.Uid)
 	this.onlinedMu.Unlock()
-	glog.Infoln("[ws:over] sess dead. uid:", s.Uid, s.Adr)
-}
-
-func (this *SessionList) GetBindedIds(session *Session, ids *[]int64) {
-	this.onlinedMu.Lock()
-	ids = &session.BindedIds
-	this.onlinedMu.Unlock()
-}
-
-func (this *SessionList) CalcDestIds(s *Session, toId int64) []int64 {
-	this.onlinedMu.Lock()
-	var ids []int64
-	_, ok := this.onlined[s.Uid]
-	if ok {
-		ids = s.calcDestIds(toId)
+	if glog.V(3) {
+		glog.Infof("[WSSESS:DEAD] usr:%v,%v.", s.Uid, s.Adr)
 	}
-	this.onlinedMu.Unlock()
-	glog.Infof("LOK!!!!!!!!!!! ids:%v,session'devs:%v,ses:%v", ids, this.onlined[s.Uid].BindedIds, s.BindedIds)
-	return ids
 }
+
 func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) {
-	// add or remove deviceId from mobileIds session
-	//	mids := []int64{userId}
 	lock := this.onlinedMu
 	lock.Lock()
 	if s, ok := this.onlined[userId]; ok {
 		if !ok {
-			glog.Infof("[ws:bind] no session userId %d bind device %d", userId, deviceId)
+			if glog.V(3) {
+				glog.Infof("[WS UPDATE DEVLIST] no session of %d, fail to bind/unbind device %d", userId, deviceId)
+			}
 			return
 		}
 		if bindType {
 			// 绑定
-			s.BindedIds = append(s.BindedIds, deviceId)
-			glog.Infof("[ws:bind] userId %d bind device %d", userId, deviceId)
+			s.devs = append(s.devs, deviceId)
+			if glog.V(3) {
+				glog.Infof("[WS UPDATE DEVLIST] usr:%d has binded dev:%d", userId, deviceId)
+			}
 
 		} else {
 			// 解绑
-			for k, v := range s.BindedIds {
+			for k, v := range s.devs {
 				if v != deviceId {
 					continue
 				}
-				lastIndex := len(s.BindedIds) - 1
-				s.BindedIds[k] = s.BindedIds[lastIndex]
-				s.BindedIds = s.BindedIds[:lastIndex]
-				glog.Infof("[ws|unbind] userId %d unbind device %d", userId, deviceId)
+				lastIndex := len(s.devs) - 1
+				s.devs[k] = s.devs[lastIndex]
+				s.devs = s.devs[:lastIndex]
+				if glog.V(3) {
+					glog.Infof("[WS UPDATE DEVLIST] usr:%d has unbinded dev:%d", userId, deviceId)
+				}
 				break
 			}
 		}
@@ -216,32 +196,53 @@ func (this *SessionList) UpdateIds(deviceId int64, userId int64, bindType bool) 
 }
 
 func (this *SessionList) PushCommonMsg(msgid uint16, dstId int64, msgBody []byte) {
-	glog.Infof("[ch:sending] msgid:%v | dstId:%v | len(msgBody):%v | msgBody:%v\n", msgid, dstId, len(msgBody), msgBody)
+	if glog.V(3) {
+		glog.Infof("[SEND COMMON MSG TO USR] Received=msgid:%v,usr:%v,len(msgBody):%v,msgBody:%v", msgid, dstId, len(msgBody), msgBody)
+	}
 	msg := msgs.NewMsg(msgBody, nil)
 	msg.FrameHeader.Opcode = 2
 	msg.DataHeader.MsgId = msgid
 
 	s, ok := this.onlined[dstId]
 	if !ok {
-		glog.Errorf("[ch:sending] no session, msgid:%v | dstId:%v | len(msgBody):%v | msgBody:%v\n", msgid, dstId, len(msgBody), msgBody)
+		if glog.V(3) {
+			glog.Infof("[SEND COMMON MSG TO USR] MSG can't send, Destination is not in this WSCOMET,ADDITIONAL MSG msgid:%v,usr:%v,len(msgBody):%v,msgBody:%v", msgid, dstId, len(msgBody), msgBody)
+		}
 		return
 	}
 
 	msg.FrameHeader.DstId = dstId
 	msgBytes := msg.MarshalBytes()
-	glog.Infoln("session.go Push msgBytes:", len(msgBytes), msgBytes)
+
+	if glog.V(3) {
+		glog.Infof("[SEND COMMON MSG TO USR] Final Msg |len:%v| |%v|", len(msgBytes), msgBytes)
+	}
 
 	_, err := s.Conn.Send(msgBytes)
 	if err != nil {
-		glog.Warningf("[ch:err] id: %d, MsgId %d, error: %v", dstId, msgid, err)
+		if glog.V(3) {
+			glog.Infof("[SEND COMMON MSG TO USR] Failed |%v|", err)
+		}
 		SetUserOffline(dstId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 		this.RemoveSession(s)
 		return
 	}
-	glog.Infof("[ch:sended]wscomet's %v->%v, MsgID:%v,ctn:%v ", s.Adr, dstId, msgid, msgBytes)
+	if glog.V(3) {
+		glog.Infof("[SEND COMMON MSG TO USR] DONE %v->%v,MsgID:%v,ctn:%v", s.Adr, dstId, msgid, msgBytes)
+	}
 }
 
-func (this *SessionList) KickOffline(uid int64) {
+func (this *SessionList) OffliningUsr(uid int64) {
+	if glog.V(3) {
+		glog.Infof("[OFFLINE USR] %v", uid)
+	}
+	sess, ok := this.onlined[uid]
+	if !ok {
+		if glog.V(3) {
+			glog.Infof("[OFFLINE USR] no usr:%v is in this WSCOMET", uid)
+		}
+		return
+	}
 	body := msgs.MsgStatus{}
 	body.Type = msgs.MSTKickOff
 	kickMsg := msgs.NewMsg(nil, nil)
@@ -252,34 +253,36 @@ func (this *SessionList) KickOffline(uid int64) {
 	kickMsg.FrameHeader.DstId = uid
 	kickMsg.Data, _ = body.Marshal()
 	msgBody := kickMsg.MarshalBytes()
-	s, ok := this.onlined[uid]
-	if !ok {
-		glog.Errorln("[kick] no session :", uid)
-		return
+
+	_, err := sess.Conn.Send(msgBody)
+	if err != nil {
+		glog.Warningf("[OFFLINE USR] usr:%d,%v", sess.Uid, err)
 	}
-	_, err := s.Conn.Send(msgBody)
-	if err != nil && glog.V(2) {
-		glog.Warningf("[kicking msg sending fail] user: %d, error: %v", s.Uid, err)
+	err = sess.Conn.Close()
+	if err != nil {
+		glog.Warningf("[OFFLINE USR] usr:%d, error: %v", sess.Uid, err)
 	}
-	err = s.Conn.Close()
-	if err != nil && glog.V(2) {
-		glog.Warningf("[ws closing fail]  user: %d, error: %v", s.Uid, err)
+	SetUserOffline(uid, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
+	this.RemoveSession(sess)
+	if glog.V(3) {
+		glog.Infof("[OFFLINE USR] Done. usr:%v", uid)
 	}
-	glog.Infof("[kick] user %d modified password", s.Uid)
 }
 
 func (this *SessionList) PushMsg(uid int64, data []byte) {
 	if s, ok := this.onlined[uid]; ok {
 		if len(data) < 24 {
-			glog.Errorf("[ws|err] [user: %d] length less than 24 (%d)%v", uid, len(data), data)
+			glog.Errorf("[WSCOMET REFUSE SENDING MSG] Reason is msg's length less than 24,(%d)%v, destination is [usr:%d].", len(data), data, uid)
 		}
 		_, err := s.Conn.Send(data)
 		if err != nil {
 			// 不要在这里移除用户session，用户的websocket连接会处理这个情况
-			glog.Infof("[ws|down] fail user: %d, error: %v", s.Uid, err)
+			if glog.V(3) {
+				glog.Infof("[WSCOMET:SEND] FAILED! usr:%d,%v,%v,%v", s.Uid, len(data), data, err)
+			}
 		} else {
 			statIncDownStreamOut()
-			glog.Infof("[ws|down] success to user: %d, data: (len %d)%v", s.Uid, len(data), data[:3])
+			glog.Infof("[WSCOMET:SEND] DONE! usr:%d, data: (len %d)%v", s.Uid, len(data), data)
 		}
 	}
 }

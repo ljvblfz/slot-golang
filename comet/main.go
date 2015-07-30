@@ -77,7 +77,7 @@ func main() {
 	switch gCometType {
 	case msgs.CometWs:
 		if len(gLocalAddr) == 0 {
-			glog.Fatalf("必须指定本机IP")
+			glog.Fatalf("IP has to be DEDICATED.")
 		}
 		StartHttp(strings.Split(*lHost, ","))
 

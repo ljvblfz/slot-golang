@@ -132,23 +132,26 @@ func InitRedix(addr string) {
 	ScriptOnline.Load(Redix[_SetUserOnline])
 	ScriptOffline = redis.NewScript(2, _scriptOffline)
 	ScriptOffline.Load(Redix[_SetUserOffline])
-
-	if gCometType != msgs.CometUdp || gCometUdpSubBindingEvent {
-		glog.Infoln("SubDeviceUsers")
-		err = SubDeviceUsers()
-		if err != nil {
-			panic(err)
-		}
+	if glog.V(3) {
+		glog.Infoln("Subscribed DeviceUsers")
+	}
+	err = SubDeviceUsers()
+	if err != nil {
+		panic(err)
 	}
 	if gCometType != msgs.CometUdp || gCometPushUdp {
-		glog.Infoln("SubCommonMsg")
+		if glog.V(3) {
+			glog.Infoln("Subscribed SubCommonMsg")
+		}
 		err = SubCommonMsg()
 		if err != nil {
 			panic(err)
 		}
 	}
 	if gCometType == msgs.CometWs {
-		glog.Infoln("SubModifiedPasswd SubOffline")
+		if glog.V(3) {
+			glog.Infoln("Subscribed SubModifiedPasswd SubOffline")
+		}
 		err = SubModifiedPasswd()
 		if err != nil {
 			panic(err)
@@ -188,12 +191,13 @@ func ClearRedis(ip string) error {
 	return nil
 }
 
+/**
+*	执行lua，更新MSGBUS的用户与WSCOMET映射表，uid可以是硬件或手机用户
+ */
 func SetUserOnline(uid int64, host string) (bool, error) {
 	r := Redix[_SetUserOnline]
 	RedixMu[_SetUserOnline].Lock()
 	defer RedixMu[_SetUserOnline].Unlock()
-
-	// new
 	return redis.Bool(ScriptOnline.Do(r,
 		fmt.Sprintf(HostUsers, host),
 		uid,
@@ -202,6 +206,9 @@ func SetUserOnline(uid int64, host string) (bool, error) {
 	))
 }
 
+/**
+*	执行lua，更新MSGBUS的用户与WSCOMET映射表，uid可以是硬件或手机用户
+ */
 func SetUserOffline(uid int64, host string) error {
 	r := Redix[_SetUserOffline]
 	RedixMu[_SetUserOffline].Lock()
@@ -216,7 +223,9 @@ func SetUserOffline(uid int64, host string) error {
 	return err
 }
 func ForceUserOffline(uid int64) {
-	glog.Infof("force %v offline begin", uid)
+	if glog.V(3) {
+		glog.Infof("Publish forcing usr[%v] offline msg", uid)
+	}
 	r := Redix[_SetUserOffline]
 	RedixMu[_SetUserOffline].Lock()
 	defer RedixMu[_SetUserOffline].Unlock()
@@ -262,18 +271,24 @@ func HandleOffline(ch <-chan []byte) {
 			continue
 		}
 		uid, err := strconv.ParseInt(string(buf), 10, 64)
-		glog.Infoln("HandleOffline:", uid)
+		if glog.V(3) {
+			glog.Infof("Handling usr[%v] Offline MSG", uid)
+		}
 		if err != nil {
-			glog.Errorf("[HandleSubOffline] invalid uid %s, error: %v", string(buf), err)
+			glog.Errorf("[HandleUSROffline] invalid uid[%s], %v", string(buf), err)
 			continue
 		}
 		if v, ok := gSessionList.onlined[uid]; ok {
 			SetUserOffline(uid, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 			v.Conn.Send(AckForceUserOffline) //
 			gSessionList.RemoveSession(v)
-			glog.Infof("force user %v offline, finish.", uid)
+			if glog.V(3) {
+				glog.Infof("Handling usr[%v] offline event has DONE.", uid)
+			}
 		} else {
-			glog.Infof("this comet has not user's ws session [%v]", uid)
+			if glog.V(3) {
+				glog.Infof("Handling usr[%v] offline event has FAILED.", uid)
+			}
 		}
 	}
 }
@@ -284,17 +299,22 @@ func UpdateDevAdr(sess *UdpSession) {
 	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.String())
 }
 func PushDevOnlineMsgToUsers(sess *UdpSession) {
+	if glog.V(3) {
+		glog.Infof("[PUB DEV ONLINE MSG] dev[%v] send to usr[%v] for dev online msg", sess.DeviceId, sess.Users)
+	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
 	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.String())
-	if len(sess.BindedUsers) == 0 {
-		glog.Infof("[dev online msg] dev {%v} send to usr:{%v} for dev online msg, dest is empty", sess.DeviceId, sess.BindedUsers)
+	if len(sess.Users) == 0 {
+		if glog.V(3) {
+			glog.Infof("[PUB DEV ONLINE MSG] dev {%v} can't send to usr:{%v} for dev online msg, dest is empty", sess.DeviceId, sess.Users)
+		}
 		return
 	}
 	var DevOnlineMsg []byte
 	var strIds []string
-	for _, v := range sess.BindedUsers {
+	for _, v := range sess.Users {
 		strIds = append(strIds, fmt.Sprintf("%d", v))
 	}
 	userIds := strings.Join(strIds, ",") + "|"
@@ -305,20 +325,25 @@ func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	DevOnlineMsg = append(DevOnlineMsg, b_buf.Bytes()...)
 	DevOnlineMsg = append(DevOnlineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOnlineMsg)
-
+	if glog.V(3) {
+		glog.Infof("[PUB DEV ONLINE MSG] dev[%v] send to usr[%v] for dev online msg, DONE", sess.DeviceId, sess.Users)
+	}
 }
 func PushDevOfflineMsgToUsers(sess *UdpSession) {
+	if glog.V(3) {
+		glog.Infof("[PUB DEV OFFLINE MSG] dev[%v] send to usr[%v] for dev online msg", sess.DeviceId, sess.Users)
+	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
 	r.Do("hdel", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.Network())
-	if len(sess.BindedUsers) == 0 {
-		glog.Infof("[dev offline msg] dev {%v} send to usr:{%v} for dev offline msg, dest is empty", sess.DeviceId, sess.BindedUsers)
+	if len(sess.Users) == 0 {
+		glog.Infof("[PUB DEV OFFLINE MSG] dev {%v} can't send to usr:{%v} for dev online msg, dest is empty", sess.DeviceId, sess.Users)
 		return
 	}
 	var DevOfflineMsg []byte
 	var strIds []string
-	for _, v := range sess.BindedUsers {
+	for _, v := range sess.Users {
 		strIds = append(strIds, fmt.Sprintf("%d", v))
 	}
 	userIds := strings.Join(strIds, ",") + "|"
@@ -329,9 +354,16 @@ func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	DevOfflineMsg = append(DevOfflineMsg, b_buf.Bytes()...)
 	DevOfflineMsg = append(DevOfflineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOfflineMsg)
-
+	if glog.V(3) {
+		glog.Infof("[PUB DEV OFFLINE MSG] dev[%v] send to usr[%v] for dev online msg", sess.DeviceId, sess.Users)
+	}
 }
-func GetDeviceUsers(deviceId int64) ([]int64, int64, error) {
+
+/**
+*返回参数1，与硬件相关的用户列表
+*返回参数2，硬件的拥有者
+ */
+func GetUsersByDev(deviceId int64) ([]int64, int64, error) {
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
@@ -345,7 +377,6 @@ func GetDeviceUsers(deviceId int64) ([]int64, int64, error) {
 	//如果找到host,就返回此设备直接关联用户所属家庭所有成员
 	if host == "" || err2 != nil {
 		bindedIds := make([]int64, 0, 1)
-
 		bindedIds = append(bindedIds, int64(u_id))
 		return bindedIds, u_id, nil
 	} else {
@@ -360,7 +391,7 @@ func GetDeviceUsers(deviceId int64) ([]int64, int64, error) {
 		return bindedIds, int64(u_id), nil
 	}
 }
-func GetUserDevices(userId int64) ([]int64, error) {
+func GetDevByUsr(userId int64) ([]int64, error) {
 	r := Redix[_GetUserDevices]
 	RedixMu[_GetUserDevices].Lock()
 	defer RedixMu[_GetUserDevices].Unlock()
@@ -427,34 +458,34 @@ func HandleDeviceUsers(ch <-chan []byte) {
 		if buf == nil {
 			continue
 		}
-		glog.Infoln("HandleDeviceUsers ", string(buf))
+		if glog.V(3) {
+			glog.Infof("[UPDATING BINDING LIST] received [%v]", string(buf))
+		}
 		strs := strings.SplitN(string(buf), "|", 3)
 		if len(strs) != 3 || len(strs) == 0 {
-			glog.Errorf("[binded id] invalid pub-sub msg format: %s", string(buf))
+			glog.Errorf("[UPDATING BINDING LIST] invalid pub-sub msg format: %s", string(buf))
 			continue
 		}
 		deviceId, err := strconv.ParseInt(strs[0], 10, 64)
 		if err != nil {
-			glog.Errorf("[binded id] invalid deviceId %s, error: %v", strs[0], err)
+			glog.Errorf("[UPDATING BINDING LIST] invalid deviceId %s, error: %v", strs[0], err)
 			continue
 		}
 		userId, err := strconv.ParseInt(strs[1], 10, 64)
 		if err != nil {
-			glog.Errorf("[binded id] invalid userId %s, error: %v", strs[1], err)
+			glog.Errorf("[UPDATING BINDING LIST] invalid userId %s, error: %v", strs[1], err)
 			continue
 		}
 		msgType, err := strconv.ParseInt(strs[2], 10, 32)
 		if err != nil {
-			glog.Errorf("[binded id] invalid bind type %s, error: %v", strs[2], err)
+			glog.Errorf("[UPDATING BINDING LIST] invalid bind type %s, error: %v", strs[2], err)
 			continue
 		}
 		// new code for udp
 		if gCometType == msgs.CometUdp {
 			go gUdpSessions.UpdateIds(deviceId, userId, msgType != 0)
 		}
-
 		if gCometType == msgs.CometWs {
-
 			go gSessionList.UpdateIds(deviceId, userId, msgType != 0)
 		}
 	}
@@ -480,11 +511,11 @@ func SubModifiedPasswd() error {
 				ch <- n.Data
 			case redis.Subscription:
 				if n.Count == 0 {
-					glog.Fatalf("Subscription: %s %s %d, %v\n", n.Kind, n.Channel, n.Count, n)
+					glog.Fatalf("[SUB MODIFY PWD EVENT] |%s| |%s| |%d| |%v|", n.Kind, n.Channel, n.Count, n)
 					return
 				}
 			case error:
-				glog.Errorf("[modifypwd|redis] sub of error: %v\n", n)
+				glog.Errorf("[SUB MODIFY PWD EVENT] |%v|", n)
 				return
 			}
 		}
@@ -498,13 +529,15 @@ func HandleModifiedPasswd(ch <-chan []byte) {
 		if buf == nil {
 			continue
 		}
-
 		userId, err := strconv.ParseInt(string(buf), 10, 64)
+		if glog.V(3) {
+			glog.Infof("[HANDLING MODIFY PWD EVENT] received [%v]", userId)
+		}
 		if err != nil {
-			glog.Errorf("[modifiedpasswd] invalid userId %s, error: %v", string(buf), err)
+			glog.Errorf("[HANDLING MODIFY PWD EVENT] invalid userId %s, error: %v", string(buf), err)
 			continue
 		}
-		go gSessionList.KickOffline(userId)
+		go gSessionList.OffliningUsr(userId)
 	}
 }
 
@@ -523,16 +556,16 @@ func SubCommonMsg() error {
 		defer psc.Close()
 		for {
 			data := psc.Receive()
-			switch m := data.(type) {
+			switch n := data.(type) {
 			case redis.PMessage:
-				ch <- m
+				ch <- n
 			case redis.Subscription:
-				if m.Count == 0 {
-					glog.Fatalf("Subscription: %s %s %d, %v\n", m.Kind, m.Channel, m.Count, m)
+				if n.Count == 0 {
+					glog.Fatalf("[SUB COMMON MSG EVENT] |%s| |%s| |%d| |%v|", n.Kind, n.Channel, n.Count)
 					return
 				}
 			case error:
-				glog.Errorf("[modifypwd|redis] sub of error: %v\n", m)
+				glog.Errorf("[SUB COMMON MSG EVENT] |%v|", n)
 				return
 			}
 		}
@@ -568,31 +601,38 @@ func SubDevOnlineChannel() error {
 		defer psc.Close()
 		for {
 			data := psc.Receive()
-			switch m := data.(type) {
+			switch n := data.(type) {
 			case redis.PMessage:
-				ch <- m
+				ch <- n
 			case redis.Subscription:
-				if m.Count == 0 {
-					glog.Fatalf("Subscription: %s %s %d, %v\n", m.Kind, m.Channel, m.Count, m)
+				if n.Count == 0 {
+					glog.Fatalf("[SUB DevOnline EVENT] |%s| |%s| |%d| |%v|", n.Kind, n.Channel, n.Count)
 					return
 				}
 			case error:
-				glog.Errorf("[modifypwd|redis] sub of error: %v\n", m)
+				glog.Errorf("[SUB DevOnline EVENT] |%v|", n)
 				return
 			}
 		}
 	}()
 	go func(ch <-chan redis.PMessage) {
 		for m := range ch {
-			glog.Infof("[SubDevOnlineChannel received] [%v][%v]", string(m.Data), m.Data)
-			strDevId := string(m.Data)
-			devId, _ := strconv.ParseInt(strDevId, 10, 64)
-			glog.Infof("stop dev %v", devId)
+			if glog.V(3) {
+				glog.Infof("[Dealing DevOnline] Received [%v][%v]", string(m.Data), m.Data)
+			}
+			devId, _ := strconv.ParseInt(string(m.Data), 10, 64)
+			if glog.V(3) {
+				glog.Infof("[Dealing DevOnline] Received [%v]", devId)
+			}
 			if strSid, ok := gUdpSessions.devmap[devId]; ok {
 				gUdpSessions.udpmap[gUdpSessions.sidmap[strSid].Addr.String()].Stop()
-				glog.Infof("%v stop the offline event", strDevId)
+				if glog.V(3) {
+					glog.Infof("[Dealing DevOnline] Terminating the %v's offline event", devId)
+				}
 			} else {
-				glog.Infof("%v stop the offline event fail.", strDevId)
+				if glog.V(3) {
+					glog.Infof("[Dealing DevOnline] Fail to terminate the %v's offline event fail. Because there is not this sid of %v on the UDPCOMET", devId, devId)
+				}
 			}
 		}
 	}(ch)
@@ -601,20 +641,20 @@ func SubDevOnlineChannel() error {
 
 func HandleCommonMsg(ch <-chan redis.PMessage) {
 	for m := range ch {
-		glog.Infof("[comon ch received] [%v][%v]", string(m.Data), m.Data)
+		glog.Infof("[HANDLING COMMON MSG]received\n[%v]\n[%v]", string(m.Data), m.Data)
 		msgid := strings.TrimPrefix(m.Channel, SubCommonMsgKeyPrefix)
 		if len(msgid) == 0 {
 			continue
 		}
 		mid, err := strconv.ParseUint(msgid, 0, 16)
 		if err != nil {
-			glog.Errorf("[channel err] Cannot parse wrong MsgId %s, error: %v", msgid, err)
+			glog.Errorf("[HANDLING COMMON MSG] Cannot parse wrong MsgId %s, error: %v", msgid, err)
 			continue
 		}
 
 		fields := strings.SplitN(string(m.Data), "|", 2)
 		if len(fields) != 2 || len(fields) == 0 {
-			glog.Errorf("[channel err] invalid pub-sub msg format: %s", string(m.Data))
+			glog.Errorf("[HANDLING COMMON MSG] invalid pub-sub msg format: %s", string(m.Data))
 			continue
 		}
 
@@ -623,22 +663,24 @@ func HandleCommonMsg(ch <-chan redis.PMessage) {
 		for _, i := range ids {
 			id, err := strconv.ParseInt(i, 10, 64)
 			if err != nil {
-				glog.Errorf("[channel err] invalid dest id [%s], error: %v", i, err)
+				glog.Errorf("[HANDLING COMMON MSG] invalid dest id [%s], error: %v", i, err)
 				continue
 			}
 			dstIds = append(dstIds, id)
 		}
 		msgBody := []byte(fields[1])
-		//if glog.V(2) {
-		//	glog.Infof("[common msg] pushing [%d] message to %v, message: len(%d)%v", mid, dstIds, len(msgBody), msgBody)
-		//}
-		go PushMsg(uint16(mid), dstIds, msgBody)
+		if glog.V(3) {
+			glog.Infof("[HANDLING COMMON MSG] pushing [%d] message to %v, message: len(%d)%v", mid, dstIds, len(msgBody), msgBody)
+		}
+		go Send2Dest(uint16(mid), dstIds, msgBody)
 	}
 }
 
-func PushMsg(msgId uint16, dstIds []int64, msgBody []byte) {
+/**
+* 发送消息到目标，目标可能是手机或硬件
+ */
+func Send2Dest(msgId uint16, dstIds []int64, msgBody []byte) {
 	for _, id := range dstIds {
-		// 整数为手机，负数为板子
 		if gCometType == msgs.CometWs {
 			gSessionList.PushCommonMsg(msgId, id, msgBody)
 		} else if gCometType == msgs.CometUdp {

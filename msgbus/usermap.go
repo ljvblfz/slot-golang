@@ -60,7 +60,7 @@ func (this *UserMap) OfflineHost(host string) {
 			delete(this.kv, uid)
 		}
 		if err != 1 {
-			glog.Errorf("[offline] id %d: count %d with host %s", uid, err, host)
+			glog.Errorf("[COMET SRV OFFLINE] id %d: count %d with host %s", uid, err, host)
 		}
 	}
 	this.mu.Unlock()
@@ -71,7 +71,7 @@ func (this *UserMap) GetUserComet(uid int64) (string, error) {
 	adr, ok := this.kv[uid]
 	if !ok {
 		this.mu.RUnlock()
-		return "", fmt.Errorf("[bus|err] Cannot found %d comet", uid)
+		return "", fmt.Errorf("[MB:ERR] Cannot found %d comet", uid)
 	}
 	this.mu.RUnlock()
 	return adr, nil
@@ -79,21 +79,19 @@ func (this *UserMap) GetUserComet(uid int64) (string, error) {
 
 func (this *UserMap) PushToComet(uid int64, msg []byte) error {
 	this.mu.Lock()
-	wscomet, ok := this.kv[uid]
+	comet, ok := this.kv[uid]
 	if !ok {
 		this.mu.Unlock()
-		return fmt.Errorf("[bus|err] user %d not found", uid)
+		return fmt.Errorf("[MB:ERR] user %d not found", uid)
 	}
 	var err error
-	err = GComets.PushMsg(msg, wscomet)
+	err = GComets.PushMsg(msg, comet)
 	if err != nil {
-		glog.Errorf("[bus|down] to: (%d)%v", uid, wscomet)
+		glog.Errorf("[MB:DOWN] FAIL!! (%d)%v,%v", uid, comet, err)
 	} else {
 		statIncDownStreamOut()
 		if glog.V(3) {
-			glog.Infof("[bus|down] to: %d, data: (len: %d)%v", uid, len(msg), msg)
-		} else if glog.V(2) {
-			glog.Infof("[bus|down] to: %d, data: (len: %d)%v", uid, len(msg), msg[:3])
+			glog.Infof("[MB:DOWN] DONE!!  (%d)%v", uid, comet)
 		}
 	}
 	this.mu.Unlock()

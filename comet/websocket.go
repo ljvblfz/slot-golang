@@ -265,7 +265,7 @@ func WsHandler(ws *websocket.Conn) {
 	//		id = newId // 防止错误的手机id溢出可用的范围
 	//	} else if id < 0 {
 	//	}
-	bindedIds, err := GetUserDevices(id)
+	bindedIds, err := GetDevByUsr(id)
 
 	statIncConnTotal()
 	statIncConnOnline()
@@ -281,10 +281,11 @@ func WsHandler(ws *websocket.Conn) {
 		return
 	}
 
-	glog.Infof("[ws:online] success id: %d, ip: %v, comet: %s, param: %s, binded ids: %v", id, clientAdr, fmt.Sprintf("%v|%v", gLocalAddr, gCometType), reply, bindedIds)
-
 	s := NewWsSession(id, bindedIds, NewWsConn(ws), clientAdr)
 	gSessionList.AddSession(s)
+	if glog.V(3) {
+		glog.Infof("[ws:online] success id: %d, ip: %v, comet: %s, param: %s, binded ids: %v", id, clientAdr, fmt.Sprintf("%v|%v", gLocalAddr, gCometType), reply, bindedIds)
+	}
 
 	// 成功登陆后的一次回复
 	err = websocket.Message.Send(ws, AckLoginOK)
@@ -313,14 +314,21 @@ func WsHandler(ws *websocket.Conn) {
 		timeout = TIME_OUT
 	}
 	ws.ReadTimeout = time.Duration(3*timeout) * time.Second
-	glog.Infoln("[ws:info] enter main loop, ws.ReadTimeout:", ws.ReadTimeout)
+
+	if glog.V(3) {
+		glog.Infoln("[ws:info] enter main loop, ws.ReadTimeout:", ws.ReadTimeout)
+	}
+
 	for {
 		if err = websocket.Message.Receive(ws, &reply); err != nil {
 			glog.Errorf("[ws:err] [err:%v] causing ws closed", err)
 			break
 		}
-		glog.Infoln("[ws:received]", string(reply))
-		//		gSessionList.GetBindedIds(s, &bindedIds)
+
+		if glog.V(3) {
+			glog.Infoln("[ws] Received", string(reply))
+		}
+
 		if len(reply) == 1 && string(reply) == PING_MSG {
 			glog.Infoln("[ws:ping]", ws.RemoteAddr().String())
 			if err = websocket.Message.Send(ws, PONG_MSG); err != nil {
@@ -331,21 +339,18 @@ func WsHandler(ws *websocket.Conn) {
 			statIncUpStreamIn()
 			msg := reply
 			if len(msg) < kDstIdEnd {
-				glog.Infof("[ws:err] causing ws closed Invalid msg lenght %d bytes, %v", len(msg), msg)
+				glog.Errorf("[ws:err] causing ws closed Invalid msg lenght %d bytes, %v", len(msg), msg)
 				break
 			}
 			// 根据手机与嵌入式协议，提取消息中的目标id
 			toId := int64(binary.LittleEndian.Uint64(msg[kDstIdOffset:kDstIdEnd]))
 
-			destIds := gSessionList.CalcDestIds(s, toId)
-
+			destIds := s.calcDestIds(toId)
 			if glog.V(3) {
-				glog.Infof("[ws|received] %d -> %d, binded(%v), calc to: %v, data: (len: %d)%v...", id, toId, s.BindedIds, destIds, len(msg), msg)
-			} else if glog.V(2) {
-				glog.Infof("[ws|received] %d -> %d, binded(%v), calc to: %v, data: (len: %d)%v...", id, toId, s.BindedIds, destIds, len(msg), msg[0:kDstIdEnd])
+				glog.Infof("[ws|received] %d -> %d, binded(%v), calc to: %v, data: (len: %d)%v...", id, toId, s.devs, destIds, len(msg), msg)
 			}
 			// Send to Message Bus
-			GMsgBusManager.Push2Bus(id, destIds, msg)
+			GMsgBusManager.Push2Msgbus(id, destIds, msg)
 		}
 		//end = time.Now().UnixNano()
 	} //end main loop
@@ -354,7 +359,6 @@ func WsHandler(ws *websocket.Conn) {
 	if err != nil {
 		glog.Errorf("[ws:offline|error] uid %d, error: %v", id, err)
 	}
-	glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, ws.LocalAddr().String(), offlineErr)
 	//	if id > 0 && mid > 0 {
 	//		id -= int64(mid)
 	//		ReturnMobileId(id, mid)
@@ -381,5 +385,9 @@ func WsHandler(ws *websocket.Conn) {
 	//	}
 	gSessionList.RemoveSession(s)
 	SetLoginFlag(id, "N")
+
+	if glog.V(3) {
+		glog.Infof("[ws:offline] id:%d, comet: %s, reason: %v", id, ws.LocalAddr().String(), offlineErr)
+	}
 	return
 }

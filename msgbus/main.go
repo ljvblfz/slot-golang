@@ -65,8 +65,8 @@ func handleOnlineEvent(notifyUserState <-chan []byte) {
 		isOnline := users_def[2]
 		if isOnline == "1" {
 			GUserMap.Online(uid, host)
-			if glog.V(1) {
-				glog.Infof("[bus:online] user %d on %s", uid, host)
+			if glog.V(3) {
+				glog.Infof("[bus:online] user %d on comet %s", uid, host)
 			}
 		} else {
 			if uid == 0 {
@@ -74,8 +74,8 @@ func handleOnlineEvent(notifyUserState <-chan []byte) {
 			} else {
 				GUserMap.Offline(uid, host)
 			}
-			if glog.V(1) {
-				glog.Infof("[bus:offline] user %d on %s", uid, host)
+			if glog.V(3) {
+				glog.Infof("[bus:offline] user %d on comet %s", uid, host)
 			}
 		}
 	}

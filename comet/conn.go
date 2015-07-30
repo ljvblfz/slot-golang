@@ -16,7 +16,6 @@ type Connection interface {
 	Close() error
 	Send(msg []byte) (int, error)
 	Timeout() bool
-	//Verify() error
 	Update(net.Addr) error
 }
 

@@ -38,7 +38,6 @@ func (this *CometServer) delUser(uid int64) {
 func (this *CometServer) Push(msg []byte) (err error) {
 	this.mu.Lock()
 	// 这里不用buffer，是为了避免一次额外的内存分配，以时间换空间
-	glog.Infof("msgbus send msg with conn %v,%v", this.conn.LocalAddr().String(), this.conn.RemoteAddr().String())
 	err = binary.Write(this.conn, binary.LittleEndian, uint32(len(msg)))
 	if err == nil {
 		err = binary.Write(this.conn, binary.LittleEndian, msg)
@@ -111,7 +110,6 @@ func (this *Comets) RemoveUserFromHost(uid int64, host string) {
 }
 
 func (this *Comets) PushMsg(msg []byte, host string) (err error) {
-	glog.Infof("msgbus sending to %v", host)
 	this.mu.Lock()
 	server, ok := this.Servers[host]
 	if !ok {
@@ -119,7 +117,6 @@ func (this *Comets) PushMsg(msg []byte, host string) (err error) {
 		this.mu.Unlock()
 		return fmt.Errorf("cannot find %s", host)
 	} else {
-		//glog.Info(host, msg)
 		err = server.Push(msg)
 	}
 	this.mu.Unlock()

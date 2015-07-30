@@ -69,8 +69,7 @@ func (this *MsgBusManager) Offline(s *MsgBusServer) {
 	this.mu.Unlock()
 }
 
-//called by websocket.go,udp_handler.go
-func (this *MsgBusManager) Push2Bus(srcId int64, ids []int64, msg []byte) {
+func (this *MsgBusManager) Push2Msgbus(srcId int64, ids []int64, msg []byte) {
 	size := uint16(len(ids))
 	pushData := make([]byte, 8+2+size*8+uint16(len(msg)))
 	binary.LittleEndian.PutUint64(pushData[:8], uint64(srcId))
@@ -82,7 +81,9 @@ func (this *MsgBusManager) Push2Bus(srcId int64, ids []int64, msg []byte) {
 	copy(pushData[8+2+size*8:], msg)
 	if this.curr != nil {
 		this.curr.Value.(*MsgBusServer).Send(pushData)
-		glog.Infof("send msg %v from %v to %v ", msg, srcId, ids)
+		if glog.V(3) {
+			glog.Infof("[COMET:MSGBUS] sended msg |%v| from [%v] to [%v] by msgbus", msg, srcId, ids)
+		}
 		this.mu.Lock()
 		next := this.curr.Next()
 		if next != nil {
@@ -92,7 +93,7 @@ func (this *MsgBusManager) Push2Bus(srcId int64, ids []int64, msg []byte) {
 		}
 		this.mu.Unlock()
 	} else {
-		glog.Errorf("[bus:err] Push2Backend curr == nil, list: %v", this.list)
+		glog.Errorf("[COMET:MSGBUS] curr == nil, list: %v", this.list)
 	}
 	statIncUpStreamOut()
 }
@@ -108,12 +109,12 @@ func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []in
 	if len(newBindIds) > 0 {
 		body.Type = msgs.MSTBinded
 		m.Data, _ = body.Marshal()
-		GMsgBusManager.Push2Bus(0, newBindIds, m.MarshalBytes())
+		GMsgBusManager.Push2Msgbus(0, newBindIds, m.MarshalBytes())
 	}
 	if len(unbindIds) > 0 {
 		body.Type = msgs.MSTUnbinded
 		m.Data, _ = body.Marshal()
-		GMsgBusManager.Push2Bus(0, unbindIds, m.MarshalBytes())
+		GMsgBusManager.Push2Msgbus(0, unbindIds, m.MarshalBytes())
 	}
 
 	// old code

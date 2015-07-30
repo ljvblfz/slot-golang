@@ -37,7 +37,7 @@ type UdpSession struct {
 	Ridx uint16 `json:"Ridx"`
 
 	// 已绑定的用户ID列表
-	BindedUsers []int64 `json:"BindedUsers"`
+	Users []int64 `json:"BindedUsers"`
 }
 
 func NewUdpSession(addr *net.UDPAddr) *UdpSession {
@@ -78,7 +78,7 @@ func (s *UdpSession) VerifySession(packNum uint16) error {
 
 func (s *UdpSession) isBinded(id int64) bool {
 	// 当s代表板子时，检查id是否属于已绑定用户下的手机
-	for _, v := range s.BindedUsers {
+	for _, v := range s.Users {
 		if v == id {
 			return true
 		}
@@ -89,10 +89,12 @@ func (s *UdpSession) isBinded(id int64) bool {
 
 func (s *UdpSession) CalcDestIds(toId int64) []int64 {
 	if toId == 0 {
-		return s.BindedUsers
+		return s.Users
 	} else {
 		if !s.isBinded(int64(toId)) {
-			glog.Errorf("[msg] src id [%d] not binded to dst id [%d], valid ids: %v", s.DeviceId, toId, s.BindedUsers)
+			if glog.V(3) {
+				glog.Infof("dev [%d] unbind to usr [%d], valid ids: %v", s.DeviceId, toId, s.Users)
+			}
 			return nil
 		}
 		return []int64{toId}
@@ -149,7 +151,7 @@ func (this *UdpSessionList) GetDeviceAddr(id int64) (string, error) {
 	sid, ok := this.devmap[id]
 	this.devlk.RUnlock()
 	if !ok {
-		return "", fmt.Errorf("get session of device [%d] error: %v", id, ok)
+		return "", fmt.Errorf("[ERR] no device [%d],%v", id, ok)
 	}
 
 	//	i, err := uuid.ParseHex(sid)
@@ -160,7 +162,7 @@ func (this *UdpSessionList) GetDeviceAddr(id int64) (string, error) {
 	sess, ok := this.sidmap[sid]
 	this.sidlk.RUnlock()
 	if !ok {
-		return "", fmt.Errorf("get session %s error: %v", sid, ok)
+		return "", fmt.Errorf("[ERR] no sid %s,%v", sid, ok)
 	}
 	return sess.Addr.String(), nil
 }
@@ -171,7 +173,7 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 	s, _ := this.sidmap[sid.String()]
 	this.sidlk.RUnlock()
 	if s == nil {
-		return s, fmt.Errorf("%v is not in udpcomet", sid.String())
+		return s, fmt.Errorf("[ERR] no sid %v", sid.String())
 	}
 	return s, nil
 }
@@ -201,17 +203,17 @@ func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byt
 	sid, ok := this.devmap[did]
 	this.devlk.RUnlock()
 	if !ok {
-		return fmt.Errorf("[udp:err] get session of device [%d] error: %v", did, ok)
+		return fmt.Errorf("[udp:err] no dev [%d] error: %v", did, ok)
 	}
 
 	i, err := uuid.ParseHex(sid)
 	if err != nil {
-		return fmt.Errorf("[udp:err] wrong session id format: %v", err)
+		return fmt.Errorf("[udp:err] sid format err: %v", sid)
 	}
 
 	sess, err := this.GetSession(i)
 	if err != nil {
-		return fmt.Errorf("[udp:err] get session %s error: %v", sid, err)
+		return fmt.Errorf("[udp:err] no session %s error: %v", sid, err)
 	}
 	sess.Sidx++
 	msg.FrameHeader.Sequence = sess.Sidx
@@ -231,12 +233,12 @@ func (this *UdpSessionList) PushMsg(did int64, msg []byte) error {
 	this.devlk.RUnlock()
 	siduuid, err := uuid.ParseHex(sid)
 	if err != nil {
-		return fmt.Errorf("wrong session id format: %v", err)
+		return fmt.Errorf("[udp:err] sid format err: %v", sid)
 	}
 	this.sidlk.RLock()
 	sess, ok := this.sidmap[sid]
 	if !ok {
-		return fmt.Errorf("[%v] can't got udpsess", sid)
+		return fmt.Errorf("[udp:err] no session %s", sid)
 	}
 	this.sidlk.RUnlock()
 
@@ -257,38 +259,42 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 	sid, ok := this.devmap[deviceId]
 	this.devlk.RUnlock()
 	if !ok {
-		glog.Errorf("get session of device [%d] error: %v", deviceId, ok)
+		glog.Errorf("no device [%d] error: %v", deviceId, ok)
 		return
 	}
 
 	i, err := uuid.ParseHex(sid)
 	if err != nil {
-		glog.Errorf("wrong session id format: %v", err)
+		glog.Errorf("[udp:err] sid format err: %v", sid)
 		return
 	}
 	sess, err := this.GetSession(i)
 	if err != nil {
-		glog.Errorf("get session %s error: %v", sid, err)
+		glog.Errorln(err)
 		return
 	}
 	if bindType {
 		// 绑定
-		sess.BindedUsers = append(sess.BindedUsers, userId)
-		glog.Infof("[bind|bind] deviceId %d add userId %d", deviceId, userId)
+		sess.Users = append(sess.Users, userId)
+		if glog.V(3) {
+			glog.Infof("[udp:bind] dev:%d binded usr:%d", deviceId, userId)
+		}
 		GMsgBusManager.NotifyBindedIdChanged(deviceId, []int64{userId}, nil)
 	} else {
 		// 解绑
-		for k, v := range sess.BindedUsers {
+		for k, v := range sess.Users {
 			if v != userId {
 				continue
 			}
-			lastIndex := len(sess.BindedUsers) - 1
-			sess.BindedUsers[k] = sess.BindedUsers[lastIndex]
-			sess.BindedUsers = sess.BindedUsers[:lastIndex]
-			glog.Infof("[bind|unbind] deviceId %d remove userId %d", deviceId, userId)
+			lastIndex := len(sess.Users) - 1
+			sess.Users[k] = sess.Users[lastIndex]
+			sess.Users = sess.Users[:lastIndex]
+			if glog.V(3) {
+				glog.Infof("[udp:unbind] dev:%d unbinded usr:%d", deviceId, userId)
+			}
 			break
 		}
-		GMsgBusManager.NotifyBindedIdChanged(deviceId, nil,  []int64{userId})
+		GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, []int64{userId})
 	}
 	this.SaveSession(i, sess)
 }
