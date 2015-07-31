@@ -60,17 +60,17 @@ func (t *UdpMsg) DoHTTPTask() (status int32, response map[string]interface{}, er
 	defer rep.Body.Close()
 
 	if rep.StatusCode != 200 {
-		return rep.StatusCode, nil, fmt.Errorf("[POST TO HTTP] input:[%#v] failed,\nhttp code: %v", t, rep.StatusCode)
+		return int32(rep.StatusCode), nil, fmt.Errorf("[POST TO HTTP] input:[%#v] failed,\nhttp code: %v", t, rep.StatusCode)
 	}
 
 	d := json.NewDecoder(rep.Body)
 	response = make(map[string]interface{})
 	err = d.Decode(&response)
 	if err != nil {
-		return rep.StatusCode, nil, fmt.Errorf("[POST TO HTTP] %v", err)
+		return int32(rep.StatusCode), nil, fmt.Errorf("[POST TO HTTP] %v", err)
 	}
 
-	return rep.StatusCode, response, nil
+	return int32(rep.StatusCode), response, nil
 
 	//buf := bytes.Buffer{}
 	//_, err = io.Copy(&buf, rep.Body)
