@@ -106,7 +106,7 @@ func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []in
 	m.FrameHeader.SrcId = deviceId
 	m.FrameHeader.Opcode = 2
 	m.DataHeader.MsgId = msgs.MIDStatus
-	m.Data = deviceName
+	m.Data = []byte(deviceName)
 	if len(newBindIds) > 0 {
 		body.Type = msgs.MSTBinded
 		m.Data, _ = body.Marshal()

@@ -274,7 +274,7 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 		glog.Errorln(err)
 		return
 	}
-	deviceName = sess.DeviceName
+	deviceName := sess.DeviceName
 	if bindType {
 		// 绑定
 		sess.Users = append(sess.Users, userId)
