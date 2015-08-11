@@ -740,3 +740,16 @@ func SetLoginFlag(usrId int64, flag string) {
 	defer RedixMu[_Short].Unlock()
 	r.Do("hset", []byte("user:logined"), fmt.Sprintf("%v", usrId), flag)
 }
+func SaveDvName(dvId int64, name string) {
+	r := Redix[_Short]
+	RedixMu[_Short].Lock()
+	defer RedixMu[_Short].Unlock()
+	r.Do("hset", []byte("dv:name"), fmt.Sprintf("%v", dvId), name)
+}
+func GetDvName(dvId int64) string {
+	r := Redix[_Short]
+	RedixMu[_Short].Lock()
+	defer RedixMu[_Short].Unlock()
+	DeviceName, _ := redis.String(r.Do("hget", []byte("dv:name"), fmt.Sprintf("%v", dvId)))
+	return DeviceName
+}
