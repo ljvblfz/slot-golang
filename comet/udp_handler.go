@@ -349,6 +349,7 @@ func (h *Handler) handle(t *UdpMsg) error {
 		}
 
 		output[FrameHeaderLen] |= (msgs.FlagAck | msgs.FlagRead)
+		binary.LittleEndian.PutUint32(output[4:8], uint32(time.Now().Unix()))
 		binary.LittleEndian.PutUint16(output[FrameHeaderLen+6:], uint16(len(res)))
 		output[FrameHeaderLen+8] = msgs.ChecksumHeader(output, FrameHeaderLen+8)
 		output[FrameHeaderLen+9] = msgs.ChecksumHeader(output[FrameHeaderLen+10:], 2+len(res))
@@ -506,6 +507,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 				return output, nil
 			}
 			binary.LittleEndian.PutUint64(output[20:28], uint64(id))
+			SaveDvName(id, string(name))
 			//sess.DeviceId = id
 		}
 	}
@@ -566,6 +568,7 @@ func (h *Handler) onRegister2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte,
 				return output, nil
 			}
 			binary.LittleEndian.PutUint64(output[20:28], uint64(id))
+			SaveDvName(id, string(name))
 			//sess.DeviceId = id
 		}
 	}
@@ -635,6 +638,7 @@ func (h *Handler) onLogin2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 				} else {
 					/**向用户推此设备在线消息*/
 					PushDevOnlineMsgToUsers(sess)
+					sess.DeviceName = GetDvName(sess.DeviceId)
 					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(time.Duration(gUdpTimeout)*time.Second, func() {
 						if firstLogin {
 							PushDevOfflineMsgToUsers(sess)
@@ -728,6 +732,7 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 					} else {
 						UpdateDevAdr(sess)
 					}
+					sess.DeviceName = GetDvName(sess.DeviceId)
 					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(time.Duration(gUdpTimeout)*time.Second, func() {
 						PushDevOfflineMsgToUsers(sess)
 						gUdpSessions.udplk.Lock()
@@ -777,6 +782,7 @@ func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 	if s, ok := rep["status"]; ok {
 		if n, ok := s.(float64); ok {
 			status = int32(n)
+			SaveDvName(sess.DeviceId, string(name))
 		}
 	}
 	binary.LittleEndian.PutUint32(output[0:4], uint32(status))

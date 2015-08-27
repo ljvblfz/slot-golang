@@ -39,7 +39,7 @@ func main() {
 	if os.Getenv("GOMAXPROCS") == "" {
 		runtime.GOMAXPROCS(runtime.NumCPU())
 	}
-
+	defer glog.Flush()
 	glog.CopyStandardLogTo("INFO")
 
 	flag.StringVar(&serverAddr, "hudp", "193.168.1.63:7999", "udp proxy ip and port. eg:193.168.1.63:7999")
