@@ -331,14 +331,14 @@ func PushDevOnlineMsgToUsers(sess *UdpSession) {
 }
 func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	if glog.V(3) {
-		glog.Infof("[PUB DEV OFFLINE MSG] dev[%v] send to usr[%v] for dev online msg", sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] dev[%v] send to usr[%v] for dev offline msg", sess.DeviceId, sess.Users)
 	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
 	r.Do("hdel", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.Network())
 	if len(sess.Users) == 0 {
-		glog.Infof("[PUB DEV OFFLINE MSG] dev {%v} can't send to usr:{%v} for dev online msg, dest is empty", sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] dev {%v} can't send to usr:{%v} for dev offline msg, dest is empty", sess.DeviceId, sess.Users)
 		return
 	}
 	var DevOfflineMsg []byte
@@ -355,7 +355,7 @@ func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	DevOfflineMsg = append(DevOfflineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOfflineMsg)
 	if glog.V(3) {
-		glog.Infof("[PUB DEV OFFLINE MSG] dev[%v] send to usr[%v] for dev online msg", sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] dev[%v] send to usr[%v] for dev offline msg, DONE", sess.DeviceId, sess.Users)
 	}
 }
 
