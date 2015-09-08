@@ -24,7 +24,6 @@ type UdpSession struct {
 	//Session
 	Sid           string       `json:"-"`
 	DeviceId      int64        `json:"DeviceID"`
-	DeviceName    string       `json:"DeviceName"`
 	Addr          *net.UDPAddr `json:"Addr"`
 	LastHeartbeat time.Time    `json:"LastHeartbeat"`
 	Owner         int64
@@ -274,14 +273,13 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 		glog.Errorln(err)
 		return
 	}
-	deviceName := sess.DeviceName
 	if bindType {
 		// 绑定
 		sess.Users = append(sess.Users, userId)
 		if glog.V(3) {
 			glog.Infof("[udp:bind] dev:%d binded usr:%d", deviceId, userId)
 		}
-		GMsgBusManager.NotifyBindedIdChanged(deviceId, []int64{userId}, nil, deviceName)
+		GMsgBusManager.NotifyBindedIdChanged(deviceId, []int64{userId}, nil)
 	} else {
 		// 解绑
 		for k, v := range sess.Users {
@@ -296,7 +294,7 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 			}
 			break
 		}
-		GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, []int64{userId}, deviceName)
+		GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, []int64{userId})
 	}
 	this.SaveSession(i, sess)
 }

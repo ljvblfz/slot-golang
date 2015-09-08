@@ -98,7 +98,7 @@ func (this *MsgBusManager) Push2Msgbus(srcId int64, ids []int64, msg []byte) {
 	statIncUpStreamOut()
 }
 
-func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []int64, unbindIds []int64, deviceName string) {
+func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []int64, unbindIds []int64) {
 	// new code
 	body := msgs.MsgStatus{}
 	body.Id = deviceId
@@ -106,7 +106,6 @@ func (this *MsgBusManager) NotifyBindedIdChanged(deviceId int64, newBindIds []in
 	m.FrameHeader.SrcId = deviceId
 	m.FrameHeader.Opcode = 2
 	m.DataHeader.MsgId = msgs.MIDStatus
-	m.Data = []byte(deviceName)
 	if len(newBindIds) > 0 {
 		body.Type = msgs.MSTBinded
 		m.Data, _ = body.Marshal()
