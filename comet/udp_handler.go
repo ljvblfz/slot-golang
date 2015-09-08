@@ -732,26 +732,34 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 						} else {
 							go UpdateDevAdr(sess)
 						}
+						
+						gUdpSessions.udplk.Lock()
 						gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(time.Duration(gUdpTimeout)*time.Second, func() {
 							go PushDevOfflineMsgToUsers(sess)
 							gUdpSessions.udplk.Lock()
 							delete(gUdpSessions.udpmap, sess.Addr.String())
 							gUdpSessions.udplk.Unlock()
+							
 							gUdpSessions.sidlk.Lock()
 							delete(gUdpSessions.sidmap, gUdpSessions.devmap[sess.DeviceId])
 							gUdpSessions.sidlk.Unlock()
+							
 							gUdpSessions.devlk.Lock()
 							delete(gUdpSessions.devmap, sess.DeviceId)
 							gUdpSessions.devlk.Unlock()
 							//					SetUserOffline(sess.DeviceId, h.Server.con.LocalAddr().String())
 							go SetUserOffline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 						})
+						gUdpSessions.udplk.Unlock()
+						
 						gUdpSessions.sidlk.Lock()
 						gUdpSessions.sidmap[sess.Sid] = sess
 						gUdpSessions.sidlk.Unlock()
+						
 						gUdpSessions.devlk.Lock()
 						gUdpSessions.devmap[sess.DeviceId] = sess.Sid
 						gUdpSessions.devlk.Unlock()
+						
 						glog.Infof("[udp:onLogin] %v %v login success 2.",sess.GUID.String,sess.DeviceId)
 					}
 				}()
