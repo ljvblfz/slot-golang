@@ -22,22 +22,22 @@ var (
 
 type UdpSession struct {
 	//Session
-	Sid           string       `json:"-"`
+	Sid           string       
 	DeviceId      int64        `json:"DeviceID"`
 	Addr          *net.UDPAddr `json:"Addr"`
 	LastHeartbeat time.Time    `json:"LastHeartbeat"`
 	Owner         int64
-	Mac           []byte
-	GUID          *uuid.UUID
+	Mac           []byte		`json:"-"`
+	GUID          *uuid.UUID	`json:"-"`
 	// 自身的包序号
 	// 暂时不使用到该包序号，只有当服务器会主动推送消息给设备时才需要
-	Sidx uint16 `json:"Sidx"`
+	Sidx uint16					`json:"Sidx"`
 
 	// 收取的包序号
-	Ridx uint16 `json:"Ridx"`
+	Ridx uint16					`json:"Ridx"`
 
 	// 已绑定的用户ID列表
-	Users []int64 `json:"BindedUsers"`
+	Users []int64				`json:"BindedUsers"`
 }
 
 func NewUdpSession(addr *net.UDPAddr) *UdpSession {
