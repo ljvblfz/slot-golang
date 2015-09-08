@@ -58,16 +58,16 @@ func (s *UdpServer) Send(peer *net.UDPAddr, msg []byte) {
 	n, err := s.con.WriteToUDP(msg, peer)
 	s.conlk.Unlock()
 	if glog.V(3) {
-		glog.Infof("[udp|sended] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
+		glog.Infof("[udp|ret] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
 		glog.Infof("-----------------------------------------------------------------------------------------------------------------------------")
 	}
 }
-func (s *UdpServer) Send2(peer *net.UDPAddr, msg []byte, id int64, busi string) {
+func (s *UdpServer) Send2(peer *net.UDPAddr, msg []byte, sess *UdpSession, busi string) {
 	s.conlk.Lock()
 	n, err := s.con.WriteToUDP(msg, peer)
 	s.conlk.Unlock()
 	if glog.V(3) {
-		glog.Infof("[udp|sended %v] [dev:%v-%v], response: len(%d)%v,%v", busi, id, peer.String(), n, msg, err)
+		glog.Infof("[udp|ret %v] [dev:%v %v %v %v], response: len(%d)%v,%v", busi, sess.DeviceId, peer.String(),sess.Sid,sess.Addr.String(), n, msg, err)
 		glog.Infof("-----------------------------------------------------------------------------------------------------------------------------")
 	}
 }

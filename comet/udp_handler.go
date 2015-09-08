@@ -303,10 +303,6 @@ func (h *Handler) handle(t *UdpMsg) error {
 			t.Url = h.kApiUrls[MsgId]
 			res, err = h.onRename(t, sess, body)
 			busi = "CmdRename"
-		case CmdUnbind:
-			t.Url = h.kApiUrls[MsgId]
-			res, err = h.onUnbind(t, sess, body)
-			busi = "CmdUnbind"
 
 		case CmdHeartBeat:
 			res, err = h.onHearBeat(t, sess, body)
@@ -355,9 +351,9 @@ func (h *Handler) handle(t *UdpMsg) error {
 		output[FrameHeaderLen+9] = msgs.ChecksumHeader(output[FrameHeaderLen+10:], 2+len(res))
 
 		if sess != nil {
-			h.Server.Send2(t.Peer, output, sess.DeviceId, busi)
+			h.Server.Send2(t.Peer, output, sess, busi)
 		} else {
-			h.Server.Send2(t.Peer, output, 0, busi)
+			h.Server.Send(t.Peer, output)
 		}
 
 	} else if op == 0x3 {
@@ -453,7 +449,7 @@ func (h *Handler) onGetToken(t *UdpMsg, body []byte) ([]byte, error) {
 
 func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
 	if len(body) < 310 {
-		return nil, fmt.Errorf("[udp:onRegister] bad body length %d", len(body))
+		return nil, fmt.Errorf("[udp:onRegister] %v bad body length %d", sess.Sid, len(body))
 	}
 
 	dv := body[16:18]
@@ -479,7 +475,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	output := make([]byte, 92)
 	httpStatus, rep, err := t.DoHTTPTask()
 	if glog.V(3) {
-		glog.Infof("[udp:onRegister] httpstatus:%v,rep:%v,%v", httpStatus, rep, err)
+		glog.Infof("[udp:onRegister] %v httpstatus:%v,rep:%v,%v", sess.Sid, httpStatus, rep, err)
 	}
 	if err != nil {
 		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
@@ -517,7 +513,7 @@ func (h *Handler) onRegister(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 func (h *Handler) onRegister2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
 	output := make([]byte, 92)
 	if len(body) < 296 {
-		return output, fmt.Errorf("[udp:onRegister] bad body length %d", len(body))
+		return output, fmt.Errorf("[udp:onRegister] %v bad body length %d", sess.Sid, len(body))
 	}
 
 	dv := body[16:18]
@@ -540,7 +536,7 @@ func (h *Handler) onRegister2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte,
 
 	httpStatus, rep, err := t.DoHTTPTask()
 	if glog.V(3) {
-		glog.Infof("[udp:onRegister] httpstatus:%v,rep:%v,%v", httpStatus, rep, err)
+		glog.Infof("[udp:onRegister] %v httpstatus:%v,rep:%v,%v", sess.Sid, httpStatus, rep, err)
 	}
 	if err != nil {
 		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
@@ -578,7 +574,7 @@ func (h *Handler) onRegister2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte,
 func (h *Handler) onLogin2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
 	output := make([]byte, 29)
 	if len(body) != 88 {
-		return output, fmt.Errorf("[udp:onLogin] bad body length %v", len(body))
+		return output, fmt.Errorf("[udp:onLogin] %v bad body length %v", sess.Sid, len(body))
 	}
 
 	mac := hex.EncodeToString(body[16:24])
@@ -591,8 +587,10 @@ func (h *Handler) onLogin2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 	//glog.Infof("LOGIN: mac: %s, cookie: %v", mac, string(cookie))
 
 	httpStatus, rep, err := t.DoHTTPTask()
+	if glog.V(3) {
+		glog.Infof("[udp:onLogin] %v httpstatus:%v,rep:%v,%v", sess.Sid, httpStatus, rep, err)
+	}
 	if err != nil {
-		glog.Infoln("err occurs when device login", httpStatus, err)
 		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
 		return output, err
 	}
@@ -623,18 +621,18 @@ func (h *Handler) onLogin2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 				glog.Infoln(bindedIds, owner)
 				sess.Owner = owner
 				if err != nil {
-					glog.Errorf("[udp|getIds] id [%d] get ids error: %v, ids: %v", sess.DeviceId, err, bindedIds)
 				} else {
 					if len(bindedIds) > 0 {
 						sess.Users = bindedIds
 						binary.LittleEndian.PutUint64(output[20:28], uint64(sess.Owner))
 					}
 				}
-				glog.Infof("[udp|getIds] id [%d] get ids: %v", sess.DeviceId, bindedIds)
-
+				if glog.V(3) {
+					glog.Infof("[udp:onLogin]%v id[%d] get ids: %v", sess.Sid, sess.DeviceId, bindedIds)
+				}
 				_, err = SetUserOnline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 				if err != nil {
-					glog.Errorf("[udp:err] SetUserOnline error [uid: %d] %v\n", sess.DeviceId, err)
+					glog.Infof("[udp:onLogin] %v SetUserOnline error [uid: %d] %v", sess.Sid, sess.DeviceId, err)
 				} else {
 					/**向用户推此设备在线消息*/
 					PushDevOnlineMsgToUsers(sess)
@@ -654,7 +652,6 @@ func (h *Handler) onLogin2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 						//					SetUserOffline(sess.DeviceId, h.Server.con.LocalAddr().String())
 						SetUserOffline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 					})
-					glog.Infoln("--------------------------------sess.Sid:", sess.Sid)
 					gUdpSessions.sidlk.Lock()
 					gUdpSessions.sidmap[sess.Sid] = sess
 					gUdpSessions.sidlk.Unlock()
@@ -673,7 +670,7 @@ func (h *Handler) onLogin2(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
 	output := make([]byte, 21)
 	if len(body) != 88 {
-		return output, fmt.Errorf("[udp:onLogin] bad body length %v", len(body))
+		return output, fmt.Errorf("[udp:onLogin] %v bad body length %v", sess.Sid, len(body))
 	}
 
 	mac := hex.EncodeToString(body[16:24])
@@ -686,8 +683,10 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 	//glog.Infof("LOGIN: mac: %s, cookie: %v", mac, string(cookie))
 
 	httpStatus, rep, err := t.DoHTTPTask()
+	if glog.V(3) {
+		glog.Infof("[udp:onLogin] %v httpstatus:%v,rep:%v,%v", sess.Sid, httpStatus, rep, err)
+	}
 	if err != nil {
-		glog.Errorf("[udp:onLogin] Err occurs when device login, httpcode:%v,\n%v", httpStatus, err)
 		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
 		return output, err
 	}
@@ -717,33 +716,29 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 						//						binary.LittleEndian.PutUint64(output[20:28], uint64(sess.Owner))
 					}
 				}
-				if glog.V(3) {
-					glog.Infof("[udp:onLogin] ready to login %v", sess)
-				}
 				defer func() {
 					_, err = SetUserOnline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 					if err != nil {
-						glog.Errorf("[udp:onLogin] SetUserOnline error [uid:%d],%v", sess.DeviceId, err)
+						glog.Errorf("[udp:onLogin] %v SetUserOnline error [uid:%d],%v", sess.Sid, sess.DeviceId, err)
 					} else {
-						glog.Infof("[udp:onLogin] %v %v login success 1.",sess.GUID.String,sess.DeviceId)
 						/**向用户推此设备在线消息*/
 						if devAdr == "" {
 							go PushDevOnlineMsgToUsers(sess)
 						} else {
 							go UpdateDevAdr(sess)
 						}
-						
+
 						gUdpSessions.udplk.Lock()
 						gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(time.Duration(gUdpTimeout)*time.Second, func() {
 							go PushDevOfflineMsgToUsers(sess)
 							gUdpSessions.udplk.Lock()
 							delete(gUdpSessions.udpmap, sess.Addr.String())
 							gUdpSessions.udplk.Unlock()
-							
+
 							gUdpSessions.sidlk.Lock()
 							delete(gUdpSessions.sidmap, gUdpSessions.devmap[sess.DeviceId])
 							gUdpSessions.sidlk.Unlock()
-							
+
 							gUdpSessions.devlk.Lock()
 							delete(gUdpSessions.devmap, sess.DeviceId)
 							gUdpSessions.devlk.Unlock()
@@ -751,16 +746,17 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 							go SetUserOffline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
 						})
 						gUdpSessions.udplk.Unlock()
-						
+
 						gUdpSessions.sidlk.Lock()
 						gUdpSessions.sidmap[sess.Sid] = sess
 						gUdpSessions.sidlk.Unlock()
-						
+
 						gUdpSessions.devlk.Lock()
 						gUdpSessions.devmap[sess.DeviceId] = sess.Sid
 						gUdpSessions.devlk.Unlock()
-						
-						glog.Infof("[udp:onLogin] %v %v login success 2.",sess.GUID.String,sess.DeviceId)
+						if glog.V(3) {
+							glog.Infof("[udp:onLogin] %v %v login success 2.", sess.GUID.String(), sess.DeviceId)
+						}
 					}
 				}()
 			}
@@ -768,6 +764,9 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 	}
 	binary.LittleEndian.PutUint32(output[0:4], uint32(status))
 	output[20] = kHeartBeatSec
+	if glog.V(3) {
+		defer glog.Infof("[udp:onLogin] SUCCESS LOGIN %v,%v,%v", sess.Sid, sess.DeviceId, sess.Addr.String())
+	}
 	return output, nil
 }
 func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
@@ -792,34 +791,6 @@ func (h *Handler) onRename(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 		if n, ok := s.(float64); ok {
 			status = int32(n)
 			SaveDvName(sess.DeviceId, string(name))
-		}
-	}
-	binary.LittleEndian.PutUint32(output[0:4], uint32(status))
-	if status != 0 {
-		return output, nil
-	}
-	return output, nil
-}
-func (h *Handler) onUnbind(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
-	id := int64(binary.LittleEndian.Uint64(body[16:24]))
-	if glog.V(3) {
-		glog.Infof("onUbind:%v|%v|%v|%v", t, sess, body, id)
-	}
-	t.Input["id"] = fmt.Sprint(sess.DeviceId)
-
-	output := make([]byte, 28)
-	copy(output[20:28], sess.Mac)
-
-	httpStatus, rep, err := t.DoHTTPTask()
-	if err != nil {
-		binary.LittleEndian.PutUint32(output[0:4], uint32(httpStatus))
-		return output, err
-	}
-
-	var status int32 = DAckHTTPError
-	if s, ok := rep["status"]; ok {
-		if n, ok := s.(float64); ok {
-			status = int32(n)
 		}
 	}
 	binary.LittleEndian.PutUint32(output[0:4], uint32(status))
@@ -859,7 +830,7 @@ func (h *Handler) onUnbind(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, er
 
 func (h *Handler) onHearBeat(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, error) {
 	if glog.V(3) {
-		glog.Infof("onHearBeat:%v|%v|%v", t, sess, body)
+		glog.Infof("onHearBeat:%v,%v,%v", sess.Sid, sess.DeviceId, sess.Addr.String)
 	}
 	err := sess.Update(t.Peer)
 
@@ -874,12 +845,12 @@ func (h *Handler) onHearBeat(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, 
 	v, ok := gUdpSessions.udpmap[sess.Addr.String()]
 	if ok {
 		if glog.V(3) {
-			glog.Infof("OnHearBeat:DONE %v", sess.DeviceId)
+			glog.Infof("OnHearBeat:DONE %v,%v,%v", sess.Sid, sess.DeviceId, sess.Addr.String)
 		}
 		v.Reset(time.Duration(gUdpTimeout) * time.Second)
 	} else {
 		if glog.V(3) {
-			glog.Infof("OnHearBeat:FAIL %v", sess.DeviceId)
+			glog.Infof("OnHearBeat:FAIL %v,%v,%v", sess.Sid, sess.DeviceId, sess.Addr.String)
 		}
 	}
 	return output, err

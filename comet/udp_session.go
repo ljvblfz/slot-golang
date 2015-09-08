@@ -115,7 +115,7 @@ func (s *UdpSession) String() string {
 	if err != nil {
 		panic(err)
 	}
-	return string(buf)
+	return fmt.Sprintf("%x",s.Mac)+string(buf)
 }
 
 func (s *UdpSession) FromString(data string) error {

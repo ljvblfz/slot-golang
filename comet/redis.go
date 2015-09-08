@@ -300,7 +300,7 @@ func UpdateDevAdr(sess *UdpSession) {
 }
 func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	if glog.V(3) {
-		glog.Infof("[PUB DEV ONLINE MSG] dev[%v] send to usr[%v] for dev online msg", sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV ONLINE MSG] %v dev[%v] send to usr[%v] for dev online msg",sess.Sid, sess.DeviceId, sess.Users)
 	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
@@ -308,7 +308,7 @@ func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.String())
 	if len(sess.Users) == 0 {
 		if glog.V(3) {
-			glog.Infof("[PUB DEV ONLINE MSG] dev {%v} can't send to usr:{%v} for dev online msg, dest is empty", sess.DeviceId, sess.Users)
+			glog.Infof("[PUB DEV ONLINE MSG] %v dev {%v} can't send to usr:{%v} for dev online msg, dest is empty", sess.Sid,sess.DeviceId, sess.Users)
 		}
 		return
 	}
@@ -326,19 +326,19 @@ func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	DevOnlineMsg = append(DevOnlineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOnlineMsg)
 	if glog.V(3) {
-		glog.Infof("[PUB DEV ONLINE MSG] dev[%v] send to usr[%v] for dev online msg, DONE", sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV ONLINE MSG] %v dev[%v] send to usr[%v] for dev online msg, DONE",sess.Sid, sess.DeviceId, sess.Users)
 	}
 }
 func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	if glog.V(3) {
-		glog.Infof("[PUB DEV OFFLINE MSG] dev[%v] send to usr[%v] for dev offline msg", sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] %v dev[%v] send to usr[%v] for dev offline msg",sess.Sid, sess.DeviceId, sess.Users)
 	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
 	r.Do("hdel", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.Network())
 	if len(sess.Users) == 0 {
-		glog.Infof("[PUB DEV OFFLINE MSG] dev {%v} can't send to usr:{%v} for dev offline msg, dest is empty", sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] %v dev {%v} can't send to usr:{%v} for dev offline msg, dest is empty", sess.Sid,sess.DeviceId, sess.Users)
 		return
 	}
 	var DevOfflineMsg []byte
@@ -355,7 +355,7 @@ func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	DevOfflineMsg = append(DevOfflineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOfflineMsg)
 	if glog.V(3) {
-		glog.Infof("[PUB DEV OFFLINE MSG] dev[%v] send to usr[%v] for dev offline msg, DONE", sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] %v dev[%v] send to usr[%v] for dev offline msg, DONE", sess.Sid,sess.DeviceId, sess.Users)
 	}
 }
 
