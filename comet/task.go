@@ -15,7 +15,7 @@ import (
 
 const (
 	CmdSyncState        = uint16(0x30)
-	CmdGetToken         = uint16(0xE0)
+	CmdSess         = uint16(0xE0)
 	CmdRegister         = uint16(0xE1)
 	CmdLogin            = uint16(0xE2)
 	CmdRename           = uint16(0xE3)

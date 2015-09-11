@@ -186,9 +186,9 @@ func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
 
 // Save to DB
 func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
+	s.GUID = sid
 	this.sidlk.Lock()
 	this.sidmap[sid.String()] = s
-	s.GUID = sid
 	this.sidlk.Unlock()
 	return nil
 }
@@ -226,21 +226,21 @@ func (this *UdpSessionList) PushMsg(did int64, msg []byte) error {
 
 	this.devlk.RLock()
 	sid, ok := this.devmap[did]
+	this.devlk.RUnlock()
 	glog.Infoln("sid:", sid)
 	if !ok {
 		return fmt.Errorf("[udp:err] [%d] can't got sid.", did)
 	}
-	this.devlk.RUnlock()
 	siduuid, err := uuid.ParseHex(sid)
 	if err != nil {
 		return fmt.Errorf("[udp:err] sid format err: %v", sid)
 	}
 	this.sidlk.RLock()
 	sess, ok := this.sidmap[sid]
+	this.sidlk.RUnlock()
 	if !ok {
 		return fmt.Errorf("[udp:err] no session %s", sid)
 	}
-	this.sidlk.RUnlock()
 
 	sess.Sidx++
 	binary.LittleEndian.PutUint16(msg[2:4], sess.Sidx)
