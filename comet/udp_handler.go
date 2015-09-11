@@ -713,52 +713,92 @@ func (h *Handler) onLogin(t *UdpMsg, sess *UdpSession, body []byte) ([]byte, err
 					}
 				}
 				go func() {
+					glog.Infoln("")
 					go SetUserOnline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
+					glog.Infoln("")
 					/**向用户推此设备在线消息*/
 					if devAdr == "" {
+						glog.Infoln("")
 						go PushDevOnlineMsgToUsers(sess)
+						glog.Infoln("")
 					} else {
+						glog.Infoln("")
 						go UpdateDevAdr(sess)
+						glog.Infoln("")
 					}
+					glog.Infoln("")
 
 					gUdpSessions.udplk.Lock()
+					glog.Infoln("")
 					gUdpSessions.udpmap[sess.Addr.String()] = time.AfterFunc(time.Duration(gUdpTimeout)*time.Second, func() {
+						glog.Infoln("")
 						go PushDevOfflineMsgToUsers(sess)
+						glog.Infoln("")
 						gUdpSessions.udplk.Lock()
+						glog.Infoln("")
 						delete(gUdpSessions.udpmap, sess.Addr.String())
+						glog.Infoln("")
 						gUdpSessions.udplk.Unlock()
+						glog.Infoln("")
 
 						gUdpSessions.sidlk.Lock()
+						glog.Infoln("")
 						delete(gUdpSessions.sidmap, gUdpSessions.devmap[sess.DeviceId])
+						glog.Infoln("")
 						gUdpSessions.sidlk.Unlock()
+						glog.Infoln("")
 
 						gUdpSessions.devlk.Lock()
+						glog.Infoln("")
 						delete(gUdpSessions.devmap, sess.DeviceId)
+						glog.Infoln("")
 						gUdpSessions.devlk.Unlock()
+						glog.Infoln("")
 						//					SetUserOffline(sess.DeviceId, h.Server.con.LocalAddr().String())
 						go SetUserOffline(sess.DeviceId, fmt.Sprintf("%v-%v", gLocalAddr, gCometType))
+						glog.Infoln("")
 						if glog.V(3) {
+							glog.Infoln("")
 							glog.Infof("[udp:onLogin] %v %v loginout success.", sess.GUID.String(), sess.DeviceId)
+							glog.Infoln("")
 						}
+						glog.Infoln("")
 					})
+					glog.Infoln("")
 					gUdpSessions.udplk.Unlock()
+					glog.Infoln("")
 
 					gUdpSessions.sidlk.Lock()
+					glog.Infoln("")
 					gUdpSessions.sidmap[sess.Sid] = sess
+					glog.Infoln("")
 					gUdpSessions.sidlk.Unlock()
+					glog.Infoln("")
 
 					gUdpSessions.devlk.Lock()
+					glog.Infoln("")
 					gUdpSessions.devmap[sess.DeviceId] = sess.Sid
+					glog.Infoln("")
 					gUdpSessions.devlk.Unlock()
+					glog.Infoln("")
 					if glog.V(3) {
+						glog.Infoln("")
 						glog.Infof("[udp:onLogin] %v %v login success.", sess.GUID.String(), sess.DeviceId)
+						glog.Infoln("")
 					}
+					glog.Infoln("")
 				}()
+				glog.Infoln("")
 			}
+			glog.Infoln("")
 		}
+		glog.Infoln("")
 	}
+	glog.Infoln("")
 	binary.LittleEndian.PutUint32(output[0:4], uint32(status))
+	glog.Infoln("")
 	output[20] = kHeartBeatSec
+	glog.Infoln("")
 	if glog.V(3) {
 		defer glog.Infof("[udp:onLogin] SUCCESS LOGIN %v,%v,%v", sess.Sid, sess.DeviceId, sess.Addr.String())
 	}
