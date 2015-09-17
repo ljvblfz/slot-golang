@@ -15,22 +15,22 @@ PackageName=cloudsocket-"$Ver".tar.gz
 
 mkdir -p cloudsocket/comet
 mkdir -p cloudsocket/msgbus
-mkdir -p cloudsocket/rmqkeeper
+#mkdir -p cloudsocket/rmqkeeper
 
 echo "Building comet..."
 cd $Pwd/comet
 go build
-cp comet run.sh comet.conf $Pwd/cloudsocket/comet/
+cp comet $Pwd/cloudsocket/comet/
 
 echo "Building msgbus..."
 cd $Pwd/msgbus
 go build
-cp msgbus run.sh msgbus.conf $Pwd/cloudsocket/msgbus/
+cp msgbus $Pwd/cloudsocket/msgbus/
 
-echo "Building rmqkeeper..."
-cd $Pwd/../cloud-base/rmqkeeper
-go build
-cp rmqkeeper run.sh rmqkeeper.conf $Pwd/cloudsocket/rmqkeeper
+#echo "Building rmqkeeper..."
+#cd $Pwd/../cloud-base/rmqkeeper
+#go build
+#cp rmqkeeper run.sh rmqkeeper.conf $Pwd/cloudsocket/rmqkeeper
 
 echo "Packing to $PackageName..."
 cd $Pwd

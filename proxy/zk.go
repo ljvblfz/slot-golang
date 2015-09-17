@@ -1,66 +1,52 @@
 package main
 
 import (
-	"fmt"
-	"time"
-
 	"cloud-base/atomic"
 	stat "cloud-base/goprocinfo/linux"
 	"cloud-base/procinfo"
 	"cloud-base/zk"
-	"cloud-socket/msgs"
+	"fmt"
 	"github.com/golang/glog"
 	zookeeper "github.com/samuel/go-zookeeper/zk"
+	"strconv"
+	"strings"
+	"time"
 )
 
 var (
-	zkConn   *zookeeper.Conn
-	zkConnOk atomic.AtomicBoolean
-	//zkReportCh	chan cometStat
+	zkConn      *zookeeper.Conn
 	zkReportCh  chan zookeeper.Event
+	zkConnOk    atomic.AtomicBoolean
+	zkProxyRoot string
 	zkCometRoot string
+	zkNodes     []string
+	gQueue      *Queue // the data get from zookeeper
 )
 
-type cometStat struct {
-	Ok   bool
-	Path string
-	Url  string
-}
+type (
+	proxyStat struct {
+		Ok   bool
+		Path string
+		Url  string
+	}
+)
 
 func init() {
+	gQueue = NewQueue()
 	zkReportCh = make(chan zookeeper.Event, 1)
 	zkConnOk.Set(false)
 }
 
-func onConnStatus(event zookeeper.Event) {
-	switch event.Type {
-	case zookeeper.EventSession:
-		switch event.State {
-		case zookeeper.StateHasSession:
-			zkConnOk.Set(true)
-
-		case zookeeper.StateDisconnected:
-			fallthrough
-		case zookeeper.StateExpired:
-			zkConnOk.Set(false)
-		}
-	}
-	zkReportCh <- event
-}
-
-func InitZK(zkAddrs []string, msgbusName string, cometName string) {
-	if len(msgbusName) == 0 {
-		glog.Fatalf("[zk] root name for msgbus cannot be empty")
+func InitZK(zkAddrs []string, proxyName string, cometName string) {
+	if len(proxyName) == 0 {
+		glog.Fatalf("[zk] root name for proxy cannot be empty")
 	}
 	if len(cometName) == 0 {
 		glog.Fatalf("[zk] root name for comet cannot be empty")
 	}
 	var (
-		nodes []string
-		err   error
-		conn  *zookeeper.Conn
-		addr  string
-		watch <-chan zookeeper.Event
+		err  error
+		conn *zookeeper.Conn
 	)
 	conn, err = zk.Connect(zkAddrs, 60*time.Second, onConnStatus)
 	if err != nil {
@@ -68,20 +54,33 @@ func InitZK(zkAddrs []string, msgbusName string, cometName string) {
 	}
 	zkConn = conn
 
+	zkProxyRoot = "/" + proxyName
 	zkCometRoot = "/" + cometName
-
-	err = zk.Create(zkConn, zkCometRoot)
+	err = zk.Create(zkConn, zkProxyRoot)
 	if err != nil {
 		glog.Infof("[zk] create connection error: %v", err)
 	}
 	go ReportUsage()
 
-	zkMsgBusRoot := "/" + msgbusName
-	glog.Infof("Connect zk[%v] with msgbus root [%s] OK!", zkAddrs, zkMsgBusRoot)
+	// timing update the cache of the udp comet stat on zookeeper
+	go func() {
+		tick := time.NewTicker(inverval)
+		for {
+			<-tick.C
+			getUdpCometStat()
+		}
+	}()
+	UdpCometStat(zkAddrs)
+}
 
-	var lastErr error
+func UdpCometStat(zkAddrs []string) {
+	glog.Infof("Connect zk[%v] with udp comet root [%s] OK!", zkAddrs, zkCometRoot)
+	var (
+		lastErr, err error
+		watch        <-chan zookeeper.Event
+	)
 	for {
-		nodes, watch, err = zk.GetNodesW(conn, zkMsgBusRoot)
+		zkNodes, watch, err = zk.GetNodesW(zkConn, zkCometRoot)
 		if err != lastErr {
 			if err != nil {
 				glog.Errorln(err)
@@ -95,21 +94,54 @@ func InitZK(zkAddrs []string, msgbusName string, cometName string) {
 			time.Sleep(time.Second)
 			continue
 		}
-		var addrs []string = make([]string, 0, len(nodes))
-		for _, node := range nodes {
-			addr, err = zk.GetNodeData(conn, zkMsgBusRoot+"/"+node)
-			if err != nil {
-				glog.Errorf("[%s] cannot get", addr)
-				continue
-			}
-			addrs = append(addrs, addr)
-		}
-		for _, addr := range addrs {
-			GMsgBusManager.Online(addr)
-		}
+
+		getUdpCometStat()
+
 		e := <-watch
 		glog.Infof("zk receive an event %v", e)
 		time.Sleep(time.Second)
+	}
+}
+
+func getUdpCometStat() {
+
+	for _, childzode := range zkNodes {
+		zdata, err := zk.GetNodeData(zkConn, zkCometRoot+"/"+childzode)
+		if err != nil {
+			glog.Errorf("[%s] cannot get", zdata)
+			continue
+		}
+
+		items := strings.Split(zdata, ",")
+		if len(items) == 5 {
+			cpuUsage, errT := strconv.ParseFloat(items[1], 64)
+			if errT != nil {
+				glog.Errorf("get cpu usage err:%v", errT)
+			}
+			menTotal, errT := strconv.ParseFloat(items[2], 64)
+			if errT != nil {
+				glog.Errorf("get total memory err:%v", errT)
+			}
+			memUsage, errT := strconv.ParseFloat(items[3], 64)
+			if errT != nil {
+				glog.Errorf("get  memory usage err:%v", errT)
+			}
+			onlineCount, errT := strconv.ParseInt(items[4], 10, 64)
+			if errT != nil {
+				glog.Errorf("get  online count err:%v", errT)
+			}
+			if cpuUsage < gCPUUsage && menTotal-memUsage > gMEMFree && onlineCount < gCount {
+				if !gQueue.contains(items[0]) {
+					gQueue.Put(items[0]) //如果满足条件并且队列中没有，则入队
+				}
+			} else {
+				if gQueue.contains(items[0]) {
+					gQueue.Remove(items[0]) //如果不满足条件并且队列有，则移除
+				}
+				glog.Errorf("no suitable server can use %v", zdata)
+			}
+		}
+
 	}
 }
 
@@ -128,10 +160,10 @@ func ReportUsage() {
 
 	var cpuUsage float64
 
-	cometPath := make(map[string]cometStat)
+	proxyPath := make(map[string]proxyStat)
 
 	lastTickerTime := time.Now()
-	//glog.Infof("[stat|log] loop started %v", lastTickerTime)
+
 	for {
 		select {
 		case event := <-zkReportCh:
@@ -144,39 +176,29 @@ func ReportUsage() {
 				if !zkConnOk.Get() {
 					break
 				}
-				var urls []string
-				if gCometType == msgs.CometWs {
-					urls = GetCometWsUrl()
-				} else if gCometType == msgs.CometUdp {
-					urls = append(urls, GetCometUdpUrl())
-				}
+				var urls []string = []string{}
+				urls = append(urls, serverAddr)
+
 				for _, u := range urls {
 					data := onWriteZkData(u, 0.0, 0, 0, 0)
-					tpath, err := zkConn.Create(zkCometRoot+"/", []byte(data), zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
+					tpath, err := zkConn.Create(zkProxyRoot+"/", []byte(data),
+						zookeeper.FlagEphemeral|zookeeper.FlagSequence, zookeeper.WorldACL(zookeeper.PermAll))
 					if err != nil {
-						glog.Errorf("[zk|comet] create comet node %s with data %s on zk failed: %v", zkCometRoot, data, err)
+						glog.Errorf("[zk|comet] create comet node %s with data %s on zk failed: %v", zkProxyRoot, data, err)
 						break
 					}
 					if len(tpath) == 0 {
-						glog.Errorf("[zk|comet] create empty comet node %s with data %s", zkCometRoot, data)
+						glog.Errorf("[zk|comet] create empty comet node %s with data %s", zkProxyRoot, data)
 						break
 					}
-					cometPath[tpath] = cometStat{Ok: true, Url: u, Path: tpath}
+					proxyPath[tpath] = proxyStat{Ok: true, Url: u, Path: tpath}
 				}
 
 			case zookeeper.StateDisconnected:
 				fallthrough
 			case zookeeper.StateExpired:
-				cometPath = make(map[string]cometStat)
+				proxyPath = make(map[string]proxyStat)
 			}
-
-		//case s := <-zkReportCh:
-		//	if len(s.Path) > 0 {
-		//		cometPath[s.Path] = s
-		//		//glog.Infof("[stat|log] get comet: %v", s)
-		//	} else {
-		//		cometPath = make(map[string]cometStat)
-		//	}
 
 		case cpu, ok := <-cpuChan:
 			if !ok {
@@ -208,7 +230,7 @@ func ReportUsage() {
 			}
 			onlineCount := statGetConnOnline()
 
-			for path, s := range cometPath {
+			for path, s := range proxyPath {
 				if !s.Ok {
 					continue
 				}
@@ -221,10 +243,25 @@ func ReportUsage() {
 				if err != nil {
 					glog.Errorf("[zk|comet] set zk node [%s] with comet's status [%s] failed: %v", s.Path, data, err)
 				}
-				//glog.Infof("[stat|log] write zk path: %s, data: %s", s.Path, data)
 			}
 		}
 	}
+}
+
+func onConnStatus(event zookeeper.Event) {
+	switch event.Type {
+	case zookeeper.EventSession:
+		switch event.State {
+		case zookeeper.StateHasSession:
+			zkConnOk.Set(true)
+
+		case zookeeper.StateDisconnected:
+			fallthrough
+		case zookeeper.StateExpired:
+			zkConnOk.Set(false)
+		}
+	}
+	zkReportCh <- event
 }
 
 func onWriteZkData(url string, cpu float64, memTotal uint64, memUsage uint64, online uint64) string {

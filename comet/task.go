@@ -15,25 +15,26 @@ import (
 
 const (
 	CmdSyncState        = uint16(0x30)
-	CmdGetToken         = uint16(0xE0)
+	CmdSess         = uint16(0xE0)
 	CmdRegister         = uint16(0xE1)
 	CmdLogin            = uint16(0xE2)
 	CmdRename           = uint16(0xE3)
-	CmdDoBind           = uint16(0xE4)
+	CmdUnbind           = uint16(0xE4)
 	CmdHeartBeat        = uint16(0xE5)
 	CmdSubDeviceOffline = uint16(0xE6)
 
 	UrlRegister   = "/api/device/register"
 	UrlLogin      = "/api/device/login"
-	UrlBind       = "/api/bind/in"
+	UrlUnbind     = "/api/device/unbindbydv"
 	UrlChangeName = "/api/device/changingname"
 )
 
 var (
 	DAckOk          int32 = 0
-	DAckHTTPError   int32 = 1000
-	DAckServerError int32 = 1001
-	DAckBadCmd      int32 = 1002
+	DAckHTTPError   int32 = 500
+	DAckServerError int32 = 503
+
+//	DAckBadCmd      int32 = 1002
 )
 
 type UdpMsg struct {
@@ -54,22 +55,22 @@ func (t *UdpMsg) DoHTTPTask() (status int32, response map[string]interface{}, er
 	req := bytes.NewReader([]byte(strings.TrimLeft(reqs, "&")))
 	rep, err := http.Post(t.Url, "application/x-www-form-urlencoded;charset=utf-8", req)
 	if err != nil {
-		return DAckServerError, nil, fmt.Errorf("[task] process task %v failed on server, response: %v, error: %v", t, rep, err)
+		return DAckServerError, nil, fmt.Errorf("[POST TO HTTP] input:[%#v] failed on server,\nresponse:%v,\nerror: %v", t, rep, err)
 	}
 	defer rep.Body.Close()
 
 	if rep.StatusCode != 200 {
-		return DAckHTTPError, nil, fmt.Errorf("[task] process task [%#v] failed on http code: %v", t, rep.StatusCode)
+		return int32(rep.StatusCode), nil, fmt.Errorf("[POST TO HTTP] input:[%#v] failed,\nhttp code: %v", t, rep.StatusCode)
 	}
 
 	d := json.NewDecoder(rep.Body)
 	response = make(map[string]interface{})
 	err = d.Decode(&response)
 	if err != nil {
-		return DAckHTTPError, nil, fmt.Errorf("decode error %v", err)
+		return int32(rep.StatusCode), nil, fmt.Errorf("[POST TO HTTP] %v", err)
 	}
 
-	return DAckOk, response, nil
+	return int32(rep.StatusCode), response, nil
 
 	//buf := bytes.Buffer{}
 	//_, err = io.Copy(&buf, rep.Body)

@@ -1,16 +1,15 @@
 package main
 
 import (
+	"cloud-socket/msgs"
+	"cloud-socket/ver"
 	"flag"
 	"fmt"
+	"github.com/golang/glog"
 	"net/url"
 	"os"
 	"runtime"
 	"strings"
-
-	"cloud-socket/msgs"
-	"cloud-socket/ver"
-	"github.com/golang/glog"
 )
 
 var (
@@ -22,7 +21,7 @@ var (
 	gCometType               msgs.CometType
 	gCometPushUdp            bool
 	gCometUdpSubBindingEvent bool
-	gUdpTimeout              = 40
+	gUdpTimeout              int64 = 125
 )
 
 func main() {
@@ -43,12 +42,11 @@ func main() {
 	flag.StringVar(&gStatusAddr, "sh", ":29999", "程序状态http服务端口")
 	flag.StringVar(&gMsgbusRoot, "zkroot", "MsgBusServers", "zookeeper服务中msgbus所在的根节点名")
 	flag.StringVar(&gCometRoot, "zkrootc", "CometServers", "zookeeper服务中comet所在的根节点名")
-	flag.IntVar(&gUdpTimeout, "uto", gUdpTimeout, "客户端UDP端口失效时长（秒)")
+	flag.Int64Var(&gUdpTimeout, "uto", gUdpTimeout, "客户端UDP端口失效时长（秒)")
 	flag.BoolVar(&gCometPushUdp, "up", false, "UDP服务器是否向设备推送消息（系统中应该有一个并且唯一的推送UDP消息的Comet服务器）")
 	flag.BoolVar(&gCometUdpSubBindingEvent, "us", false, "UDP服务器是否处理设备绑定/解绑消息（系统中应该有一个并且唯一设置为true的Comet服务器）")
 	printVer := flag.Bool("ver", false, "Comet版本")
 	flag.Parse()
-
 	if *printVer {
 		fmt.Printf("Comet %s, 插座后台代理服务器.\n", ver.Version)
 		return
@@ -79,7 +77,7 @@ func main() {
 	switch gCometType {
 	case msgs.CometWs:
 		if len(gLocalAddr) == 0 {
-			glog.Fatalf("必须指定本机IP")
+			glog.Fatalf("IP has to be DEDICATED.")
 		}
 		StartHttp(strings.Split(*lHost, ","))
 

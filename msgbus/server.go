@@ -84,7 +84,6 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 	}
 
 	GComets.AddServer(addr.IP.String(), conn, cometType)
-	glog.Infof("New comet [%s]", addr.IP.String())
 	header := make([]byte, HEADER_SIZE)
 	var bufLen uint32 = INIT_MAX
 	buf := make([]byte, bufLen)
@@ -96,6 +95,7 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 
 		// read header : 4-bytes
 		n, err := io.ReadFull(conn, header)
+		glog.Infoln("来货了")
 		if n == 0 && err == io.EOF {
 			break
 		} else if err != nil {
@@ -105,11 +105,11 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 
 		// read payload, the size of the payload is given by header
 		size := binary.LittleEndian.Uint32(header)
+		glog.Infof("[mb:received] msg length:%v", size)
 		if size > bufLen {
 			if size > PAYLOAD_MAX {
 				// 数据意外的过长，扔掉本次消息
-				glog.Errorf("[msg] discard this message from comet [%v] too long, %d bytes",
-					conn.RemoteAddr(), size)
+				glog.Errorf("[msg] discard this message from comet [%v] too long, %d bytes", conn.RemoteAddr(), size)
 				_, err = io.CopyN(ioutil.Discard, conn, int64(size))
 				if err != nil {
 					break
@@ -121,6 +121,7 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 		}
 
 		data := buf[:size]
+		glog.Infof("[mb:received] msg %v", data)
 		n, err = io.ReadFull(conn, data)
 
 		if err != nil {
@@ -129,7 +130,7 @@ func (this *Server) handleClient(conn *net.TCPConn) {
 		}
 		MainHandle(data)
 	}
-	HandleClose(addr.IP.String()) // 释放服务器所有用户的信息
+	HandleClose(addr.String()) // 释放服务器所有用户的信息
 }
 
 func (self *Server) Stop() {

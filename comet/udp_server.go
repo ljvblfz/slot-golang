@@ -11,17 +11,17 @@ const (
 )
 
 type UdpServer struct {
-	addr     string
-	handler  *Handler
-	socket   *net.UDPConn
-	socketMu *sync.Mutex
+	addr    string
+	handler *Handler
+	con     *net.UDPConn
+	conlk   *sync.Mutex
 }
 
 func NewUdpServer(addr string, handler *Handler) *UdpServer {
 	s := &UdpServer{
-		addr:     addr,
-		handler:  handler,
-		socketMu: &sync.Mutex{},
+		addr:    addr,
+		handler: handler,
+		conlk:   &sync.Mutex{},
 	}
 	return s
 }
@@ -31,30 +31,43 @@ func (s *UdpServer) RunLoop() {
 	if err != nil {
 		glog.Fatalf("Resolve server addr failed: %v", err)
 	}
-	socket, err := net.ListenUDP("udp", localAddr)
+	s.con, err = net.ListenUDP("udp", localAddr)
 	if err != nil {
 		glog.Fatalf("Listen on addr failed: %v", err)
 	}
-	s.socket = socket
-	glog.Infof("UdpServer started on %v", socket.LocalAddr())
+	glog.Infof("UDPCOMET started on %v successfully", s.con.LocalAddr())
 
 	input := make([]byte, kMaxPackageSize)
 	for {
-		n, peer, err := socket.ReadFromUDP(input)
+		n, peer, err := s.con.ReadFromUDP(input)
 		if err != nil {
 			if nerr, ok := err.(*net.OpError); ok && !nerr.Temporary() {
 				glog.Fatalf("[udp|received] Read failed: %v", nerr)
 			}
 			continue
 		}
-		glog.Infof("[udp|received] peer: %v, msg: len(%d)%v", peer, n, input[:n])
+		if glog.V(3) {
+			glog.Infof("[UDPCOMET] received dev:%v,msg:len(%d)%v", peer, n, input[:n])
+		}
 		s.handler.Process(peer, input[:n])
 	}
 }
 
 func (s *UdpServer) Send(peer *net.UDPAddr, msg []byte) {
-	s.socketMu.Lock()
-	n, err := s.socket.WriteToUDP(msg, peer)
-	s.socketMu.Unlock()
-	glog.Infof("[udp|sended] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
+	s.conlk.Lock()
+	n, err := s.con.WriteToUDP(msg, peer)
+	s.conlk.Unlock()
+	if glog.V(3) {
+		glog.Infof("[udp|ret] peer: %v, msg: len(%d)%v,err:%v", peer.String(), n, msg, err)
+		glog.Infof("-----------------------------------------------------------------------------------------------------------------------------")
+	}
+}
+func (s *UdpServer) Send2(peer *net.UDPAddr, msg []byte, sess *UdpSession, busi string) {
+	s.conlk.Lock()
+	n, err := s.con.WriteToUDP(msg, peer)
+	s.conlk.Unlock()
+	if glog.V(3) {
+		glog.Infof("[udp|ret %v] [dev:%v %v %v %v], response: len(%d)%v,%v", busi, sess.DeviceId, peer.String(),sess.Sid,sess.Addr.String(), n, msg, err)
+		glog.Infof("-----------------------------------------------------------------------------------------------------------------------------")
+	}
 }

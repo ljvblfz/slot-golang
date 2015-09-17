@@ -11,7 +11,7 @@ import (
 const (
 	Hosts     = "Host:*"
 	HostUsers = "Host:%s"
-	SubKey    = "PubKey"
+	OnOff     = "OnOff"
 )
 const (
 	_GetAllHosts = iota
@@ -59,6 +59,7 @@ func InitModel(addr string) {
 
 func LoadUsers() error {
 	hosts, err := GetAllHosts()
+	glog.Infoln("allhosts:", hosts)
 	if err != nil {
 		return err
 	}
@@ -96,11 +97,12 @@ func GetAllUsers(hosts []string) error {
 	)
 	for _, host := range hosts {
 		users, e := redis.Strings(r.Do("hkeys", host))
+		glog.Infoln("got users %v from comet-%v", users, host)
 		if e != nil {
 			glog.Errorf("redis error %v", e)
 			continue
 		}
-		GUserMap.Load(users, hostName(host))
+		GUserMap.load(users, hostName(host))
 	}
 	r.Close()
 	return err
@@ -110,7 +112,7 @@ func SubUserState() (<-chan []byte, error) {
 	r := Redix[_SubLoginState].Get()
 
 	psc := redis.PubSubConn{Conn: r}
-	psc.Subscribe(SubKey)
+	psc.Subscribe(OnOff)
 	ch := make(chan []byte, 128)
 
 	// 单独处理Subscribe后的第一个消息（即返回值），用于保证在已监听到SubKey后，

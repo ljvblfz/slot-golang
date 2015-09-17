@@ -57,72 +57,36 @@ type Comets struct {
 
 func NewComets() *Comets {
 	return &Comets{
-		mu:            &sync.Mutex{},
-		Servers:       make(map[string]*CometServer, 16),
-		muUdp:         &sync.Mutex{},
-		UdpCometNames: make([]string, 0, 16),
-		ServersUdp:    make(map[string]*CometServer, 16),
+		mu:         &sync.Mutex{},
+		Servers:    make(map[string]*CometServer, 16),
+		muUdp:      &sync.Mutex{},
+		ServersUdp: make(map[string]*CometServer, 16),
 	}
 }
 
 // host不包括Host:等前缀
 func (this *Comets) AddServer(host string, conn *net.TCPConn, cometType msgs.CometType) {
-	if cometType == msgs.CometWs {
-		this.mu.Lock()
-		this.Servers[host] = &CometServer{
-			mu:        &sync.Mutex{},
-			kv:        make(map[int64]struct{}, 10240),
-			conn:      conn,
-			cometType: cometType,
-		}
-		this.mu.Unlock()
-	} else if cometType == msgs.CometUdp {
-		this.muUdp.Lock()
-		this.UdpCometNames = append(this.UdpCometNames, host)
-		this.ServersUdp[host] = &CometServer{
-			mu:        &sync.Mutex{},
-			kv:        make(map[int64]struct{}, 10240),
-			conn:      conn,
-			cometType: cometType,
-		}
-		this.muUdp.Unlock()
+	this.mu.Lock()
+	this.Servers[fmt.Sprintf("%v-%v", host, cometType)] = &CometServer{
+		mu:        &sync.Mutex{},
+		kv:        make(map[int64]struct{}, 10240),
+		conn:      conn,
+		cometType: cometType,
 	}
+	glog.Infof("[%s] [%v] Added", host, cometType)
+	this.mu.Unlock()
 	statIncCometConns()
 }
 
-// addr传入的是ip
 func (this *Comets) RemoveServer(host string) {
-	found := false
-
 	this.mu.Lock()
 	if _, ok := this.Servers[host]; ok {
-		found = true
 		delete(this.Servers, host)
 		statDecCometConns()
 	} else {
-		glog.Errorf("[%s] Removed", host)
+		glog.Infof("[%s] Removed", host)
 	}
 	this.mu.Unlock()
-
-	if found {
-		return
-	}
-
-	this.muUdp.Lock()
-	if _, ok := this.ServersUdp[host]; ok {
-		delete(this.ServersUdp, host)
-		for k, v := range this.UdpCometNames {
-			if v == host {
-				this.UdpCometNames[k] = this.UdpCometNames[len(this.UdpCometNames)-1]
-				this.UdpCometNames = this.UdpCometNames[:len(this.UdpCometNames)-1]
-				return
-			}
-		}
-		statDecCometConns()
-	} else {
-		glog.Errorf("Cannot remove [%s] not found", host)
-	}
-	this.muUdp.Unlock()
 }
 
 func (this *Comets) AddUserToHost(uid int64, host string) {
@@ -130,7 +94,7 @@ func (this *Comets) AddUserToHost(uid int64, host string) {
 	if h, ok := this.Servers[host]; ok {
 		h.addUser(uid)
 	} else {
-		glog.Errorf("[%s] duplicated add user [%d]", host, uid)
+		glog.Errorf("[%s] don't exists. adding user [%d] failed.", host, uid)
 	}
 	this.mu.Unlock()
 }
@@ -153,7 +117,6 @@ func (this *Comets) PushMsg(msg []byte, host string) (err error) {
 		this.mu.Unlock()
 		return fmt.Errorf("cannot find %s", host)
 	} else {
-		//glog.Info(host, msg)
 		err = server.Push(msg)
 	}
 	this.mu.Unlock()

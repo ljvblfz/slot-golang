@@ -58,7 +58,7 @@ func InitZK(addrs []string, listenAddr string, rootName string, rmqRoot string) 
 		return createErr
 	}
 
-	go WatchRmq(rmqRoot)
+	//	go WatchRmq(rmqRoot)
 	return nil
 }
 

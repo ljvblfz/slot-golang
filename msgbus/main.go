@@ -12,7 +12,7 @@ import (
 func main() {
 
 	rh := flag.String("rh", "193.168.1.224:6379", "Redis地址")
-	lhost := flag.String("addr", "localhost:9923", "设置MsgBus监听服务器端口地址")
+	addr := flag.String("addr", "localhost:9923", "设置MsgBus监听服务器端口地址")
 	zks := flag.String("zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK服务器地址列表")
 	zkRootName := flag.String("zkroot", "MsgBusServers", "msgbus注册到zookeeper服务中的根节点名")
 	zkRootRmq := flag.String("zkrootr", "Rabbitmq", "rabbitmq注册到zookeeper服务中的根节点名")
@@ -43,11 +43,10 @@ func main() {
 		glog.Fatal(err)
 	}
 
-	local := NewServer(*lhost)
+	local := NewServer(*addr)
 	local.Start()
 
-	if err := InitZK(strings.Split(*zks, ","),
-		local.addr, *zkRootName, *zkRootRmq); err != nil {
+	if err := InitZK(strings.Split(*zks, ","), local.addr, *zkRootName, *zkRootRmq); err != nil {
 		glog.Fatal(err)
 	}
 	handleSignal(func() {
@@ -66,8 +65,8 @@ func handleOnlineEvent(notifyUserState <-chan []byte) {
 		isOnline := users_def[2]
 		if isOnline == "1" {
 			GUserMap.Online(uid, host)
-			if glog.V(1) {
-				glog.Infof("[bus:online] user %d on %s", uid, host)
+			if glog.V(3) {
+				glog.Infof("[bus:online] user %d on comet %s", uid, host)
 			}
 		} else {
 			if uid == 0 {
@@ -75,8 +74,8 @@ func handleOnlineEvent(notifyUserState <-chan []byte) {
 			} else {
 				GUserMap.Offline(uid, host)
 			}
-			if glog.V(1) {
-				glog.Infof("[bus:offline] user %d on %s", uid, host)
+			if glog.V(3) {
+				glog.Infof("[bus:offline] user %d on comet %s", uid, host)
 			}
 		}
 	}
