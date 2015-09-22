@@ -296,19 +296,19 @@ func UpdateDevAdr(sess *UdpSession) {
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
-	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.String())
+	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DevId), sess.Addr.String())
 }
 func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	if glog.V(3) {
-		glog.Infof("[PUB DEV ONLINE MSG] %v dev[%v] send to usr[%v] for dev online msg",sess.Sid, sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV ONLINE MSG] %v dev[%v] send to usr[%v] for dev online msg",sess.Sid, sess.DevId, sess.Users)
 	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
-	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.String())
+	r.Do("hset", "device:adr", fmt.Sprintf("%d", sess.DevId), sess.Addr.String())
 	if len(sess.Users) == 0 {
 		if glog.V(3) {
-			glog.Infof("[PUB DEV ONLINE MSG] %v dev {%v} can't send to usr:{%v} for dev online msg, dest is empty", sess.Sid,sess.DeviceId, sess.Users)
+			glog.Infof("[PUB DEV ONLINE MSG] %v dev {%v} can't send to usr:{%v} for dev online msg, dest is empty", sess.Sid,sess.DevId, sess.Users)
 		}
 		return
 	}
@@ -321,24 +321,24 @@ func PushDevOnlineMsgToUsers(sess *UdpSession) {
 	DevOnlineMsg = append(DevOnlineMsg, []byte(userIds)...)
 	DevOnlineMsg = append(DevOnlineMsg, byte(9 /**上线标识*/))
 	b_buf := bytes.NewBuffer([]byte{})
-	binary.Write(b_buf, binary.LittleEndian, sess.DeviceId)
+	binary.Write(b_buf, binary.LittleEndian, sess.DevId)
 	DevOnlineMsg = append(DevOnlineMsg, b_buf.Bytes()...)
 	DevOnlineMsg = append(DevOnlineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOnlineMsg)
 	if glog.V(3) {
-		glog.Infof("[PUB DEV ONLINE MSG] %v dev[%v] send to usr[%v] for dev online msg, DONE",sess.Sid, sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV ONLINE MSG] %v dev[%v] send to usr[%v] for dev online msg, DONE",sess.Sid, sess.DevId, sess.Users)
 	}
 }
 func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	if glog.V(3) {
-		glog.Infof("[PUB DEV OFFLINE MSG] %v dev[%v] send to usr[%v] for dev offline msg",sess.Sid, sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] %v dev[%v] send to usr[%v] for dev offline msg",sess.Sid, sess.DevId, sess.Users)
 	}
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
-	r.Do("hdel", "device:adr", fmt.Sprintf("%d", sess.DeviceId), sess.Addr.Network())
+	r.Do("hdel", "device:adr", fmt.Sprintf("%d", sess.DevId), sess.Addr.Network())
 	if len(sess.Users) == 0 {
-		glog.Infof("[PUB DEV OFFLINE MSG] %v dev {%v} can't send to usr:{%v} for dev offline msg, dest is empty", sess.Sid,sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] %v dev {%v} can't send to usr:{%v} for dev offline msg, dest is empty", sess.Sid,sess.DevId, sess.Users)
 		return
 	}
 	var DevOfflineMsg []byte
@@ -350,12 +350,12 @@ func PushDevOfflineMsgToUsers(sess *UdpSession) {
 	DevOfflineMsg = append(DevOfflineMsg, []byte(userIds)...)
 	DevOfflineMsg = append(DevOfflineMsg, byte(10 /**下线标识*/))
 	b_buf := bytes.NewBuffer([]byte{})
-	binary.Write(b_buf, binary.LittleEndian, sess.DeviceId)
+	binary.Write(b_buf, binary.LittleEndian, sess.DevId)
 	DevOfflineMsg = append(DevOfflineMsg, b_buf.Bytes()...)
 	DevOfflineMsg = append(DevOfflineMsg, byte(0 /**内容长度*/))
 	r.Do("publish", []byte("PubCommonMsg:0x36"), DevOfflineMsg)
 	if glog.V(3) {
-		glog.Infof("[PUB DEV OFFLINE MSG] %v dev[%v] send to usr[%v] for dev offline msg, DONE", sess.Sid,sess.DeviceId, sess.Users)
+		glog.Infof("[PUB DEV OFFLINE MSG] %v dev[%v] send to usr[%v] for dev offline msg, DONE", sess.Sid,sess.DevId, sess.Users)
 	}
 }
 
@@ -363,11 +363,11 @@ func PushDevOfflineMsgToUsers(sess *UdpSession) {
 *返回参数1，与硬件相关的用户列表
 *返回参数2，硬件的拥有者
  */
-func GetUsersByDev(deviceId int64) ([]int64, int64, error) {
+func GetUsersByDev(DevId int64) ([]int64, int64, error) {
 	r := Redix[_GetDeviceUsers]
 	RedixMu[_GetDeviceUsers].Lock()
 	defer RedixMu[_GetDeviceUsers].Unlock()
-	user, err := redis.String(r.Do("hget", RedisDeviceUsers, deviceId))
+	user, err := redis.String(r.Do("hget", RedisDeviceUsers, DevId))
 	if err != nil {
 		return nil, 0xFF, err
 	}
@@ -466,9 +466,9 @@ func HandleDeviceUsers(ch <-chan []byte) {
 			glog.Errorf("[UPDATING BINDING LIST] invalid pub-sub msg format: %s", string(buf))
 			continue
 		}
-		deviceId, err := strconv.ParseInt(strs[0], 10, 64)
+		DevId, err := strconv.ParseInt(strs[0], 10, 64)
 		if err != nil {
-			glog.Errorf("[UPDATING BINDING LIST] invalid deviceId %s, error: %v", strs[0], err)
+			glog.Errorf("[UPDATING BINDING LIST] invalid DevId %s, error: %v", strs[0], err)
 			continue
 		}
 		userId, err := strconv.ParseInt(strs[1], 10, 64)
@@ -483,10 +483,10 @@ func HandleDeviceUsers(ch <-chan []byte) {
 		}
 		// new code for udp
 		if gCometType == msgs.CometUdp {
-			go gUdpSessions.UpdateIds(deviceId, userId, msgType != 0)
+			go gUdpSessions.UpdateIds(DevId, userId, msgType != 0)
 		}
 		if gCometType == msgs.CometWs {
-			go gSessionList.UpdateIds(deviceId, userId, msgType != 0)
+			go gSessionList.UpdateIds(DevId, userId, msgType != 0)
 		}
 	}
 }
@@ -624,8 +624,8 @@ func SubDevOnlineChannel() error {
 			if glog.V(3) {
 				glog.Infof("[Dealing DevOnline] Received [%v]", devId)
 			}
-			if strSid, ok := gUdpSessions.devmap[devId]; ok {
-				gUdpSessions.udpmap[gUdpSessions.sidmap[strSid].Addr.String()].Stop()
+			if sess, ok := gUdpSessions.Sesses[devId]; ok {
+				sess.OfflineEvent.Stop();
 				if glog.V(3) {
 					glog.Infof("[Dealing DevOnline] Terminating the %v's offline event", devId)
 				}
@@ -697,7 +697,7 @@ func GetDeviceSession(sid string) (string, error) {
 	return redis.String(r.Do("get", fmt.Sprintf(RedisSessionDevice, sid)))
 }
 
-func SetDeviceSession(sid string, expire int, json string, deviceId int64, addr *net.UDPAddr) error {
+func SetDeviceSession(sid string, expire int, json string, DevId int64, addr *net.UDPAddr) error {
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
@@ -708,8 +708,8 @@ func SetDeviceSession(sid string, expire int, json string, deviceId int64, addr 
 	}
 	// 对于刚刚建立，还未调用过注册或登录接口的会话，deviceId是0，不要为这个状态的
 	// session设置deviceId和UDP地址的表映射，因为这个状态的session还不满足P2P的业务功能
-	if deviceId != 0 {
-		_, err = r.Do("setex", fmt.Sprintf(RedisSessionDeviceAddr, deviceId), expire, sid)
+	if DevId != 0 {
+		_, err = r.Do("setex", fmt.Sprintf(RedisSessionDeviceAddr, DevId), expire, sid)
 		if err != nil {
 			return err
 		}
@@ -717,12 +717,12 @@ func SetDeviceSession(sid string, expire int, json string, deviceId int64, addr 
 	return err
 }
 
-func GetDeviceSid(deviceId int64) (string, error) {
+func GetDeviceSid(DevId int64) (string, error) {
 
 	r := Redix[_SetDeviceSession]
 	RedixMu[_SetDeviceSession].Lock()
 	defer RedixMu[_SetDeviceSession].Unlock()
-	v, e := redis.String(r.Do("get", fmt.Sprintf(RedisSessionDeviceAddr, deviceId)))
+	v, e := redis.String(r.Do("get", fmt.Sprintf(RedisSessionDeviceAddr, DevId)))
 	return v, e
 }
 

@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/golang/glog"
-	uuid "github.com/nu7hatch/gouuid"
+	//	uuid "github.com/nu7hatch/gouuid"
 	"net"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 var (
-	kSidLen                     = 16
+	kSidLen                     = 8
 	kHeaderCheckPosInDataHeader = 8
 	ErrSessNotExist             = fmt.Errorf("session not exists")
 
@@ -21,23 +22,18 @@ var (
 )
 
 type UdpSession struct {
-	//Session
-	Sid           string       
-	DeviceId      int64        `json:"DeviceID"`
+	Sid           uint64
+	DevId         int64       `json:"DeviceID"`
 	Addr          *net.UDPAddr `json:"Addr"`
 	LastHeartbeat time.Time    `json:"LastHeartbeat"`
 	Owner         int64
-	Mac           []byte		`json:"-"`
-	GUID          *uuid.UUID	`json:"-"`
-	// 自身的包序号
-	// 暂时不使用到该包序号，只有当服务器会主动推送消息给设备时才需要
-	Sidx uint16					`json:"Sidx"`
+	Mac           []byte
+	Users         []int64
+	Devs          map[int64][]byte
+	OfflineEvent  *time.Timer `json:"-"`
 
-	// 收取的包序号
-	Ridx uint16					`json:"Ridx"`
-
-	// 已绑定的用户ID列表
-	Users []int64				`json:"BindedUsers"`
+	Sidx uint16 `json:"-"`
+	Ridx uint16 `json:"-"`
 }
 
 func NewUdpSession(addr *net.UDPAddr) *UdpSession {
@@ -53,11 +49,12 @@ func NewUdpSession(addr *net.UDPAddr) *UdpSession {
 			LastHeartbeat: time.Now(),
 		}
 	}
+	u.Sid = uint64(uintptr(unsafe.Pointer(u)))
 	return u
 }
 
 // check pack number and other things in session here
-func (s *UdpSession) VerifySession(packNum uint16) error {
+func (s *UdpSession) VerifyPack(packNum uint16) error {
 	// 现在由redis负责超时
 	//if time.Now().Sub(s.LastHeartbeat) > 2*kHeartBeat {
 	//	return ErrSessTimeout
@@ -73,6 +70,13 @@ func (s *UdpSession) VerifySession(packNum uint16) error {
 	// all ok
 	s.Ridx = packNum
 
+	return nil
+}
+
+func (s *UdpSession) VerifySession(adr string) error {
+	if s.Addr.String() != adr {
+		return fmt.Errorf("Wrong Sess!")
+	}
 	return nil
 }
 
@@ -93,7 +97,7 @@ func (s *UdpSession) CalcDestIds(toId int64) []int64 {
 	} else {
 		if !s.isBinded(int64(toId)) {
 			if glog.V(3) {
-				glog.Infof("dev [%d] unbind to usr [%d], valid ids: %v", s.DeviceId, toId, s.Users)
+				glog.Infof("dev [%d] unbind to usr [%d], current users: %v", s.DevId, toId, s.Users)
 			}
 			return nil
 		}
@@ -115,7 +119,7 @@ func (s *UdpSession) String() string {
 	if err != nil {
 		panic(err)
 	}
-	return fmt.Sprintf("%x",s.Mac)+string(buf)
+	return fmt.Sprintf("%x", s.Mac) + string(buf)
 }
 
 func (s *UdpSession) FromString(data string) error {
@@ -123,75 +127,48 @@ func (s *UdpSession) FromString(data string) error {
 }
 
 type UdpSessionList struct {
-	server *UdpServer
-	udplk  *sync.RWMutex
-	sidlk  *sync.RWMutex
-	devlk  *sync.RWMutex
-	//k:ip;v:
-	udpmap map[string]*time.Timer
-	//k:sid
-	sidmap map[string]*UdpSession
-	//k:deviceId
-	devmap map[int64]string
+	Server *UdpServer
+	Devlk  *sync.RWMutex
+	Sesses map[int64]*UdpSession
 }
 
 func NewUdpSessionList() *UdpSessionList {
-	sl := &UdpSessionList{
-		udplk:  new(sync.RWMutex),
-		sidlk:  new(sync.RWMutex),
-		devlk:  new(sync.RWMutex),
-		udpmap: make(map[string]*time.Timer),
-		sidmap: make(map[string]*UdpSession),
-		devmap: make(map[int64]string),
+	return &UdpSessionList{
+		Devlk:  new(sync.RWMutex),
+		Sesses: make(map[int64]*UdpSession),
 	}
-	return sl
 }
 func (this *UdpSessionList) GetDeviceAddr(id int64) (string, error) {
-	this.devlk.RLock()
-	sid, ok := this.devmap[id]
-	this.devlk.RUnlock()
+	this.Devlk.RLock()
+	sess, ok := this.Sesses[id]
+	this.Devlk.RUnlock()
 	if !ok {
-		return "", fmt.Errorf("[ERR] no device [%d],%v", id, ok)
-	}
-
-	//	i, err := uuid.ParseHex(sid)
-	//	if err != nil {
-	//		return "", fmt.Errorf("wrong session id format: %v", err)
-	//	}
-	this.sidlk.RLock()
-	sess, ok := this.sidmap[sid]
-	this.sidlk.RUnlock()
-	if !ok {
-		return "", fmt.Errorf("[ERR] no sid %s,%v", sid, ok)
+		return "", fmt.Errorf("[ERR] NO SESS %s,%v", id, ok)
 	}
 	return sess.Addr.String(), nil
 }
 
-// Get existed session from DB
-func (this *UdpSessionList) GetSession(sid *uuid.UUID) (*UdpSession, error) {
-	this.sidlk.RLock()
-	s, _ := this.sidmap[sid.String()]
-	this.sidlk.RUnlock()
-	if s == nil {
-		return s, fmt.Errorf("[ERR] no sid %v", sid.String())
-	}
-	return s, nil
+func (this *UdpSessionList) SaveSessionByAdr(o *UdpSession) {
+	this.Devlk.Lock()
+	this.Sesses[int64(uintptr(unsafe.Pointer(o)))] = o
+	this.Devlk.Unlock()
+}
+func (this *UdpSessionList) DelSessionByAdr(o *UdpSession) {
+	this.Devlk.Lock()
+	delete(this.Sesses,int64(uintptr(unsafe.Pointer(o))))
+	this.Devlk.Unlock()
+}
+func (this *UdpSessionList) SaveSessionById(id int64,s *UdpSession) {
+	this.Devlk.Lock()
+	this.Sesses[id] = s
+	this.Devlk.Unlock()
+}
+func (this *UdpSessionList) DelSessionById(id int64,s *UdpSession) {
+	this.Devlk.Lock()
+	delete(this.Sesses,id)
+	this.Devlk.Unlock()
 }
 
-// Delete from DB
-// 现在还没有需要调用该接口的地方
-//func (this *UdpSessionList) DeleteSession(sid *uuid.UUID) error {
-//	return DeleteDeviceSession(sid.String())
-//}
-
-// Save to DB
-func (this *UdpSessionList) SaveSession(sid *uuid.UUID, s *UdpSession) error {
-	s.GUID = sid
-	this.sidlk.Lock()
-	this.sidmap[sid.String()] = s
-	this.sidlk.Unlock()
-	return nil
-}
 
 func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byte) error {
 	msg := msgs.NewMsg(msgBody, nil)
@@ -199,78 +176,39 @@ func (this *UdpSessionList) PushCommonMsg(msgId uint16, did int64, msgBody []byt
 	msg.DataHeader.MsgId = msgId
 	msg.FrameHeader.DstId = did
 
-	this.devlk.RLock()
-	sid, ok := this.devmap[did]
-	this.devlk.RUnlock()
-	if !ok {
-		return fmt.Errorf("[udp:err] no dev [%d] error: %v", did, ok)
+	sess, _ := this.Sesses[did]
+	if sess == nil {
+		return fmt.Errorf("[udp:err] no session %v", did)
 	}
 
-	i, err := uuid.ParseHex(sid)
-	if err != nil {
-		return fmt.Errorf("[udp:err] sid format err: %v", sid)
-	}
-
-	sess, err := this.GetSession(i)
-	if err != nil {
-		return fmt.Errorf("[udp:err] no session %s error: %v", sid, err)
-	}
 	sess.Sidx++
 	msg.FrameHeader.Sequence = sess.Sidx
 	msgBytes := msg.MarshalBytes()
-	this.server.Send(sess.Addr, msgBytes)
+	this.Server.Send(sess.Addr, msgBytes)
 	return nil
 }
 
 func (this *UdpSessionList) PushMsg(did int64, msg []byte) error {
-
-	this.devlk.RLock()
-	sid, ok := this.devmap[did]
-	this.devlk.RUnlock()
-	glog.Infoln("sid:", sid)
-	if !ok {
-		return fmt.Errorf("[udp:err] [%d] can't got sid.", did)
-	}
-	siduuid, err := uuid.ParseHex(sid)
-	if err != nil {
-		return fmt.Errorf("[udp:err] sid format err: %v", sid)
-	}
-	this.sidlk.RLock()
-	sess, ok := this.sidmap[sid]
-	this.sidlk.RUnlock()
-	if !ok {
-		return fmt.Errorf("[udp:err] no session %s", sid)
+	sess, _ := this.Sesses[did]
+	if sess == nil {
+		return fmt.Errorf("[udp:err] no session %s", did)
 	}
 
 	sess.Sidx++
 	binary.LittleEndian.PutUint16(msg[2:4], sess.Sidx)
-	copy(msg[FrameHeaderLen:FrameHeaderLen+kSidLen], siduuid[:])
+	copy(msg[FrameHeaderLen:FrameHeaderLen+kSidLen], Sess2Byte(sess))
 	//hcIndex := FrameHeaderLen + kSidLen + FrameHeaderLen + kHeaderCheckPosInDataHeader
 	//glog.Infoln("PushMsg----------sess:",	sess)
 	//msg[hcIndex] = msgs.ChecksumHeader(msg, hcIndex)
 	//glog.Infoln("PushMsg:",did,len(msg),msg,hcIndex)
-	this.server.Send(sess.Addr, msg)
+	this.Server.Send(sess.Addr, msg)
 	return nil
 }
 
 func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType bool) {
-
-	this.devlk.RLock()
-	sid, ok := this.devmap[deviceId]
-	this.devlk.RUnlock()
-	if !ok {
-		glog.Errorf("no device [%d] error: %v", deviceId, ok)
-		return
-	}
-
-	i, err := uuid.ParseHex(sid)
-	if err != nil {
-		glog.Errorf("[udp:err] sid format err: %v", sid)
-		return
-	}
-	sess, err := this.GetSession(i)
-	if err != nil {
-		glog.Errorln(err)
+	sess, _ := this.Sesses[deviceId]
+	if sess == nil {
+		glog.Infof("no udp session %v when updating mapping dev<->usr",deviceId)
 		return
 	}
 	if bindType {
@@ -296,7 +234,6 @@ func (this *UdpSessionList) UpdateIds(deviceId int64, userId int64, bindType boo
 		}
 		GMsgBusManager.NotifyBindedIdChanged(deviceId, nil, []int64{userId})
 	}
-	this.SaveSession(i, sess)
 }
 
 //func (this *UdpSessionList) GetDeviceIdAndDstIds(sid *uuid.UUID) (int64, []int64, error) {

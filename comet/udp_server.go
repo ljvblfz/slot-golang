@@ -67,7 +67,7 @@ func (s *UdpServer) Send2(peer *net.UDPAddr, msg []byte, sess *UdpSession, busi 
 	n, err := s.con.WriteToUDP(msg, peer)
 	s.conlk.Unlock()
 	if glog.V(3) {
-		glog.Infof("[udp|ret %v] [dev:%v %v %v %v], response: len(%d)%v,%v", busi, sess.DeviceId, peer.String(),sess.Sid,sess.Addr.String(), n, msg, err)
+		glog.Infof("[udp|ret %v] [dev:%v %v %v %v], response: len(%d)%v,%v", busi, sess.DevId, peer.String(),sess.Sid,sess.Addr.String(), n, msg, err)
 		glog.Infof("-----------------------------------------------------------------------------------------------------------------------------")
 	}
 }

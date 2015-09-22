@@ -39,7 +39,6 @@ const (
 	kLoginKey = "BlackCrystalWb14527" // 和http服务器约定好的私有盐
 
 	// 用户id的间隔，这个间隔内可用的取值数量，就是该用户可同时登录的手机数量
-	kUseridUnit uint = 16
 
 	kDstIdOffset = 8
 	kDstIdLen    = 8
