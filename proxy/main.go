@@ -2,13 +2,14 @@ package main
 
 import (
 	"cloud-socket/ver"
+	"encoding/binary"
 	"flag"
+	"github.com/golang/glog"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
-
-	"github.com/golang/glog"
 )
 
 var (
@@ -27,12 +28,20 @@ var (
 	gStrIPS     string
 )
 
-func selectUDPServer() (addr string) {
-	addr = gQueue.next().(string)
+func chooseAUDPServer() []byte {
+	output := make([]byte, 5)
+	addr := gQueue.next().(string)
 	glog.Infoln(addr, gIPS[addr])
 	glog.Infoln(gIPS)
 	addr = strings.Replace(addr, addr, gIPS[addr], 1)
-	return
+	adr := strings.Split(addr, ":")
+	if len(adr) == 2 {
+		port, _ := strconv.Atoi(adr[1])
+		binary.LittleEndian.PutUint32(output[0:4], uint32(port))
+		output[4] = byte(len(adr[0]))
+		output = append(output, []byte(adr[0])...)
+	}
+	return output
 }
 
 func main() {
@@ -42,7 +51,7 @@ func main() {
 	defer glog.Flush()
 	glog.CopyStandardLogTo("INFO")
 
-	flag.StringVar(&serverAddr, "hudp", "193.168.1.63:7999", "udp proxy ip and port. eg:193.168.1.63:7999")
+	flag.StringVar(&serverAddr, "serverAddr", "193.168.1.63:7999", "udp proxy ip and port. eg:193.168.1.63:7999")
 	flag.StringVar(&zkHosts, "zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK的地址,多个地址用逗号分割")
 	flag.StringVar(&gProxyRoot, "zkroot", "ProxyServers", "zookeeper服务中proxy所在的根节点名")
 	flag.StringVar(&gCometRoot, "zkrootUdpComet", "CometServersUdp", "zookeeper服务中udp comet所在的根节点名")

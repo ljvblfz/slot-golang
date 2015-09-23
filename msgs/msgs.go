@@ -203,8 +203,8 @@ func (a *AppMsg) MarshalBytes() []byte {
 	if len(a.Data) != 0 {
 		buf = append(buf, a.Data...)
 	}
-	buf[hcheckPos-1] = ChecksumHeader(buf, hcheckPos-1) //从帔头到数据头的length字段
-	buf[checkPos-1] = ChecksumHeader(buf[checkPos:], len(buf)-checkPos)//从SessionId到数据尾
+	buf[hcheckPos-1] = Crc(buf, hcheckPos-1) //从帔头到数据头的length字段
+	buf[checkPos-1] = Crc(buf[checkPos:], len(buf)-checkPos)//从SessionId到数据尾
 
 	return buf
 }
@@ -220,7 +220,7 @@ func NewAckMsg(message []byte) []byte {
 
 // 数据头中校验位的校验算法
 // 实现协议：智能家居通讯协议V2.3.2
-func ChecksumHeader(msg []byte, n int) byte {
+func Crc(msg []byte, n int) byte {
 	var headerCheck uint8
 	for i := 0; i < n; i++ {
 		headerCheck ^= msg[i]

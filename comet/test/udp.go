@@ -274,8 +274,8 @@ func (c *Client) packBody(msgId uint16, otherBody []byte) []byte {
 	// log.Printf("[len]otherBody: [%v]%v", len(otherBody), otherBody)
 
 	// sum header
-	output[24+8] = msgs.ChecksumHeader(output, 24+8)
-	output[24+9] = msgs.ChecksumHeader(output[24+10:], 2+len(otherBody))
+	output[24+8] = msgs.Crc(output, 24+8)
+	output[24+9] = msgs.Crc(output[24+10:], 2+len(otherBody))
 	// TODO sum body
 	return output
 }

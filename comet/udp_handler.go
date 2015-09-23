@@ -108,7 +108,7 @@ func (h *Handler) Run() {
 //	header := req[FrameHeaderLen : FrameHeaderLen+DataHeaderLen]
 //	header[1] = cmdSeqNum
 //	binary.LittleEndian.PutUint16(header[4:6], 0xE4)
-//	header[6] = msgs.ChecksumHeader(req, FrameHeaderLen+8)
+//	header[6] = msgs.Crc(req, FrameHeaderLen+8)
 //	// data body
 //	copy(req[FrameHeaderLen+DataHeaderLen:], deviceMac)
 //	binary.LittleEndian.PutUint64(req[FrameHeaderLen+DataHeaderLen+8:], uint64(userId))
@@ -218,15 +218,15 @@ func (h *Handler) handle(t *UdpMsg) error {
 			return fmt.Errorf("[UDPCOMET:02] invalid message length for protocol,  mlen < FrameHeaderLen+DataHeaderLen ,%v < %v", mlen, FrameHeaderLen+DataHeaderLen)
 		}
 		packNum := binary.LittleEndian.Uint16(t.Msg[2:4])
-		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+6:]))
+		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+4:]))
 		// discard msg if found checking error
-		if t.Msg[FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+8) {
-			return fmt.Errorf("[UDPCOMET:02] checksum header error %v!=%v", t.Msg[FrameHeaderLen+8], msgs.ChecksumHeader(t.Msg, FrameHeaderLen+8))
+		if t.Msg[FrameHeaderLen+8] != msgs.Crc(t.Msg, FrameHeaderLen+6) {
+			return fmt.Errorf("[UDPCOMET:02] checksum header error %v!=%v", t.Msg[FrameHeaderLen+8], msgs.Crc(t.Msg, FrameHeaderLen+8))
 		}
 
 		// check body
-		if t.Msg[FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[FrameHeaderLen+10:], 2+bodyLen) {
-			return fmt.Errorf("[UDPCOMET:02] checksum body error %v!=%v", t.Msg[FrameHeaderLen+9], msgs.ChecksumHeader(t.Msg[FrameHeaderLen+10:], 2+bodyLen))
+		if t.Msg[FrameHeaderLen+9] != msgs.Crc(t.Msg[FrameHeaderLen+10:], 2+bodyLen) {
+			return fmt.Errorf("[UDPCOMET:02] checksum body error %v!=%v", t.Msg[FrameHeaderLen+9], msgs.Crc(t.Msg[FrameHeaderLen+10:], 2+bodyLen))
 		}
 
 		var (
@@ -337,8 +337,8 @@ func (h *Handler) handle(t *UdpMsg) error {
 		output[FrameHeaderLen] |= (msgs.FlagAck | msgs.FlagRead)
 		binary.LittleEndian.PutUint32(output[4:8], uint32(time.Now().Unix()))
 		binary.LittleEndian.PutUint16(output[FrameHeaderLen+6:], uint16(len(res)))
-		output[FrameHeaderLen+8] = msgs.ChecksumHeader(output, FrameHeaderLen+8)
-		output[FrameHeaderLen+9] = msgs.ChecksumHeader(output[FrameHeaderLen+10:], 2+len(res))
+		output[FrameHeaderLen+8] = msgs.Crc(output, FrameHeaderLen+8)
+		output[FrameHeaderLen+9] = msgs.Crc(output[FrameHeaderLen+10:], 2+len(res))
 
 		if sess != nil {
 			h.Server.Send2(t.Peer, output, sess, busi)
@@ -354,12 +354,12 @@ func (h *Handler) handle(t *UdpMsg) error {
 		packNum := binary.LittleEndian.Uint16(t.Msg[2:4])
 		//		bodyLen := int(binary.LittleEndian.Uint16(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+6:]))
 		// discard msg if found checking error
-		//		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+8] != msgs.ChecksumHeader(t.Msg, FrameHeaderLen+kSidLen+FrameHeaderLen+8) {
+		//		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+8] != msgs.Crc(t.Msg, FrameHeaderLen+kSidLen+FrameHeaderLen+8) {
 		//			return fmt.Errorf("checksum header error")
 		//		}
 
 		// check data body
-		//		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+9] != msgs.ChecksumHeader(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+10:], 2+bodyLen) {
+		//		if t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+9] != msgs.Crc(t.Msg[FrameHeaderLen+kSidLen+FrameHeaderLen+10:], 2+bodyLen) {
 		//			return fmt.Errorf("checksum data error")
 		//		}
 
