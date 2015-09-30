@@ -72,15 +72,16 @@ func (this *myServer) RunLoop() bool {
 		}
 		//请求报文不够长，24为帧头长度，10为数据头长度，16为mac的md5长度，32为登录代理用的key长度
 		if n<24+10+16+32 {
+			glog.Errorf("The request is not enough longer, it should be more than 24+10+16+32=82 at least. Its actual size is %v.",n)
 			continue
 		}
 		params :=input[0:n]
 		pMac:=params[16:24]
 		pMacMd5:=params[24+10:24+10+16]
-//		pLoginProxyKey:=params[24+10+16:24+10+16+32]
 		macmd5:=begmd5(pMac)
 		//校验mac
 		if hex.EncodeToString(pMacMd5)!=hex.EncodeToString(macmd5){
+			glog.Errorf("Mac's md5 checking failed, Mac:%v",pMac)
 			continue
 		}
 		pHeadChecksum:=params[24+6]
@@ -89,16 +90,18 @@ func (this *myServer) RunLoop() bool {
 		data:=params[24+8:]
 		//帧头crc检验，检验域：从0到数据关的length字段
 		if pHeadChecksum != msgs.Crc(head,len(head)){
+			glog.Errorf("Frame Header checking failed. FrameHeader's crc is %v, Header is %v",pHeadChecksum,head)
 			continue
 		}
 		//数据crc检验，检验域：从数据头的SessinId字段到结尾
 		if pDataChecksum != msgs.Crc(data,len(data)){
+			glog.Errorf("Body checking failed. Body's crc is %v, Body is %v",pDataChecksum,data)
 			continue
 		}
 		
-		adr := chooseAUDPServer()
-		this.Send(peer,adr)
-		glog.Infoln(n, peer, adr)
+		output,adr := chooseAUDPServer()
+		go this.Send(peer,output)
+		glog.Infoln("RETURN:",peer.String(), adr)
 	}
 	return true
 }

@@ -28,9 +28,9 @@ var (
 	gStrIPS     string
 )
 
-func chooseAUDPServer() []byte {
-	output := make([]byte, 5)
-	addr := gQueue.next().(string)
+func chooseAUDPServer() (output []byte,addr string) {
+	output = make([]byte, 37)
+	addr = gQueue.next().(string)
 	glog.Infoln(addr, gIPS[addr])
 	glog.Infoln(gIPS)
 	addr = strings.Replace(addr, addr, gIPS[addr], 1)
@@ -38,10 +38,10 @@ func chooseAUDPServer() []byte {
 	if len(adr) == 2 {
 		port, _ := strconv.Atoi(adr[1])
 		binary.LittleEndian.PutUint32(output[0:4], uint32(port))
-		output[4] = byte(len(adr[0]))
+		output[36] = byte(len(adr[0]))
 		output = append(output, []byte(adr[0])...)
 	}
-	return output
+	return
 }
 
 func main() {
@@ -55,7 +55,6 @@ func main() {
 	flag.StringVar(&zkHosts, "zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK的地址,多个地址用逗号分割")
 	flag.StringVar(&gProxyRoot, "zkroot", "ProxyServers", "zookeeper服务中proxy所在的根节点名")
 	flag.StringVar(&gCometRoot, "zkrootUdpComet", "CometServersUdp", "zookeeper服务中udp comet所在的根节点名")
-	flag.StringVar(&gStatusAddr, "sh", ":29999", "程序状态http服务端口")
 	flag.Float64Var(&gCPUUsage, "cpu", 0.9, "CPU最高使用率。如：0.9 表示90%")
 	flag.Float64Var(&gMEMFree, "mem", 100, "最小空闲内存大小")
 	flag.Int64Var(&gCount, "count", 6000, "最大句柄数")
@@ -76,7 +75,6 @@ func main() {
 	}
 	glog.Infoln("gIPS", gIPS)
 
-	InitStat(gStatusAddr)
 	go InitZK(strings.Split(zkHosts, ","), gProxyRoot, gCometRoot)
 
 	gServer = NewServer(serverAddr)

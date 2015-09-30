@@ -14,19 +14,14 @@ import (
 )
 
 const (
-	CmdSyncState        = uint16(0x30)
-	CmdSess         = uint16(0xE0)
-	CmdRegister         = uint16(0xE1)
-	CmdLogin            = uint16(0xE2)
-	CmdRename           = uint16(0xE3)
-	CmdUnbind           = uint16(0xE4)
-	CmdHeartBeat        = uint16(0xE5)
-	CmdSubDeviceOffline = uint16(0xE6)
+	CmdSess             = uint16(0xC1)
+	CmdRegister         = uint16(0xC2)
+	CmdLogin            = uint16(0xC3)
+	CmdHeartBeat        = uint16(0xC4)
+	CmdLoginout         = uint16(0xC5)
 
 	UrlRegister   = "/api/device/register"
 	UrlLogin      = "/api/device/login"
-	UrlUnbind     = "/api/device/unbindbydv"
-	UrlChangeName = "/api/device/changingname"
 )
 
 var (
