@@ -174,3 +174,18 @@ func (this *Queue) next() interface{} {
 	this.cursor = this.cursor.next
 	return o
 }
+func (this *Queue) Retrain(staff []interface{}) {
+	total:= make(map[interface{}]int)
+	for p := this.head; p != nil; p = p.next {
+		total[p.value] = 1
+	}
+	for _, v := range staff {
+		if _, ok := total[v]; ok {
+			delete(total, v)
+		}
+	}
+	for k, _ := range total {
+		this.Remove(k)
+	}
+
+}

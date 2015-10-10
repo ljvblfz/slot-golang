@@ -53,7 +53,6 @@ func main() {
 
 	flag.StringVar(&serverAddr, "serverAddr", "193.168.1.63:7999", "udp proxy ip and port. eg:193.168.1.63:7999")
 	flag.StringVar(&zkHosts, "zks", "193.168.1.221,193.168.1.222,193.168.1.223", "设置ZK的地址,多个地址用逗号分割")
-	flag.StringVar(&gProxyRoot, "zkroot", "ProxyServers", "zookeeper服务中proxy所在的根节点名")
 	flag.StringVar(&gCometRoot, "zkrootUdpComet", "CometServersUdp", "zookeeper服务中udp comet所在的根节点名")
 	flag.Float64Var(&gCPUUsage, "cpu", 0.9, "CPU最高使用率。如：0.9 表示90%")
 	flag.Float64Var(&gMEMFree, "mem", 100, "最小空闲内存大小")
@@ -75,7 +74,7 @@ func main() {
 	}
 	glog.Infoln("gIPS", gIPS)
 
-	go InitZK(strings.Split(zkHosts, ","), gProxyRoot, gCometRoot)
+	go InitZK(strings.Split(zkHosts, ","), gCometRoot)
 
 	gServer = NewServer(serverAddr)
 	go gServer.RunLoop()
